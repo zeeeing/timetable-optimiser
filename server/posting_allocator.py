@@ -11,13 +11,13 @@ def allocate_timetable(
 ) -> Dict:
     model = cp_model.CpModel()
 
-    # Extract unique postings from preferences
+    # extract unique postings from preferences
     posting_set = set()
     for p in preferences:
         posting_set.update([p["p1"], p["p2"], p["p3"], p["p4"], p["p5"]])
     postings = sorted(posting_set)
 
-    # Map posting to type (core/elective) and block info
+    # map each posting name to type (core/elective) and block info
     posting_info = {}
     for pd in resident_posting_data:
         posting_info[pd["posting"]] = {
@@ -26,20 +26,15 @@ def allocate_timetable(
             "type": pd["type"],
         }
 
-    # Extract unique course names from quotas
-    course_names = [q["course_name"] for q in posting_quotas]
-
-    resident_count = len(preferences)
+    # create variables for each resident-posting assignment
     posting_vars = {}
-
-    # Create variables for each resident-posting assignment
     for i, resident in enumerate(preferences):
         for posting in postings:
             posting_vars[(i, posting)] = model.NewBoolVar(
                 f"resident_{i}_gets_{posting}"
             )
 
-    # Constraint 1: Each resident can only get one posting per block (no overlap)
+    # C1: each resident can only get one posting per block (no overlap)
     for i, resident in enumerate(preferences):
         block_vars = [[] for _ in range(12)]
         for posting in postings:
@@ -54,7 +49,7 @@ def allocate_timetable(
             if block_vars[b]:
                 model.Add(sum(block_vars[b]) <= 1)
 
-    # Constraint 2: Respect posting quotas per block
+    # C2: respect posting quota per block
     for quota in posting_quotas:
         course_name = quota["course_name"]
         max_residents = quota["max_residents"]
@@ -72,21 +67,25 @@ def allocate_timetable(
             if block_assignments:
                 model.Add(sum(block_assignments) <= max_residents)
 
-    # Objective: maximize preference satisfaction (weighted by seniority if available)
+    # Objective: maximise preference satisfaction (weighted by seniority (year))
     objective_terms = []
     for i, resident in enumerate(preferences):
-        seniority = resident.get("seniority", resident.get("year", 1))
+        year = resident.get("year")
         for rank, key in enumerate(["p1", "p2", "p3", "p4", "p5"]):
             posting = resident[key]
             if posting in postings:
-                weight = (5 - rank) * seniority
+                weight = (5 - rank) * year
                 objective_terms.append(posting_vars[(i, posting)] * weight)
 
+    # maximise the objective
     model.Maximize(sum(objective_terms))
+    
+    # solve the model
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = 30.0
-
     status = solver.Solve(model)
+    
+    # process results
     results = []
 
     if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):

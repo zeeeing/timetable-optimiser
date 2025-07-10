@@ -1,5 +1,5 @@
 export const generateSampleCSV = () => {
-  // Generate preferences.csv
+  // generate preferences.csv
   const preferencesData = [
     {
       id: "R001",
@@ -23,7 +23,7 @@ export const generateSampleCSV = () => {
     },
   ];
 
-  // Generate resident_posting_data.csv (with type)
+  // generate resident_posting_data.csv
   const residentPostingData = [
     {
       id: "R001",
@@ -90,7 +90,7 @@ export const generateSampleCSV = () => {
     },
   ];
 
-  // Generate posting_quotas.csv
+  // generate posting_quotas.csv
   const postingQuotasData = [
     { course_name: "Cardiology", max_residents: 1, required_block_duration: 4 },
     {
@@ -109,7 +109,7 @@ export const generateSampleCSV = () => {
     { course_name: "Radiology", max_residents: 1, required_block_duration: 3 },
   ];
 
-  // Convert to CSV format
+  // convert to CSV format
   const preferencesCSV = [
     "id,name,year,p1,p2,p3,p4,p5",
     ...preferencesData.map(
@@ -134,7 +134,7 @@ export const generateSampleCSV = () => {
     ),
   ].join("\n");
 
-  // Create and download files
+  // create and download files
   const downloadFile = (content: string, filename: string) => {
     const blob = new Blob([content], { type: "text/csv" });
     const url = window.URL.createObjectURL(blob);
@@ -146,8 +146,7 @@ export const generateSampleCSV = () => {
     a.remove();
     window.URL.revokeObjectURL(url);
   };
-
-  // Download all three files
+  
   downloadFile(preferencesCSV, "preferences.csv");
   downloadFile(residentPostingCSV, "resident_posting_data.csv");
   downloadFile(postingQuotasCSV, "posting_quotas.csv");
