@@ -30,14 +30,13 @@ app.post(
     }
 
     try {
-      // Parse preferences.csv
+      // parse
       const preferencesData = req.files.preferences[0].buffer.toString("utf-8");
       const preferences = parse(preferencesData, {
         columns: true,
         skip_empty_lines: true,
       });
 
-      // Parse resident_posting_data.csv
       const residentData =
         req.files.resident_posting_data[0].buffer.toString("utf-8");
       const residentPostingData = parse(residentData, {
@@ -45,14 +44,13 @@ app.post(
         skip_empty_lines: true,
       });
 
-      // Parse posting_quotas.csv
       const quotasData = req.files.posting_quotas[0].buffer.toString("utf-8");
       const postingQuotas = parse(quotasData, {
         columns: true,
         skip_empty_lines: true,
       });
 
-      // Convert data to the expected format
+      // convert data to the expected format
       const preferencesFormatted = preferences.map((p) => ({
         id: p.id,
         name: p.name,
@@ -80,7 +78,7 @@ app.post(
         required_block_duration: parseInt(q.required_block_duration),
       }));
 
-      // Create input data structure
+      // create input data structure
       const inputData = {
         preferences: preferencesFormatted,
         resident_posting_data: residentPostingFormatted,
@@ -111,6 +109,7 @@ app.post(
           const result = JSON.parse(output);
           res.json(result); // send response back to client
         } catch (err) {
+          // catch error relating to posting allocator
           res.status(500).json({
             success: false,
             message: "Invalid response from script",
@@ -118,6 +117,7 @@ app.post(
         }
       });
     } catch (e) {
+      // catch error relating to file parsing or processing
       console.error("Error processing files: ", e);
       res
         .status(500)

@@ -79,12 +79,12 @@ def allocate_timetable(
 
     # maximise the objective
     model.Maximize(sum(objective_terms))
-    
+
     # solve the model
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = 30.0
     status = solver.Solve(model)
-    
+
     # process results
     results = []
 

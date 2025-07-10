@@ -5,6 +5,8 @@ import ResidentDropdown from "./components/ResidentDropdown";
 import ResidentTimetable from "./components/ResidentTimetable";
 import ErrorAlert from "./components/ErrorAlert";
 import { uploadCsv, downloadCsv } from "./api/api";
+import { Button } from "./components/ui/button";
+import { Loader2Icon } from "lucide-react";
 
 interface BlockAssignment {
   posting: string | null;
@@ -122,7 +124,7 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-linear-to-br from-blue-50 to-indigo-100 p-6">
-      <div className="max-w-4xl mx-auto bg-white rounded-xl shadow-md p-8">
+      <div className="max-w-6xl mx-auto bg-white rounded-xl shadow-md p-8">
         <h1 className="text-3xl font-bold text-center mb-6 text-gray-800">
           Resident Rostering: Timetable Optimiser
         </h1>
@@ -144,8 +146,8 @@ const App: React.FC = () => {
         </div>
 
         {/* Buttons */}
-        <div className="flex gap-4 justify-center mb-6">
-          <button
+        <div className="flex flex-col space-y-2 sm:flex-row sm:gap-4 justify-center mb-6">
+          <Button
             onClick={processFiles}
             disabled={
               isProcessing ||
@@ -153,16 +155,20 @@ const App: React.FC = () => {
               !csvFiles.resident_posting_data ||
               !csvFiles.posting_quotas
             }
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50"
+            className="bg-blue-600 text-white hover:bg-blue-700"
           >
-            {isProcessing ? "Processing..." : "Upload & Generate Timetable"}
-          </button>
-          <button
-            onClick={generateSampleCSV}
-            className="bg-gray-100 px-4 py-2 rounded-lg text-sm hover:bg-gray-200"
-          >
+            {isProcessing ? (
+              <>
+                <Loader2Icon className="animate-spin" />
+                Processing...
+              </>
+            ) : (
+              "Upload & Generate Timetable"
+            )}
+          </Button>
+          <Button variant="secondary" onClick={generateSampleCSV}>
             Download Sample CSV
-          </button>
+          </Button>
         </div>
 
         {/* Error Message */}
