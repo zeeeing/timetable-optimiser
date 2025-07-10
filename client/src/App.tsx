@@ -131,17 +131,14 @@ const App: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
           <FileUpload
             label="Preferences CSV"
-            file={csvFiles.preferences}
             onChange={handleFileUpload("preferences")}
           />
           <FileUpload
             label="Resident Posting Data CSV"
-            file={csvFiles.resident_posting_data}
             onChange={handleFileUpload("resident_posting_data")}
           />
           <FileUpload
             label="Posting Quotas CSV"
-            file={csvFiles.posting_quotas}
             onChange={handleFileUpload("posting_quotas")}
           />
         </div>
