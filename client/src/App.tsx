@@ -128,7 +128,6 @@ const App: React.FC = () => {
             </p>
           )}
         </div>
-
         <div className="flex gap-4 justify-center mb-6">
           <button
             onClick={processFile}
@@ -184,7 +183,7 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {/* download button */}
+        {/* Download Button */}
         {assignments && (
           <div className="mt-4 flex justify-end">
             <button
