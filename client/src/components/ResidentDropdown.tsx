@@ -1,0 +1,28 @@
+import React from "react";
+
+interface ResidentDropdownProps {
+  residents: { id: string; name: string; year: number }[];
+  value: string;
+  onChange: (id: string) => void;
+}
+
+const ResidentDropdown: React.FC<ResidentDropdownProps> = ({ residents, value, onChange }) => (
+  <div className="mb-4">
+    <label className="block text-sm font-medium text-gray-700 mb-2">
+      Select Resident to View Timetable:
+    </label>
+    <select
+      value={value}
+      onChange={e => onChange(e.target.value)}
+      className="w-full max-w-md px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+    >
+      {residents.map(resident => (
+        <option key={resident.id} value={resident.id}>
+          {resident.name} (Year {resident.year})
+        </option>
+      ))}
+    </select>
+  </div>
+);
+
+export default ResidentDropdown; 

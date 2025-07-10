@@ -15,94 +15,150 @@ app.use(express.json());
 const upload = multer({ storage: multer.memoryStorage() });
 
 // routes
-app.post("/api/upload-csv", upload.single("csvFile"), async (req, res) => {
-  if (!req.file)
-    return res
-      .status(400)
-      .json({ success: false, message: "No file uploaded" });
+app.post(
+  "/api/upload-csv",
+  upload.fields([
+    { name: "preferences", maxCount: 1 },
+    { name: "resident_posting_data", maxCount: 1 },
+    { name: "posting_quotas", maxCount: 1 },
+  ]),
+  async (req, res) => {
+    if (!req.files || Object.keys(req.files).length === 0) {
+      return res
+        .status(400)
+        .json({ success: false, message: "No files uploaded" });
+    }
 
-  try {
-    const csvData = req.file.buffer.toString("utf-8");
-    const records = parse(csvData, {
-      columns: true,
-      skip_empty_lines: true,
-    });
+    try {
+      // Parse preferences.csv
+      const preferencesData = req.files.preferences[0].buffer.toString("utf-8");
+      const preferences = parse(preferencesData, {
+        columns: true,
+        skip_empty_lines: true,
+      });
 
-    // convert records to the expected format
-    const residents = records.map((r) => ({
-      id: r.id,
-      name: r.name,
-      p1: r.p1,
-      p2: r.p2,
-      p3: r.p3,
-      seniority: parseInt(r.seniority || 0),
-    }));
+      // Parse resident_posting_data.csv
+      const residentData =
+        req.files.resident_posting_data[0].buffer.toString("utf-8");
+      const residentPostingData = parse(residentData, {
+        columns: true,
+        skip_empty_lines: true,
+      });
 
-    // EXECUTE posting allocator service
+      // Parse posting_quotas.csv
+      const quotasData = req.files.posting_quotas[0].buffer.toString("utf-8");
+      const postingQuotas = parse(quotasData, {
+        columns: true,
+        skip_empty_lines: true,
+      });
 
-    // create temp JSON file with resident data
-    const inputPath = path.join(__dirname, "input.json");
-    fs.writeFileSync(inputPath, JSON.stringify({ residents }));
+      // Convert data to the expected format
+      const preferencesFormatted = preferences.map((p) => ({
+        id: p.id,
+        name: p.name,
+        year: parseInt(p.year),
+        p1: p.p1,
+        p2: p.p2,
+        p3: p.p3,
+        p4: p.p4,
+        p5: p.p5,
+      }));
 
-    // spawn python process
-    const process = spawn("python3", [
-      path.join(__dirname, "posting_allocator.py"),
-      inputPath,
-    ]);
+      const residentPostingFormatted = residentPostingData.map((r) => ({
+        id: r.id,
+        name: r.name,
+        year: parseInt(r.year),
+        posting: r.posting,
+        start_block: parseInt(r.start_block),
+        block_duration: parseInt(r.block_duration),
+        type: r.type,
+      }));
 
-    // handle output and errors
-    let output = "";
-    process.stdout.on("data", (data) => (output += data.toString()));
-    process.stderr.on("data", (err) =>
-      console.error("Posting allocation error: ", err.toString())
-    );
-    process.on("close", () => {
-      fs.unlinkSync(inputPath); // deletes temporary input file
-      try {
-        const result = JSON.parse(output);
-        res.json(result); // send response back to client
-      } catch (err) {
-        res.status(500).json({
-          success: false,
-          message: "Invalid response from script",
-        });
-      }
-    });
-  } catch (e) {
-    res.status(500).json({ success: false, message: "Failed to process file" });
+      const quotasFormatted = postingQuotas.map((q) => ({
+        course_name: q.course_name,
+        max_residents: parseInt(q.max_residents),
+        required_block_duration: parseInt(q.required_block_duration),
+      }));
+
+      // Create input data structure
+      const inputData = {
+        preferences: preferencesFormatted,
+        resident_posting_data: residentPostingFormatted,
+        posting_quotas: quotasFormatted,
+      };
+
+      // EXECUTE posting allocator service
+
+      // create temp JSON file with data
+      const inputPath = path.join(__dirname, "input.json");
+      fs.writeFileSync(inputPath, JSON.stringify(inputData));
+
+      // spawn python process
+      const process = spawn("python3", [
+        path.join(__dirname, "posting_allocator.py"),
+        inputPath,
+      ]);
+
+      // handle output and errors
+      let output = "";
+      process.stdout.on("data", (data) => (output += data.toString()));
+      process.stderr.on("data", (err) =>
+        console.error("Posting allocation error: ", err.toString())
+      );
+      process.on("close", () => {
+        fs.unlinkSync(inputPath); // deletes temporary input file
+        try {
+          const result = JSON.parse(output);
+          res.json(result); // send response back to client
+        } catch (err) {
+          res.status(500).json({
+            success: false,
+            message: "Invalid response from script",
+          });
+        }
+      });
+    } catch (e) {
+      console.error("Error processing files: ", e);
+      res
+        .status(500)
+        .json({ success: false, message: "Failed to process files" });
+    }
   }
-});
+);
 
 app.post("/api/download-csv", (req, res) => {
   try {
-    const assigned = req.body.assigned;
+    const timetable = req.body.timetable;
 
-    // if assigned is not provided or not an array, return error
-    if (!assigned || !Array.isArray(assigned)) {
+    // if timetable is not provided or not an array, return error
+    if (!timetable || !Array.isArray(timetable)) {
       return res.status(400).json({
         success: false,
-        message: "Missing or invalid 'assigned' residents in request body",
+        message: "Missing or invalid 'timetable' data in request body",
       });
     }
 
     // generate CSV content
-    const header = "id,name,p1,p2,p3,seniority,assignedPosting\n";
-    const rows = assigned
+    const header =
+      "id,name,year,p1,p2,p3,p4,p5,assigned_posting,start_block,block_duration\n";
+    const rows = timetable
       .map(
         (r) =>
-          `${r.id},${r.name},${r.p1},${r.p2},${r.p3},${r.seniority},${
-            r.assignedPosting || ""
+          `${r.id},${r.name},${r.year},${r.p1},${r.p2},${r.p3},${r.p4},${
+            r.p5
+          },${r.assigned_posting || ""},${r.start_block || ""},${
+            r.block_duration || ""
           }`
       )
-      .join("\n"); // ensure each row ends with a newline
+      .join("\n");
 
-    const csvContent = header + rows; // combine
+    const csvContent = header + rows;
 
     // set headers to trigger file download response
     res.setHeader("Content-Type", "text/csv");
     res.setHeader(
       "Content-Disposition",
-      'attachment; filename="assigned_postings.csv"'
+      'attachment; filename="final_timetable.csv"'
     );
     res.send(csvContent); // send CSV content as response
   } catch (err) {
