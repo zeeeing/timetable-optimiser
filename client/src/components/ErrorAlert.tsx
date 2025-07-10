@@ -8,4 +8,4 @@ const ErrorAlert: React.FC<{ message: string }> = ({ message }) => (
   </div>
 );
 
-export default ErrorAlert; 
+export default ErrorAlert;

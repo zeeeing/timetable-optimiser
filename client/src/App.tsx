@@ -121,7 +121,7 @@ const App: React.FC = () => {
   );
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-6">
+    <div className="min-h-screen bg-linear-to-br from-blue-50 to-indigo-100 p-6">
       <div className="max-w-4xl mx-auto bg-white rounded-xl shadow-md p-8">
         <h1 className="text-3xl font-bold text-center mb-6 text-gray-800">
           Resident Rostering: Timetable Optimiser
@@ -194,7 +194,7 @@ const App: React.FC = () => {
             <button
               onClick={handleDownloadCSV}
               disabled={isProcessing}
-              className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 disabled:opacity-50"
+              className="bg-green-600 text-white px-4 py-2 rounded-sm hover:bg-green-700 disabled:opacity-50"
             >
               {isProcessing ? "Downloading..." : "Download Final Timetable CSV"}
             </button>

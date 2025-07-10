@@ -15,8 +15,18 @@ interface Resident {
 }
 
 const monthLabels = [
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun"
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
 ];
 
 const ResidentTimetable: React.FC<{ resident: Resident }> = ({ resident }) => (
@@ -25,15 +35,21 @@ const ResidentTimetable: React.FC<{ resident: Resident }> = ({ resident }) => (
       Timetable for {resident.name}
     </h3>
     <div className="mb-4">
-      <span className="font-medium">Core Postings Completed:</span> {resident.core_count}
-      <span className="ml-6 font-medium">Elective Postings Completed:</span> {resident.elective_count}
+      <span className="font-medium">Core Postings Completed:</span>{" "}
+      {resident.core_count}
+      <span className="ml-6 font-medium">
+        Elective Postings Completed:
+      </span>{" "}
+      {resident.elective_count}
     </div>
     <div className="overflow-x-auto">
       <table className="min-w-full border border-gray-300 text-sm mb-4">
         <thead className="bg-gray-100">
           <tr>
             {monthLabels.map((label, i) => (
-              <th key={i} className="border px-2 py-1 text-center">{label}</th>
+              <th key={i} className="border px-2 py-1 text-center">
+                {label}
+              </th>
             ))}
           </tr>
         </thead>
@@ -69,4 +85,4 @@ const ResidentTimetable: React.FC<{ resident: Resident }> = ({ resident }) => (
   </div>
 );
 
-export default ResidentTimetable; 
+export default ResidentTimetable;

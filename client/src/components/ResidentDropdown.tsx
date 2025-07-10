@@ -6,17 +6,21 @@ interface ResidentDropdownProps {
   onChange: (id: string) => void;
 }
 
-const ResidentDropdown: React.FC<ResidentDropdownProps> = ({ residents, value, onChange }) => (
+const ResidentDropdown: React.FC<ResidentDropdownProps> = ({
+  residents,
+  value,
+  onChange,
+}) => (
   <div className="mb-4">
     <label className="block text-sm font-medium text-gray-700 mb-2">
       Select Resident to View Timetable:
     </label>
     <select
       value={value}
-      onChange={e => onChange(e.target.value)}
-      className="w-full max-w-md px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+      onChange={(e) => onChange(e.target.value)}
+      className="w-full max-w-md px-3 py-2 border border-gray-300 rounded-md shadow-xs focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
     >
-      {residents.map(resident => (
+      {residents.map((resident) => (
         <option key={resident.id} value={resident.id}>
           {resident.name} (Year {resident.year})
         </option>
@@ -25,4 +29,4 @@ const ResidentDropdown: React.FC<ResidentDropdownProps> = ({ residents, value, o
   </div>
 );
 
-export default ResidentDropdown; 
+export default ResidentDropdown;
