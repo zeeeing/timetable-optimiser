@@ -70,7 +70,7 @@ def allocate_timetable(
     # Objective: maximise preference satisfaction (weighted by seniority (year))
     objective_terms = []
     for i, resident in enumerate(preferences):
-        year = resident.get("year")
+        year = resident.get("year", 1)
         for rank, key in enumerate(["p1", "p2", "p3", "p4", "p5"]):
             posting = resident[key]
             if posting in postings:
