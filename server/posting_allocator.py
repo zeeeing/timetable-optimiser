@@ -131,6 +131,8 @@ def main():
     with open(sys.argv[1], "r") as f:
         data = json.load(f)
 
+    # there is an sample input JSON structure in the curr directory
+    # you may refer to that for the expected input format
     preferences = data.get("preferences", [])
     resident_posting_data = data.get("resident_posting_data", [])
     posting_quotas = data.get("posting_quotas", [])

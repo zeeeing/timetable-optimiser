@@ -194,13 +194,20 @@ const App: React.FC = () => {
         {/* Download Button */}
         {timetable && (
           <div className="mt-6 flex justify-end">
-            <button
+            <Button
+              className="bg-green-600 text-white hover:bg-green-700"
               onClick={handleDownloadCSV}
               disabled={isProcessing}
-              className="bg-green-600 text-white px-4 py-2 rounded-sm hover:bg-green-700 disabled:opacity-50"
             >
-              {isProcessing ? "Downloading..." : "Download Final Timetable CSV"}
-            </button>
+              {isProcessing ? (
+                <>
+                  <Loader2Icon className="animate-spin" />
+                  Downloading...
+                </>
+              ) : (
+                "Download Final Timetable CSV"
+              )}
+            </Button>
           </div>
         )}
       </div>

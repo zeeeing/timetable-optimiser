@@ -92,6 +92,7 @@ app.post(
       fs.writeFileSync(inputPath, JSON.stringify(inputData));
 
       // spawn python process
+      // input array contains the path to the Python script and the input file
       const process = spawn("python3", [
         path.join(__dirname, "posting_allocator.py"),
         inputPath,
@@ -109,7 +110,7 @@ app.post(
           const result = JSON.parse(output);
           res.json(result); // send response back to client
         } catch (err) {
-          // catch error relating to posting allocator
+          // catch error relating to posting allocator script response
           res.status(500).json({
             success: false,
             message: "Invalid response from script",
