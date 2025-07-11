@@ -2,8 +2,6 @@
 
 A web application for optimising and visualising resident postings and timetables.
 
----
-
 ## Features
 - Upload three CSV files: preferences, resident posting data, and posting quotas
 - Optimise resident posting assignments using a Python backend (Google OR-Tools)
@@ -11,16 +9,12 @@ A web application for optimising and visualising resident postings and timetable
 - Track and display number of core and elective postings per resident
 - Download the final timetable as a CSV
 
----
-
 ## Project Structure
 ```
 timetable-optimiser/
   client/    # React frontend (TypeScript, TailwindCSS)
   server/    # Node.js/Express backend + Python optimiser
 ```
-
----
 
 ## Setup Instructions
 
@@ -55,8 +49,6 @@ cd client
 npm run dev
 ```
 
----
-
 ## Usage
 1. Open the frontend in your browser (default: [http://localhost:5173](http://localhost:5173)).
 2. Download the sample CSVs using the "Download Sample CSV" button.
@@ -66,8 +58,6 @@ npm run dev
    - `posting_quotas.csv` (posting quotas)
 4. Click "Upload & Generate Timetable" to run the optimiser.
 5. View each resident's timetable, core/elective counts, and download the final CSV.
-
----
 
 ## CSV File Formats
 
@@ -87,19 +77,13 @@ npm run dev
 |--------------------|---------------|------------------------|
 | Cardiology         | 1             | 4                      |
 
----
-
 ## Tech Stack
 - **Frontend:** React, TypeScript, TailwindCSS
 - **Backend:** Node.js, Express
 - **Optimisation:** Python, Google OR-Tools
-
----
 
 ## Development Notes
 - All API calls are made via `/api/upload-csv` and `/api/download-csv` only.
 - The backend spawns a Python process for optimisation.
 - View Python script for list of constraints that are respected in the optimiser.
 - Frontend uses TailwindCSS and Shadcn ui library.
-
----
