@@ -1,63 +1,103 @@
-# Timetable Optimiser
+# Timetable Optimiser 🚀
 
-A web application for optimising and visualising resident postings and timetables.
+[![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=flat&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![React](https://img.shields.io/badge/React-20232A?style=flat&logo=react&logoColor=61DAFB)](https://reactjs.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-43853D?style=flat&logo=node.js&logoColor=white)](https://nodejs.org/)
+[![Express](https://img.shields.io/badge/Express.js-000000?style=flat&logo=express&logoColor=white)](https://expressjs.com/)
+[![Python](https://img.shields.io/badge/Python-3776AB?style=flat&logo=python&logoColor=white)](https://www.python.org/)
+[![Google OR-Tools](https://img.shields.io/badge/Google%20OR-Tools-000000?style=flat&logo=google-or-tools&logoColor=white)](https://developers.google.com/optimization)
 
-## Features
-- Upload three CSV files: preferences, resident posting data, and posting quotas
-- Optimise resident posting assignments using a Python backend (Google OR-Tools)
-- Visualise each resident's yearly 12-block (July–June) timetable
-- Track and display number of core and elective postings per resident
-- Download the final timetable as a CSV
+Timetable rostering and scheduling has long been a manual and tedious process where the user will have to assign postings to a resident's timetable based on numerous constraints, prerequisites, and even needing to weight each of their preferences. It takes weeks to deconflict schedules between residents, especially if the cohort is considerably large (>100 pax).
 
-## Project Structure
+Timetable Optimiser aims to automate this process and eliminate the need for manual labour.
+
+## ✨ Features
+
+- **Automated Scheduling**: Utilises Google OR-Tools for constraint programming to optimise resident schedules
+- **User-Friendly Interface**: Modern React-based frontend with an intuitive UI
+- **Data Management**: Handles three types of CSV inputs for comprehensive scheduling
+- **Real-time Visualisation**: View and interact with optimised timetables
+- **Export Capabilities**: Download optimised schedules in CSV format
+
+## 🏗 Project Structure
+
 ```
 timetable-optimiser/
-  client/    # React frontend (TypeScript, TailwindCSS)
-  server/    # Node.js/Express backend + Python optimiser
+├── client/                   # Frontend React application
+├── server/                   # Backend server
+│   ├── posting_allocator.py  # Core optimisation logic
+│   ├── server.js             # Express server
+│   └── ...
+└── README.md
 ```
 
-## Setup Instructions
+## 🚀 Getting Started
 
-### 1. Clone the repository
-```sh
-git clone <repo-url>
-cd timetable-optimiser
-```
+### Prerequisites
 
-### 2. Install dependencies
-#### Backend
-```sh
-cd server
-npm install
-pip install -r requirements.txt
-```
-#### Frontend
-```sh
-cd ../client
-npm install
-```
+- Node.js 16+ and npm/yarn
+- Python 3.8+
+- pip (Python package manager)
 
-### 3. Start the servers
-#### Backend
-```sh
-cd server
-npm start
-```
-#### Frontend
-```sh
-cd client
-npm run dev
-```
+### Installation
 
-## Usage
-1. Open the frontend in your browser (default: [http://localhost:5173](http://localhost:5173)).
-2. Download the sample CSVs using the "Download Sample CSV" button.
-3. Upload the three required CSV files:
-   - `preferences.csv` (resident preferences)
-   - `resident_posting_data.csv` (possible postings, blocks, type)
-   - `posting_quotas.csv` (posting quotas)
-4. Click "Upload & Generate Timetable" to run the optimiser.
-5. View each resident's timetable, core/elective counts, and download the final CSV.
+1. **Clone the repository**
+   ```sh
+   git clone https://github.com/zeeeing/timetable-optimiser
+   cd timetable-optimiser
+   ```
+
+2. **Set up the backend**
+   ```sh
+   cd server
+   npm install
+   pip install -r requirements.txt
+   ```
+
+3. **Set up the frontend**
+   ```sh
+   cd ../client
+   npm install
+   ```
+
+## 🏃‍♂️ Running the Application
+
+1. **Start the backend server** (from the server directory)
+   ```sh
+   cd server
+   node server.js
+   ```
+   The server will start on `http://localhost:3001`
+
+2. **Start the frontend development server** (from the client directory)
+   ```sh
+   cd client
+   npm run dev
+   ```
+   The application will be available at `http://localhost:5173`
+
+## 📝 Usage
+
+1. **Prepare your CSV files**:
+   - `preferences.csv`: Resident posting preferences
+   - `resident_posting_data.csv`: Resident past timetable information
+   - `posting_quotas.csv`: Current AY quotas for each posting
+
+2. **Upload Files**:
+   - Click "Upload CSV" buttons to select your files
+   - Ensure all three files are uploaded before proceeding
+
+3. **Optimise Schedule**:
+   - Click "Process Files" to start the optimisation
+   - Wait for the processing to complete
+
+4. **View Results**:
+   - Select a resident from the dropdown to view their optimised schedule
+   - The timetable will display their postings for the year
+   - Core and elective posting counts are shown for reference
+
+5. **Export**:
+   - Click "Download CSV" to save the optimised schedule
 
 ## CSV File Formats
 
@@ -77,13 +117,9 @@ npm run dev
 |--------------------|---------------|------------------------|
 | Cardiology         | 1             | 4                      |
 
-## Tech Stack
-- **Frontend:** React, TypeScript, TailwindCSS
-- **Backend:** Node.js, Express
-- **Optimisation:** Python, Google OR-Tools
-
 ## Development Notes
-- All API calls are made via `/api/upload-csv` and `/api/download-csv` only.
-- The backend spawns a Python process for optimisation.
-- View Python script for list of constraints that are respected in the optimiser.
-- Frontend uses TailwindCSS and Shadcn ui library.
+- API calls are made via `/api/upload-csv` or `/api/download-csv`
+- Backend spawns a Python process via child_process
+- Python script takes in parsed JSON data, outputs as JSON as well
+- The list of constraints are detailed as comments in the codebase
+- Objective: maximise residents' preferences
