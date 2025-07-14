@@ -7,33 +7,10 @@ import ErrorAlert from "./components/ErrorAlert";
 import { uploadCsv, downloadCsv } from "./api/api";
 import { Button } from "./components/ui/button";
 import { Loader2Icon } from "lucide-react";
-
-interface BlockAssignment {
-  posting: string | null;
-  type: string | null;
-}
-
-interface Resident {
-  id: string;
-  name: string;
-  year: number;
-  block_assignments: BlockAssignment[];
-  core_count: number;
-  elective_count: number;
-}
-
-interface ApiResponse {
-  success: boolean;
-  message?: string;
-  timetable?: Resident[];
-}
+import type { Resident, ApiResponse, CsvFilesState } from "./types";
 
 const App: React.FC = () => {
-  const [csvFiles, setCsvFiles] = useState<{
-    preferences: File | null;
-    resident_posting_data: File | null;
-    posting_quotas: File | null;
-  }>({
+  const [csvFiles, setCsvFiles] = useState<CsvFilesState>({
     preferences: null,
     resident_posting_data: null,
     posting_quotas: null,
