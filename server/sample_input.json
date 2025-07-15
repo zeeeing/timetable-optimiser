@@ -3,84 +3,110 @@
     {
       "mcr": "R001",
       "name": "Dr. Alice Johnson",
-      "resident_year": 2,
-      "past_history": [
-        {
-          "year": 1,
-          "blocks": [
-            { "block": 1, "posting": "GM" },
-            { "block": 2, "posting": "GM" },
-            { "block": 3, "posting": "GM" },
-            { "block": 4, "posting": "ED" },
-            { "block": 5, "posting": "CVM" },
-            { "block": 6, "posting": "CVM" },
-            { "block": 7, "posting": "CVM" },
-            { "block": 8, "posting": "GASTRO" },
-            { "block": 9, "posting": "GASTRO" },
-            { "block": 10, "posting": "GASTRO" },
-            { "block": 11, "posting": "NEPHRO" },
-            { "block": 12, "posting": "NEPHRO" }
-          ]
-        }
-      ]
+      "resident_year": 2
     },
     {
       "mcr": "R002",
       "name": "Dr. Bob Smith",
-      "resident_year": 1,
-      "past_history": []
+      "resident_year": 1
     }
   ],
-
-  "preferences": [
-    {
-      "mcr": "R001",
-      "p1": "GASTRO",
-      "p2": "ONCO",
-      "p3": "RADIO",
-      "p4": "PSYCH",
-      "p5": "DERM"
-    },
-    {
-      "mcr": "R002",
-      "p1": "GM",
-      "p2": "ED",
-      "p3": "CVM",
-      "p4": "NEPHRO",
-      "p5": "ENDO"
-    }
-  ],
-
-  "posting_quotas": [
+  "postings": [
     {
       "posting_code": "GM",
+      "posting_name": "General Medicine",
       "posting_type": "core",
       "max_residents": 4,
       "required_block_duration": 3
     },
     {
       "posting_code": "ED",
+      "posting_name": "Emergency Department",
       "posting_type": "core",
       "max_residents": 6,
       "required_block_duration": 1
     },
     {
       "posting_code": "CVM",
+      "posting_name": "Cardiovascular Medicine",
+      "posting_type": "core",
+      "max_residents": 3,
+      "required_block_duration": 3
+    },
+    {
+      "posting_code": "MICU",
+      "posting_name": "Medical ICU",
       "posting_type": "core",
       "max_residents": 3,
       "required_block_duration": 3
     },
     {
       "posting_code": "GASTRO",
+      "posting_name": "Gastroenterology",
       "posting_type": "elective",
       "max_residents": 2,
       "required_block_duration": 3
     },
     {
+      "posting_code": "NEPHRO",
+      "posting_name": "Nephrology",
+      "posting_type": "elective",
+      "max_residents": 2,
+      "required_block_duration": 2
+    },
+    {
       "posting_code": "ONCO",
+      "posting_name": "Oncology",
       "posting_type": "elective",
       "max_residents": 2,
       "required_block_duration": 3
+    },
+    {
+      "posting_code": "RADIO",
+      "posting_name": "Radiology",
+      "posting_type": "elective",
+      "max_residents": 3,
+      "required_block_duration": 2
+    },
+    {
+      "posting_code": "PSYCH",
+      "posting_name": "Psychiatry",
+      "posting_type": "elective",
+      "max_residents": 2,
+      "required_block_duration": 2
+    },
+    {
+      "posting_code": "DERM",
+      "posting_name": "Dermatology",
+      "posting_type": "elective",
+      "max_residents": 1,
+      "required_block_duration": 1
     }
+  ],
+  "resident_history": [
+    { "mcr": "R001", "year": 1, "block": 1, "posting_code": "GM" },
+    { "mcr": "R001", "year": 1, "block": 2, "posting_code": "GM" },
+    { "mcr": "R001", "year": 1, "block": 3, "posting_code": "GM" },
+    { "mcr": "R001", "year": 1, "block": 4, "posting_code": "ED" },
+    { "mcr": "R001", "year": 1, "block": 5, "posting_code": "CVM" },
+    { "mcr": "R001", "year": 1, "block": 6, "posting_code": "CVM" },
+    { "mcr": "R001", "year": 1, "block": 7, "posting_code": "CVM" },
+    { "mcr": "R001", "year": 1, "block": 8, "posting_code": "GASTRO" },
+    { "mcr": "R001", "year": 1, "block": 9, "posting_code": "GASTRO" },
+    { "mcr": "R001", "year": 1, "block": 10, "posting_code": "GASTRO" },
+    { "mcr": "R001", "year": 1, "block": 11, "posting_code": "NEPHRO" },
+    { "mcr": "R001", "year": 1, "block": 12, "posting_code": "NEPHRO" }
+  ],
+  "resident_preferences": [
+    { "mcr": "R001", "preference_rank": 1, "posting_code": "GASTRO" },
+    { "mcr": "R001", "preference_rank": 2, "posting_code": "ONCO" },
+    { "mcr": "R001", "preference_rank": 3, "posting_code": "RADIO" },
+    { "mcr": "R001", "preference_rank": 4, "posting_code": "PSYCH" },
+    { "mcr": "R001", "preference_rank": 5, "posting_code": "DERM" },
+    { "mcr": "R002", "preference_rank": 1, "posting_code": "GM" },
+    { "mcr": "R002", "preference_rank": 2, "posting_code": "ED" },
+    { "mcr": "R002", "preference_rank": 3, "posting_code": "CVM" },
+    { "mcr": "R002", "preference_rank": 4, "posting_code": "NEPHRO" },
+    { "mcr": "R002", "preference_rank": 5, "posting_code": "ONCO" }
   ]
 }

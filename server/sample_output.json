@@ -1,149 +1,181 @@
 {
   "success": true,
-
   "schedule": [
     {
       "mcr": "R001",
-      "resident_name": "John Smith",
+      "resident_name": "Dr. Alice Johnson",
       "resident_year": 2,
       "assigned_postings": [
         {
           "posting_code": "GRM",
           "posting_name": "Geriatric Medicine",
+          "posting_type": "core",
           "start_block": 1,
-          "end_block": 2,
-          "duration_blocks": 2,
-          "is_preferred": false,
-          "preference_rank": 0
+          "duration_blocks": 2
         },
         {
           "posting_code": "GASTRO",
           "posting_name": "Gastroenterology",
+          "posting_type": "elective",
           "start_block": 3,
-          "end_block": 5,
-          "duration_blocks": 3,
-          "is_preferred": true,
-          "preference_rank": 1
+          "duration_blocks": 3
         },
         {
           "posting_code": "GM",
           "posting_name": "General Medicine",
+          "posting_type": "core",
           "start_block": 6,
-          "end_block": 8,
-          "duration_blocks": 3,
-          "is_preferred": false,
-          "preference_rank": 0
+          "duration_blocks": 3
         },
         {
           "posting_code": "ED",
           "posting_name": "Emergency Department",
+          "posting_type": "core",
           "start_block": 9,
-          "end_block": 9,
-          "duration_blocks": 1,
-          "is_preferred": false,
-          "preference_rank": 0
+          "duration_blocks": 1
         },
         {
           "posting_code": "CVM",
-          "posting_name": "Cardiology",
+          "posting_name": "Cardiovascular Medicine",
+          "posting_type": "core",
           "start_block": 10,
-          "end_block": 12,
-          "duration_blocks": 3,
-          "is_preferred": false,
-          "preference_rank": 0
+          "duration_blocks": 3
         }
-      ]
+      ],
+      "preferences": [
+        {
+          "preference_rank": 1,
+          "posting_code": "GASTRO",
+          "posting_name": "Gastroenterology",
+          "satisfied": true
+        },
+        {
+          "preference_rank": 2,
+          "posting_code": "ONCO",
+          "posting_name": "Oncology",
+          "satisfied": false
+        },
+        {
+          "preference_rank": 3,
+          "posting_code": "RADIO",
+          "posting_name": "Radiology",
+          "satisfied": false
+        },
+        {
+          "preference_rank": 4,
+          "posting_code": "PSYCH",
+          "posting_name": "Psychiatry",
+          "satisfied": false
+        },
+        {
+          "preference_rank": 5,
+          "posting_code": "DERM",
+          "posting_name": "Dermatology",
+          "satisfied": false
+        }
+      ],
+      "past_history": [
+        {
+          "year": 1,
+          "blocks": [
+            { "block": 1, "posting_code": "GM", "posting_name": "General Medicine" },
+            { "block": 2, "posting_code": "GM", "posting_name": "General Medicine" },
+            { "block": 3, "posting_code": "GM", "posting_name": "General Medicine" },
+            { "block": 4, "posting_code": "ED", "posting_name": "Emergency Department" },
+            { "block": 5, "posting_code": "CVM", "posting_name": "Cardiovascular Medicine" },
+            { "block": 6, "posting_code": "CVM", "posting_name": "Cardiovascular Medicine" },
+            { "block": 7, "posting_code": "CVM", "posting_name": "Cardiovascular Medicine" },
+            { "block": 8, "posting_code": "GASTRO", "posting_name": "Gastroenterology" },
+            { "block": 9, "posting_code": "GASTRO", "posting_name": "Gastroenterology" },
+            { "block": 10, "posting_code": "GASTRO", "posting_name": "Gastroenterology" },
+            { "block": 11, "posting_code": "NEPHRO", "posting_name": "Nephrology" },
+            { "block": 12, "posting_code": "NEPHRO", "posting_name": "Nephrology" }
+          ]
+        }
+      ],
+      "statistics": {
+        "total_core_completed": 9,
+        "total_elective_completed": 3
+      }
     },
     {
       "mcr": "R002",
-      "resident_name": "Jane Doe",
+      "resident_name": "Dr. Bob Smith",
       "resident_year": 1,
       "assigned_postings": [
         {
           "posting_code": "GM",
           "posting_name": "General Medicine",
+          "posting_type": "core",
           "start_block": 1,
-          "end_block": 3,
-          "duration_blocks": 3,
-          "is_preferred": true,
-          "preference_rank": 1
+          "duration_blocks": 3
         },
         {
           "posting_code": "MICU",
           "posting_name": "Medical ICU",
+          "posting_type": "core",
           "start_block": 4,
-          "end_block": 6,
-          "duration_blocks": 3,
-          "is_preferred": false,
-          "preference_rank": 0
+          "duration_blocks": 3
         },
         {
           "posting_code": "ED",
           "posting_name": "Emergency Department",
+          "posting_type": "core",
           "start_block": 7,
-          "end_block": 7,
-          "duration_blocks": 1,
-          "is_preferred": true,
-          "preference_rank": 2
+          "duration_blocks": 1
         },
         {
           "posting_code": "NEPHRO",
           "posting_name": "Nephrology",
+          "posting_type": "elective",
           "start_block": 8,
-          "end_block": 9,
-          "duration_blocks": 2,
-          "is_preferred": true,
-          "preference_rank": 4
+          "duration_blocks": 2
         },
         {
           "posting_code": "CVM",
-          "posting_name": "Cardiology",
+          "posting_name": "Cardiovascular Medicine",
+          "posting_type": "core",
           "start_block": 10,
-          "end_block": 12,
-          "duration_blocks": 3,
-          "is_preferred": true,
-          "preference_rank": 3
+          "duration_blocks": 3
         }
-      ]
-    }
-  ],
-
-  "summary": {
-    "total_residents": 2,
-    "total_postings": 11,
-    "total_blocks": 24,
-    "preference_satisfaction": {
-      "first_preference": 2,
-      "second_preference": 1,
-      "third_preference": 1,
-      "fourth_preference": 1,
-      "fifth_preference": 0
-    },
-    "posting_utilisation": [
-      {
-        "posting_code": "GM",
-        "posting_name": "General Medicine",
-        "assigned_blocks": 6,
-        "utilisation_percentage": 12.5
-      },
-      {
-        "posting_code": "GASTRO",
-        "posting_name": "Gastroenterology",
-        "assigned_blocks": 3,
-        "utilisation_percentage": 12.5
-      },
-      {
-        "posting_code": "GRM",
-        "posting_name": "Geriatric Medicine",
-        "assigned_blocks": 2,
-        "utilisation_percentage": 8.3
-      },
-      {
-        "posting_code": "ED",
-        "posting_name": "Emergency Department",
-        "assigned_blocks": 2,
-        "utilisation_percentage": 2.8
+      ],
+      "preferences": [
+        {
+          "preference_rank": 1,
+          "posting_code": "GM",
+          "posting_name": "General Medicine",
+          "satisfied": true
+        },
+        {
+          "preference_rank": 2,
+          "posting_code": "ED",
+          "posting_name": "Emergency Department",
+          "satisfied": true
+        },
+        {
+          "preference_rank": 3,
+          "posting_code": "CVM",
+          "posting_name": "Cardiovascular Medicine",
+          "satisfied": true
+        },
+        {
+          "preference_rank": 4,
+          "posting_code": "NEPHRO",
+          "posting_name": "Nephrology",
+          "satisfied": true
+        },
+        {
+          "preference_rank": 5,
+          "posting_code": "ONCO",
+          "posting_name": "Oncology",
+          "satisfied": false
+        }
+      ],
+      "past_history": [],
+      "statistics": {
+        "total_core_completed": 10,
+        "total_elective_completed": 2
       }
-    ]
-  }
+    }
+  ]
 }
