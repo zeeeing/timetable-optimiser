@@ -1,100 +1,99 @@
-# CSV Input Guide – Must Match Backend Schema
+# CSV Input Guide (Updated)
 
-Upload order expected by `/api/upload-csv`:
-
-1. `residents` – `residents.csv`
-2. `resident_history` – `resident_history.csv`
-3. `resident_preferences` – `resident_preferences.csv`
-4. `posting_quotas` – `posting_quotas.csv`
-
-Column definitions are documented below, followed by sample rows.
+This guide describes the required CSV files and their columns for uploading data to the timetable optimiser. The backend expects four CSV files, each corresponding to a key in the input JSON:
 
 ---
 
-### 1. residents.csv
+## 1. residents.csv
+**Columns:**
+- mcr
+- name
+- resident_year
 
-Required Columns:
-
-- `mcr`
-- `name`
-- `resident_year` _(year = resident level 1 to 4, where 4 represents 'year 3+')_
-
-### 2. resident_history.csv
-
-One row per resident **per academic year**.
-
-Required Columns:
-
-- `mcr`
-- `resident_year`
-- `block_1` to `block_12` _(posting assigned per month (block), else blank)_
-
-### 3. resident_preferences.csv
-
-One row per resident.
-
-Required Columns:
-
-- `mcr`
-- `preference_1` to `preference_5` _(posting preferences ranked)_
-
-### 4. posting_quotas.csv
-
-Posting capacity per 12-block year.
-
-Required Columns:
-
-- `posting_code`
-- `posting_type` _(core / elective)_
-- `max_residents`
-- `required_block_duration` _(contiguous blocks when assigned)_
-
----
-
-### Sample Data
-
-1. `residents.csv`
-
+**Example:**
+```
 mcr,name,resident_year
-R001,John Smith,2
-R002,Jane Doe,1
-R003,Mike Johnson,3
-R004,Sarah Wilson,2
-R005,David Brown,1
+R001,Dr. Alice Johnson,2
+R002,Dr. Bob Smith,1
+```
 
-2. `resident_history.csv`
+---
 
-mcr,resident_year,block_1,block_2,block_3,block_4,block_5,block_6,block_7,block_8,block_9,block_10,block_11,block_12
-R001,2,GM,GM,GM,ED,CVM,CVM,CVM,GASTRO,GASTRO,GASTRO,NEPHRO,NEPHRO
-R002,1,,,,,,,,,,,
-R003,2,GM,GM,GM,MICU,MICU,MICU,GRM,GRM,RCCM,RCCM,RCCM,ONCO
-R003,3,ONCO,ONCO,GASTRO,GASTRO,GASTRO,ENDO,ENDO,RADIO,RADIO,PSYCH,PSYCH,ED
-R004,2,MICU,MICU,MICU,GM,GM,GM,NEPHRO,NEPHRO,CVM,CVM,CVM,DERM
-R005,1,,,,,,,,,,,
+## 2. resident_history.csv
+**Columns:**
+- mcr
+- year
+- block
+- posting_code
 
-3. `resident_preferences.csv`
+**Example:**
+```
+mcr,year,block,posting_code
+R001,1,1,GM
+R001,1,2,GM
+R001,1,3,GM
+R001,1,4,ED
+R001,1,5,CVM
+R001,1,6,CVM
+R001,1,7,CVM
+R001,1,8,GASTRO
+R001,1,9,GASTRO
+R001,1,10,GASTRO
+R001,1,11,NEPHRO
+R001,1,12,NEPHRO
+```
 
-mcr,preference_1,preference_2,preference_3,preference_4,preference_5
-R001,GASTRO,ONCO,RADIO,PSYCH,DERM
-R002,GM,ED,CVM,NEPHRO,ENDO
-R003,ENDO,DERM,PSYCH,RADIO,RHEUM
-R004,GRM,RCCM,GASTRO,ONCO,PSYCH
-R005,ED,GM,CVM,NEPHRO,GASTRO
+---
 
-4. `posting_quotas.csv`
+## 3. resident_preferences.csv
+**Columns:**
+- mcr
+- preference_rank
+- posting_code
 
-posting_code,posting_type,max_residents,required_block_duration
-GM,core,4,3
-GRM,core,2,2
-CVM,core,3,3
-RCCM,core,2,3
-MICU,core,3,3
-ED,core,6,1
-GASTRO,elective,2,3
-NEPHRO,elective,2,2
-RHEUM,elective,1,2
-ENDO,elective,2,2
-ONCO,elective,2,3
-DERM,elective,1,1
-RADIO,elective,3,2
-PSYCH,elective,2,2
+**Example:**
+```
+mcr,preference_rank,posting_code
+R001,1,GASTRO
+R001,2,ONCO
+R001,3,RADIO
+R001,4,PSYCH
+R001,5,DERM
+R002,1,GM
+R002,2,ED
+R002,3,CVM
+R002,4,NEPHRO
+R002,5,ONCO
+```
+
+---
+
+## 4. postings.csv
+**Columns:**
+- posting_code
+- posting_name
+- posting_type
+- max_residents
+- required_block_duration
+
+**Example:**
+```
+posting_code,posting_name,posting_type,max_residents,required_block_duration
+GM,General Medicine,core,4,3
+ED,Emergency Department,core,6,1
+CVM,Cardiovascular Medicine,core,3,3
+MICU,Medical ICU,core,3,3
+GASTRO,Gastroenterology,elective,2,3
+NEPHRO,Nephrology,elective,2,2
+ONCO,Oncology,elective,2,3
+RADIO,Radiology,elective,3,2
+PSYCH,Psychiatry,elective,2,2
+DERM,Dermatology,elective,1,1
+```
+
+---
+
+**Note:**
+- All CSVs must have headers as shown above.
+- All values should be comma-separated, with no extra spaces.
+- The backend will parse and convert these into the correct JSON structure for processing.

@@ -11,6 +11,32 @@
       "resident_year": 1
     }
   ],
+  "resident_history": [
+    { "mcr": "R001", "year": 1, "block": 1, "posting_code": "GM" },
+    { "mcr": "R001", "year": 1, "block": 2, "posting_code": "GM" },
+    { "mcr": "R001", "year": 1, "block": 3, "posting_code": "GM" },
+    { "mcr": "R001", "year": 1, "block": 4, "posting_code": "ED" },
+    { "mcr": "R001", "year": 1, "block": 5, "posting_code": "CVM" },
+    { "mcr": "R001", "year": 1, "block": 6, "posting_code": "CVM" },
+    { "mcr": "R001", "year": 1, "block": 7, "posting_code": "CVM" },
+    { "mcr": "R001", "year": 1, "block": 8, "posting_code": "GASTRO" },
+    { "mcr": "R001", "year": 1, "block": 9, "posting_code": "GASTRO" },
+    { "mcr": "R001", "year": 1, "block": 10, "posting_code": "GASTRO" },
+    { "mcr": "R001", "year": 1, "block": 11, "posting_code": "NEPHRO" },
+    { "mcr": "R001", "year": 1, "block": 12, "posting_code": "NEPHRO" }
+  ],
+  "resident_preferences": [
+    { "mcr": "R001", "preference_rank": 1, "posting_code": "GASTRO" },
+    { "mcr": "R001", "preference_rank": 2, "posting_code": "ONCO" },
+    { "mcr": "R001", "preference_rank": 3, "posting_code": "RADIO" },
+    { "mcr": "R001", "preference_rank": 4, "posting_code": "PSYCH" },
+    { "mcr": "R001", "preference_rank": 5, "posting_code": "DERM" },
+    { "mcr": "R002", "preference_rank": 1, "posting_code": "GM" },
+    { "mcr": "R002", "preference_rank": 2, "posting_code": "ED" },
+    { "mcr": "R002", "preference_rank": 3, "posting_code": "CVM" },
+    { "mcr": "R002", "preference_rank": 4, "posting_code": "NEPHRO" },
+    { "mcr": "R002", "preference_rank": 5, "posting_code": "ONCO" }
+  ],
   "postings": [
     {
       "posting_code": "GM",
@@ -82,31 +108,5 @@
       "max_residents": 1,
       "required_block_duration": 1
     }
-  ],
-  "resident_history": [
-    { "mcr": "R001", "year": 1, "block": 1, "posting_code": "GM" },
-    { "mcr": "R001", "year": 1, "block": 2, "posting_code": "GM" },
-    { "mcr": "R001", "year": 1, "block": 3, "posting_code": "GM" },
-    { "mcr": "R001", "year": 1, "block": 4, "posting_code": "ED" },
-    { "mcr": "R001", "year": 1, "block": 5, "posting_code": "CVM" },
-    { "mcr": "R001", "year": 1, "block": 6, "posting_code": "CVM" },
-    { "mcr": "R001", "year": 1, "block": 7, "posting_code": "CVM" },
-    { "mcr": "R001", "year": 1, "block": 8, "posting_code": "GASTRO" },
-    { "mcr": "R001", "year": 1, "block": 9, "posting_code": "GASTRO" },
-    { "mcr": "R001", "year": 1, "block": 10, "posting_code": "GASTRO" },
-    { "mcr": "R001", "year": 1, "block": 11, "posting_code": "NEPHRO" },
-    { "mcr": "R001", "year": 1, "block": 12, "posting_code": "NEPHRO" }
-  ],
-  "resident_preferences": [
-    { "mcr": "R001", "preference_rank": 1, "posting_code": "GASTRO" },
-    { "mcr": "R001", "preference_rank": 2, "posting_code": "ONCO" },
-    { "mcr": "R001", "preference_rank": 3, "posting_code": "RADIO" },
-    { "mcr": "R001", "preference_rank": 4, "posting_code": "PSYCH" },
-    { "mcr": "R001", "preference_rank": 5, "posting_code": "DERM" },
-    { "mcr": "R002", "preference_rank": 1, "posting_code": "GM" },
-    { "mcr": "R002", "preference_rank": 2, "posting_code": "ED" },
-    { "mcr": "R002", "preference_rank": 3, "posting_code": "CVM" },
-    { "mcr": "R002", "preference_rank": 4, "posting_code": "NEPHRO" },
-    { "mcr": "R002", "preference_rank": 5, "posting_code": "ONCO" }
   ]
 }

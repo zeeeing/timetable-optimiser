@@ -21,7 +21,7 @@ app.post(
     { name: "residents", maxCount: 1 },
     { name: "resident_history", maxCount: 1 },
     { name: "resident_preferences", maxCount: 1 },
-    { name: "posting_quotas", maxCount: 1 },
+    { name: "postings", maxCount: 1 },
   ]),
   async (req, res) => {
     if (!req.files || Object.keys(req.files).length === 0) {
@@ -32,28 +32,18 @@ app.post(
 
     try {
       // parse csv files
-
-      // 1. residents
       const residentsCsv = req.files.residents[0].buffer.toString("utf-8");
       const residents = parse(residentsCsv, {
         columns: true,
         skip_empty_lines: true,
       });
 
-      console.log("\n=== PARSED RESIDENTS ===");
-      console.log(JSON.stringify(residents, null, 2));
-
-      // 2. resident history
       const historyCsv = req.files.resident_history[0].buffer.toString("utf-8");
-      const residentHistories = parse(historyCsv, {
+      const residentHistory = parse(historyCsv, {
         columns: true,
         skip_empty_lines: true,
       });
 
-      console.log("\n=== PARSED RESIDENT HISTORIES ===");
-      console.log(JSON.stringify(residentHistories, null, 2));
-
-      // 3. resident preferences
       const preferencesCsv =
         req.files.resident_preferences[0].buffer.toString("utf-8");
       const residentPreferences = parse(preferencesCsv, {
@@ -61,83 +51,53 @@ app.post(
         skip_empty_lines: true,
       });
 
-      console.log("\n=== PARSED RESIDENT PREFERENCES ===");
-      console.log(JSON.stringify(residentPreferences, null, 2));
-
-      // 4. posting quotas
-      const quotasCsv = req.files.posting_quotas[0].buffer.toString("utf-8");
-      const postingQuotas = parse(quotasCsv, {
+      const postingsCsv = req.files.postings[0].buffer.toString("utf-8");
+      const postings = parse(postingsCsv, {
         columns: true,
         skip_empty_lines: true,
       });
 
-      console.log("\n=== PARSED POSTING QUOTAS ===");
-      console.log(JSON.stringify(postingQuotas, null, 2));
+      // format parsed files
+      const residentsFormatted = residents.map((r) => ({
+        mcr: r.mcr,
+        name: r.name,
+        resident_year: parseInt(r.resident_year),
+      }));
+      
+      const residentHistoryFormatted = residentHistory.map((h) => ({
+        mcr: h.mcr,
+        year: parseInt(h.year),
+        block: parseInt(h.block),
+        posting_code: h.posting_code,
+      }));
 
-      // prep input data
-      const residentHistoriesFormatted = residents.map((resident) => {
-        const entries = residentHistories
-          .filter((h) => h.mcr === resident.mcr)
-          .map((h) => {
-            const blocks = [];
-            // extract block postings (block_1 to block_12)
-            for (let i = 1; i <= 12; i++) {
-              const blockKey = `block_${i}`;
-              if (h[blockKey]) {
-                blocks.push({
-                  block: i,
-                  posting: h[blockKey],
-                });
-              }
-            }
+      const residentPreferencesFormatted = residentPreferences.map((p) => ({
+        mcr: p.mcr,
+        preference_rank: parseInt(p.preference_rank),
+        posting_code: p.posting_code,
+      }));
 
-            return {
-              resident_year: parseInt(h.resident_year),
-              blocks: blocks,
-            };
-          });
-
-        return {
-          mcr: resident.mcr,
-          name: resident.name,
-          resident_year: parseInt(resident.resident_year),
-          past_history: entries,
-        };
-      });
-
-      const residentPreferencesFormatted = residentPreferences.map((r) => {
-        return {
-          mcr: r.mcr,
-          p1: r.preference_1 || null,
-          p2: r.preference_2 || null,
-          p3: r.preference_3 || null,
-          p4: r.preference_4 || null,
-          p5: r.preference_5 || null,
-        };
-      });
-
-      const postingQuotasFormatted = postingQuotas.map((q) => ({
+      const postingsFormatted = postings.map((q) => ({
         posting_code: q.posting_code,
-        posting_type: q.posting_type || "NA", // core or elective
+        posting_name: q.posting_name,
+        posting_type: q.posting_type,
         max_residents: parseInt(q.max_residents),
-        required_block_duration: parseInt(q.required_block_duration) || 3,
+        required_block_duration: parseInt(q.required_block_duration),
       }));
 
       const inputData = {
-        residents: residentHistoriesFormatted,
-        preferences: residentPreferencesFormatted,
-        posting_quotas: postingQuotasFormatted,
-      }; // !! please see sample input json file for expected format
-
-      console.log("\n=== FINAL INPUT DATA ===");
-      console.log(JSON.stringify(inputData, null, 2));
+        residents: residentsFormatted,
+        resident_history: residentHistoryFormatted,
+        resident_preferences: residentPreferencesFormatted,
+        postings: postingsFormatted,
+      };
 
       // create temp JSON file with input data
       const inputPath = path.join(__dirname, "input.json");
       fs.writeFileSync(inputPath, JSON.stringify(inputData));
 
       // spawn python process
-      // input array contains the path to the Python script and the input file
+      // array argument contains the path to the Python script and the input file
       const process = spawn("python3", [
         path.join(__dirname, "posting_allocator.py"),
         inputPath,
@@ -172,6 +132,7 @@ app.post(
   }
 );
 
+// TO BE REFACTORED AND UPDATED
 app.post("/api/download-csv", (req, res) => {
   try {
     const timetable = req.body.timetable;
