@@ -1,9 +1,10 @@
 import React from "react";
+import type { Resident } from "../types";
 
 interface ResidentDropdownProps {
-  residents: { id: string; name: string; year: number }[];
+  residents: Resident[] | null;
   value: string;
-  onChange: (id: string) => void;
+  onChange: (mcr: string) => void;
 }
 
 const ResidentDropdown: React.FC<ResidentDropdownProps> = ({
@@ -20,9 +21,9 @@ const ResidentDropdown: React.FC<ResidentDropdownProps> = ({
       onChange={(e) => onChange(e.target.value)}
       className="w-full max-w-md px-3 py-2 border border-gray-300 rounded-md shadow-xs focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
     >
-      {residents.map((resident) => (
-        <option key={resident.id} value={resident.id}>
-          {resident.name} (Year {resident.year})
+      {residents?.map((resident) => (
+        <option key={resident.mcr} value={resident.mcr}>
+          {resident.resident_name} (Year {resident.resident_year})
         </option>
       ))}
     </select>

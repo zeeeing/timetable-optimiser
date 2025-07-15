@@ -1,123 +1,86 @@
 {
+  "residents": [
+    {
+      "mcr": "R001",
+      "name": "Dr. Alice Johnson",
+      "resident_year": 2,
+      "past_history": [
+        {
+          "year": 1,
+          "blocks": [
+            { "block": 1, "posting": "GM" },
+            { "block": 2, "posting": "GM" },
+            { "block": 3, "posting": "GM" },
+            { "block": 4, "posting": "ED" },
+            { "block": 5, "posting": "CVM" },
+            { "block": 6, "posting": "CVM" },
+            { "block": 7, "posting": "CVM" },
+            { "block": 8, "posting": "GASTRO" },
+            { "block": 9, "posting": "GASTRO" },
+            { "block": 10, "posting": "GASTRO" },
+            { "block": 11, "posting": "NEPHRO" },
+            { "block": 12, "posting": "NEPHRO" }
+          ]
+        }
+      ]
+    },
+    {
+      "mcr": "R002",
+      "name": "Dr. Bob Smith",
+      "resident_year": 1,
+      "past_history": []
+    }
+  ],
+
   "preferences": [
     {
-      "id": "R001",
-      "name": "Dr. Alice Johnson",
-      "year": 1,
-      "p1": "Cardiology",
-      "p2": "Emergency Medicine",
-      "p3": "Internal Medicine",
-      "p4": "Surgery",
-      "p5": "Pediatrics"
+      "mcr": "R001",
+      "p1": "GASTRO",
+      "p2": "ONCO",
+      "p3": "RADIO",
+      "p4": "PSYCH",
+      "p5": "DERM"
     },
     {
-      "id": "R002",
-      "name": "Dr. Bob Smith",
-      "year": 2,
-      "p1": "Emergency Medicine",
-      "p2": "Surgery",
-      "p3": "Cardiology",
-      "p4": "Internal Medicine",
-      "p5": "Pediatrics"
-    },
-    {
-      "id": "R003",
-      "name": "Dr. Carol Davis",
-      "year": 1,
-      "p1": "Internal Medicine",
-      "p2": "Pediatrics",
-      "p3": "Emergency Medicine",
-      "p4": "Cardiology",
-      "p5": "Surgery"
-    },
-    {
-      "id": "R004",
-      "name": "Dr. David Wilson",
-      "year": 3,
-      "p1": "Surgery",
-      "p2": "Cardiology",
-      "p3": "Emergency Medicine",
-      "p4": "Internal Medicine",
-      "p5": "Pediatrics"
-    },
-    {
-      "id": "R005",
-      "name": "Dr. Emma Brown",
-      "year": 2,
-      "p1": "Pediatrics",
-      "p2": "Internal Medicine",
-      "p3": "Surgery",
-      "p4": "Emergency Medicine",
-      "p5": "Cardiology"
+      "mcr": "R002",
+      "p1": "GM",
+      "p2": "ED",
+      "p3": "CVM",
+      "p4": "NEPHRO",
+      "p5": "ENDO"
     }
   ],
-  "resident_posting_data": [
-    {
-      "id": "R001",
-      "name": "Dr. Alice Johnson",
-      "year": 1,
-      "posting": "Cardiology",
-      "start_block": 1,
-      "block_duration": 4
-    },
-    {
-      "id": "R002",
-      "name": "Dr. Bob Smith",
-      "year": 2,
-      "posting": "Emergency Medicine",
-      "start_block": 5,
-      "block_duration": 4
-    },
-    {
-      "id": "R003",
-      "name": "Dr. Carol Davis",
-      "year": 1,
-      "posting": "Internal Medicine",
-      "start_block": 9,
-      "block_duration": 4
-    },
-    {
-      "id": "R004",
-      "name": "Dr. David Wilson",
-      "year": 3,
-      "posting": "Surgery",
-      "start_block": 13,
-      "block_duration": 4
-    },
-    {
-      "id": "R005",
-      "name": "Dr. Emma Brown",
-      "year": 2,
-      "posting": "Pediatrics",
-      "start_block": 17,
-      "block_duration": 4
-    }
-  ],
+
   "posting_quotas": [
     {
-      "course_name": "Cardiology",
-      "max_residents": 2,
-      "required_block_duration": 4
+      "posting_code": "GM",
+      "posting_type": "core",
+      "max_residents": 4,
+      "required_block_duration": 3
     },
     {
-      "course_name": "Emergency Medicine",
-      "max_residents": 2,
-      "required_block_duration": 4
+      "posting_code": "ED",
+      "posting_type": "core",
+      "max_residents": 6,
+      "required_block_duration": 1
     },
     {
-      "course_name": "Internal Medicine",
-      "max_residents": 2,
-      "required_block_duration": 4
+      "posting_code": "CVM",
+      "posting_type": "core",
+      "max_residents": 3,
+      "required_block_duration": 3
     },
     {
-      "course_name": "Surgery",
+      "posting_code": "GASTRO",
+      "posting_type": "elective",
       "max_residents": 2,
-      "required_block_duration": 4
+      "required_block_duration": 3
     },
     {
-      "course_name": "Pediatrics",
+      "posting_code": "ONCO",
+      "posting_type": "elective",
       "max_residents": 2,
-      "required_block_duration": 4
+      "required_block_duration": 3
     }
   ]
-} 
+}

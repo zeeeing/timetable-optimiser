@@ -1,33 +1,44 @@
 import axios from "axios";
+import type { Resident, ApiResponse } from "../types";
 
 const url = import.meta.env.VITE_API_BASE_URL || "http://localhost:3001/api";
 
-export const uploadCsv = async (formData: FormData) => {
+export const uploadCsv = async (formData: FormData): Promise<ApiResponse> => {
   try {
-    const response = await axios.post(`${url}/upload-csv`, formData, {
-      headers: { "Content-Type": "multipart/form-data" },
-    });
+    const response = await axios.post<ApiResponse>(
+      `${url}/upload-csv`,
+      formData,
+      {
+        headers: { "Content-Type": "multipart/form-data" },
+      }
+    );
     return response.data;
-  } catch (error: any) {
-    if (error.response && error.response.data) {
+  } catch (error: unknown) {
+    if (axios.isAxiosError(error) && error.response && error.response.data) {
       throw new Error(error.response.data.message || "Processing failed");
     }
-    throw new Error(error.message || "Processing failed");
+    if (error instanceof Error) {
+      throw new Error(error.message || "Processing failed");
+    }
+    throw new Error("Processing failed");
   }
 };
 
-export const downloadCsv = async (timetable: any[]) => {
+export const downloadCsv = async (timetable: Resident[]): Promise<Blob> => {
   try {
-    const response = await axios.post(
+    const response = await axios.post<Blob>(
       `${url}/download-csv`,
       { timetable },
       { responseType: "blob", headers: { "Content-Type": "application/json" } }
     );
     return response.data;
-  } catch (error: any) {
-    if (error.response && error.response.data) {
+  } catch (error: unknown) {
+    if (axios.isAxiosError(error) && error.response && error.response.data) {
       throw new Error(error.response.data.message || "Failed to download CSV");
     }
-    throw new Error(error.message || "Failed to download CSV");
+    if (error instanceof Error) {
+      throw new Error(error.message || "Failed to download CSV");
+    }
+    throw new Error("Failed to download CSV");
   }
 };

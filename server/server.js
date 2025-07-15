@@ -18,8 +18,9 @@ const upload = multer({ storage: multer.memoryStorage() });
 app.post(
   "/api/upload-csv",
   upload.fields([
-    { name: "preferences", maxCount: 1 },
-    { name: "resident_posting_data", maxCount: 1 },
+    { name: "residents", maxCount: 1 },
+    { name: "resident_history", maxCount: 1 },
+    { name: "resident_preferences", maxCount: 1 },
     { name: "posting_quotas", maxCount: 1 },
   ]),
   async (req, res) => {
@@ -30,64 +31,108 @@ app.post(
     }
 
     try {
-      // parse
-      const preferencesData = req.files.preferences[0].buffer.toString("utf-8");
-      const preferences = parse(preferencesData, {
+      // parse csv files
+
+      // 1. residents
+      const residentsCsv = req.files.residents[0].buffer.toString("utf-8");
+      const residents = parse(residentsCsv, {
         columns: true,
         skip_empty_lines: true,
       });
 
-      const residentData =
-        req.files.resident_posting_data[0].buffer.toString("utf-8");
-      const residentPostingData = parse(residentData, {
+      console.log("\n=== PARSED RESIDENTS ===");
+      console.log(JSON.stringify(residents, null, 2));
+
+      // 2. resident history
+      const historyCsv = req.files.resident_history[0].buffer.toString("utf-8");
+      const residentHistories = parse(historyCsv, {
         columns: true,
         skip_empty_lines: true,
       });
 
-      const quotasData = req.files.posting_quotas[0].buffer.toString("utf-8");
-      const postingQuotas = parse(quotasData, {
+      console.log("\n=== PARSED RESIDENT HISTORIES ===");
+      console.log(JSON.stringify(residentHistories, null, 2));
+
+      // 3. resident preferences
+      const preferencesCsv =
+        req.files.resident_preferences[0].buffer.toString("utf-8");
+      const residentPreferences = parse(preferencesCsv, {
         columns: true,
         skip_empty_lines: true,
       });
 
-      // convert data to the expected format
-      const preferencesFormatted = preferences.map((p) => ({
-        id: p.id,
-        name: p.name,
-        year: parseInt(p.year),
-        p1: p.p1,
-        p2: p.p2,
-        p3: p.p3,
-        p4: p.p4,
-        p5: p.p5,
-      }));
+      console.log("\n=== PARSED RESIDENT PREFERENCES ===");
+      console.log(JSON.stringify(residentPreferences, null, 2));
 
-      const residentPostingFormatted = residentPostingData.map((r) => ({
-        id: r.id,
-        name: r.name,
-        year: parseInt(r.year),
-        posting: r.posting,
-        start_block: parseInt(r.start_block),
-        block_duration: parseInt(r.block_duration),
-        type: r.type,
-      }));
+      // 4. posting quotas
+      const quotasCsv = req.files.posting_quotas[0].buffer.toString("utf-8");
+      const postingQuotas = parse(quotasCsv, {
+        columns: true,
+        skip_empty_lines: true,
+      });
 
-      const quotasFormatted = postingQuotas.map((q) => ({
-        course_name: q.course_name,
+      console.log("\n=== PARSED POSTING QUOTAS ===");
+      console.log(JSON.stringify(postingQuotas, null, 2));
+
+      // prep input data
+      const residentHistoriesFormatted = residents.map((resident) => {
+        const entries = residentHistories
+          .filter((h) => h.mcr === resident.mcr)
+          .map((h) => {
+            const blocks = [];
+            // extract block postings (block_1 to block_12)
+            for (let i = 1; i <= 12; i++) {
+              const blockKey = `block_${i}`;
+              if (h[blockKey]) {
+                blocks.push({
+                  block: i,
+                  posting: h[blockKey],
+                });
+              }
+            }
+
+            return {
+              resident_year: parseInt(h.resident_year),
+              blocks: blocks,
+            };
+          });
+
+        return {
+          mcr: resident.mcr,
+          name: resident.name,
+          resident_year: parseInt(resident.resident_year),
+          past_history: entries,
+        };
+      });
+
+      const residentPreferencesFormatted = residentPreferences.map((r) => {
+        return {
+          mcr: r.mcr,
+          p1: r.preference_1 || null,
+          p2: r.preference_2 || null,
+          p3: r.preference_3 || null,
+          p4: r.preference_4 || null,
+          p5: r.preference_5 || null,
+        };
+      });
+
+      const postingQuotasFormatted = postingQuotas.map((q) => ({
+        posting_code: q.posting_code,
+        posting_type: q.posting_type || "NA", // core or elective
         max_residents: parseInt(q.max_residents),
-        required_block_duration: parseInt(q.required_block_duration),
+        required_block_duration: parseInt(q.required_block_duration) || 3,
       }));
 
-      // create input data structure
       const inputData = {
-        preferences: preferencesFormatted,
-        resident_posting_data: residentPostingFormatted,
-        posting_quotas: quotasFormatted,
-      };
+        residents: residentHistoriesFormatted,
+        preferences: residentPreferencesFormatted,
+        posting_quotas: postingQuotasFormatted,
+      }; // !! please see sample input json file for expected format
 
-      // EXECUTE posting allocator service
+      console.log("\n=== FINAL INPUT DATA ===");
+      console.log(JSON.stringify(inputData, null, 2));
 
-      // create temp JSON file with data
+      // create temp JSON file with input data
       const inputPath = path.join(__dirname, "input.json");
       fs.writeFileSync(inputPath, JSON.stringify(inputData));
 
@@ -139,18 +184,25 @@ app.post("/api/download-csv", (req, res) => {
       });
     }
 
-    // generate CSV content
+    // generate CSV content for 12 block posting
     const header =
-      "id,name,year,p1,p2,p3,p4,p5,assigned_posting,start_block,block_duration\n";
+      "mcr,resident_year," +
+      Array.from({ length: 12 }, (_, i) => `block_${i + 1}`).join(",") +
+      "\n";
     const rows = timetable
-      .map(
-        (r) =>
-          `${r.id},${r.name},${r.year},${r.p1},${r.p2},${r.p3},${r.p4},${
-            r.p5
-          },${r.assigned_posting || ""},${r.start_block || ""},${
-            r.block_duration || ""
-          }`
-      )
+      .map((r) => {
+        const blocks = Array(12).fill("");
+        r.assigned_postings.forEach((posting) => {
+          for (
+            let i = posting.start_block - 1;
+            i < posting.start_block - 1 + posting.duration_blocks;
+            i++
+          ) {
+            blocks[i] = posting.posting_code;
+          }
+        });
+        return `${r.mcr},${r.resident_year},${blocks.join(",")}`;
+      })
       .join("\n");
 
     const csvContent = header + rows;

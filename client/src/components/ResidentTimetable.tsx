@@ -1,18 +1,5 @@
 import React from "react";
-
-interface BlockAssignment {
-  posting: string | null;
-  type: string | null;
-}
-
-interface Resident {
-  id: string;
-  name: string;
-  year: number;
-  block_assignments: BlockAssignment[];
-  core_count: number;
-  elective_count: number;
-}
+import type { Resident } from "../types";
 
 const monthLabels = [
   "Jul",
@@ -32,15 +19,15 @@ const monthLabels = [
 const ResidentTimetable: React.FC<{ resident: Resident }> = ({ resident }) => (
   <div className="bg-gray-50 rounded-lg p-6 mb-6">
     <h3 className="text-lg font-semibold mb-4 text-gray-800">
-      Timetable for {resident.name}
+      Timetable for {resident.resident_name}
     </h3>
     <div className="mb-4">
       <span className="font-medium">Core Postings Completed:</span>{" "}
-      {resident.core_count}
+      {/* {resident.core_count} */}
       <span className="ml-6 font-medium">
         Elective Postings Completed:
       </span>{" "}
-      {resident.elective_count}
+      {/* {resident.elective_count} */}
     </div>
     <div className="overflow-x-auto">
       <table className="min-w-full border border-gray-300 text-sm mb-4">
@@ -55,13 +42,13 @@ const ResidentTimetable: React.FC<{ resident: Resident }> = ({ resident }) => (
         </thead>
         <tbody>
           <tr>
-            {resident.block_assignments.map((block, i) => (
+            {resident.assigned_postings.map((block, i) => (
               <td
                 key={i}
                 className={`border px-2 py-1 text-center ${
-                  block.type === "core"
+                  block.posting_type === "core"
                     ? "bg-blue-100"
-                    : block.type === "elective"
+                    : block.posting_type === "elective"
                     ? "bg-yellow-100"
                     : "bg-gray-100"
                 }`}

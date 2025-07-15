@@ -11,12 +11,15 @@ import type { Resident, ApiResponse, CsvFilesState } from "./types";
 
 const App: React.FC = () => {
   const [csvFiles, setCsvFiles] = useState<CsvFilesState>({
-    preferences: null,
-    resident_posting_data: null,
+    residents: null,
+    resident_history: null,
+    resident_preferences: null,
     posting_quotas: null,
   });
   const [isProcessing, setIsProcessing] = useState(false);
-  const [timetable, setTimetable] = useState<Resident[] | null>(null);
+  const [residentTimetables, setResidentTimetables] = useState<
+    Resident[] | null
+  >(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedResident, setSelectedResident] = useState<string>("");
 
@@ -31,13 +34,14 @@ const App: React.FC = () => {
       }
       setCsvFiles((prev) => ({ ...prev, [fileType]: file }));
       setError(null);
-      setTimetable(null);
+      setResidentTimetables(null);
     };
 
-  const processFiles = async () => {
+  const handleProcessFiles = async () => {
     if (
-      !csvFiles.preferences ||
-      !csvFiles.resident_posting_data ||
+      !csvFiles.residents ||
+      !csvFiles.resident_history ||
+      !csvFiles.resident_preferences ||
       !csvFiles.posting_quotas
     ) {
       setError("Please upload all three CSV files");
@@ -48,29 +52,34 @@ const App: React.FC = () => {
     setError(null);
 
     const formData = new FormData();
-    formData.append("preferences", csvFiles.preferences);
-    formData.append("resident_posting_data", csvFiles.resident_posting_data);
+    formData.append("residents", csvFiles.residents);
+    formData.append("resident_history", csvFiles.resident_history);
+    formData.append("resident_preferences", csvFiles.resident_preferences);
     formData.append("posting_quotas", csvFiles.posting_quotas);
 
     try {
       const json: ApiResponse = await uploadCsv(formData);
-      if (json.success && json.timetable) {
-        setTimetable(json.timetable);
-        if (json.timetable.length > 0) {
-          setSelectedResident(json.timetable[0].id);
+      if (json.success && json.schedule) {
+        setResidentTimetables(json.schedule || null);
+        if (json.schedule && json.schedule.length > 0) {
+          setSelectedResident(json.schedule[0].mcr);
         }
       } else {
-        throw new Error(json.message || "Processing failed");
+        throw new Error("Processing failed");
       }
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError("An unknown error occurred");
+      }
     } finally {
       setIsProcessing(false);
     }
   };
 
   const handleDownloadCSV = async () => {
-    if (!timetable || timetable.length === 0) {
+    if (!residentTimetables || residentTimetables.length === 0) {
       setError("No timetable data available to download");
       return;
     }
@@ -79,7 +88,7 @@ const App: React.FC = () => {
     setError(null);
 
     try {
-      const blob = await downloadCsv(timetable);
+      const blob = await downloadCsv(residentTimetables);
       const downloadUrl = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = downloadUrl;
@@ -88,15 +97,19 @@ const App: React.FC = () => {
       a.click();
       a.remove();
       window.URL.revokeObjectURL(downloadUrl);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError("An unknown error occurred");
+      }
     } finally {
       setIsProcessing(false);
     }
   };
 
-  const selectedResidentData = timetable?.find(
-    (r) => r.id === selectedResident
+  const selectedResidentData = residentTimetables?.find(
+    (r) => r.mcr === selectedResident
   );
 
   return (
@@ -107,14 +120,18 @@ const App: React.FC = () => {
         </h1>
 
         {/* Upload Section */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
           <FileUpload
-            label="Preferences CSV"
-            onChange={handleFileUpload("preferences")}
+            label="Residents CSV"
+            onChange={handleFileUpload("residents")}
           />
           <FileUpload
-            label="Resident Posting Data CSV"
-            onChange={handleFileUpload("resident_posting_data")}
+            label="Resident History CSV"
+            onChange={handleFileUpload("resident_history")}
+          />
+          <FileUpload
+            label="Resident Preferences CSV"
+            onChange={handleFileUpload("resident_preferences")}
           />
           <FileUpload
             label="Posting Quotas CSV"
@@ -125,11 +142,12 @@ const App: React.FC = () => {
         {/* Buttons */}
         <div className="flex flex-col space-y-2 sm:flex-row sm:gap-4 justify-center mb-6">
           <Button
-            onClick={processFiles}
+            onClick={handleProcessFiles}
             disabled={
               isProcessing ||
-              !csvFiles.preferences ||
-              !csvFiles.resident_posting_data ||
+              !csvFiles.residents ||
+              !csvFiles.resident_preferences ||
+              !csvFiles.resident_history ||
               !csvFiles.posting_quotas
             }
             className="bg-blue-600 text-white hover:bg-blue-700"
@@ -152,13 +170,13 @@ const App: React.FC = () => {
         {error && <ErrorAlert message={error} />}
 
         {/* Timetable Results */}
-        {timetable && (
+        {residentTimetables && (
           <div className="mt-6">
             <h2 className="text-lg font-semibold mb-4 text-gray-700">
               Generated Timetable
             </h2>
             <ResidentDropdown
-              residents={timetable}
+              residents={residentTimetables}
               value={selectedResident}
               onChange={setSelectedResident}
             />
@@ -169,7 +187,7 @@ const App: React.FC = () => {
         )}
 
         {/* Download Button */}
-        {timetable && (
+        {residentTimetables && (
           <div className="mt-6 flex justify-end">
             <Button
               className="bg-green-600 text-white hover:bg-green-700"
