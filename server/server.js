@@ -63,7 +63,7 @@ app.post(
         name: r.name,
         resident_year: parseInt(r.resident_year),
       }));
-      
+
       const residentHistoryFormatted = residentHistory.map((h) => ({
         mcr: h.mcr,
         year: parseInt(h.year),
@@ -132,37 +132,58 @@ app.post(
   }
 );
 
-// TO BE REFACTORED AND UPDATED
 app.post("/api/download-csv", (req, res) => {
   try {
-    const timetable = req.body.timetable;
+    // extract only necessary data from request body
+    const { residents, resident_history, postings } = req.body;
 
-    // if timetable is not provided or not an array, return error
-    if (!timetable || !Array.isArray(timetable)) {
+    // if required data is not provided, return error
+    if (
+      !residents ||
+      !Array.isArray(residents) ||
+      !resident_history ||
+      !Array.isArray(resident_history) ||
+      !postings ||
+      !Array.isArray(postings)
+    ) {
       return res.status(400).json({
         success: false,
-        message: "Missing or invalid 'timetable' data in request body",
+        message: "Missing or invalid data in request body",
       });
     }
 
-    // generate CSV content for 12 block posting
+    // create posting code to posting name lookup map
+    const postingMap = {};
+    postings.forEach((p) => {
+      postingMap[p.posting_code] = p.posting_name;
+    });
+
+    // filter for current year postings only
+    const currentYearAssignments = resident_history.filter(
+      (h) => h.is_current_year === true
+    );
+
+    // generate CSV content
     const header =
-      "mcr,resident_year," +
-      Array.from({ length: 12 }, (_, i) => `block_${i + 1}`).join(",") +
-      "\n";
-    const rows = timetable
-      .map((r) => {
-        const blocks = Array(12).fill("");
-        r.assigned_postings.forEach((posting) => {
-          for (
-            let i = posting.start_block - 1;
-            i < posting.start_block - 1 + posting.duration_blocks;
-            i++
-          ) {
-            blocks[i] = posting.posting_code;
-          }
-        });
-        return `${r.mcr},${r.resident_year},${blocks.join(",")}`;
+      "mcr,name,resident_year,year,block,posting_code,posting_name\n";
+    const rows = currentYearAssignments
+      .map((entry) => {
+        const resident = residents.find((r) => r.mcr === entry.mcr);
+        const postingName =
+          postingMap[entry.posting_code] || entry.posting_code;
+
+        return `${entry.mcr},${resident?.name || ""},${
+          resident?.resident_year || ""
+        },${entry.year},${entry.block},${entry.posting_code},${postingName}`;
+      })
+      .sort((a, b) => {
+        // sort by MCR, then by year, then by block
+        const aParts = a.split(",");
+        const bParts = b.split(",");
+        if (aParts[0] !== bParts[0]) return aParts[0].localeCompare(bParts[0]);
+        if (aParts[3] !== bParts[3])
+          return parseInt(aParts[3]) - parseInt(bParts[3]);
+        return parseInt(aParts[4]) - parseInt(bParts[4]);
       })
       .join("\n");
 
@@ -172,7 +193,7 @@ app.post("/api/download-csv", (req, res) => {
     res.setHeader("Content-Type", "text/csv");
     res.setHeader(
       "Content-Disposition",
-      'attachment; filename="final_timetable.csv"'
+      'attachment; filename="optimised_timetable.csv"'
     );
     res.send(csvContent); // send CSV content as response
   } catch (err) {
