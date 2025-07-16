@@ -6,6 +6,7 @@ import ResidentTimetable from "./components/ResidentTimetable";
 import ErrorAlert from "./components/ErrorAlert";
 import { uploadCsv, downloadCsv } from "./api/api";
 import { Button } from "./components/ui/button";
+import { Separator } from "./components/ui/separator";
 import { Loader2Icon } from "lucide-react";
 import type { Resident, ApiResponse, CsvFilesState } from "./types";
 
@@ -14,12 +15,11 @@ const App: React.FC = () => {
     residents: null,
     resident_history: null,
     resident_preferences: null,
-    posting_quotas: null,
+    postings: null,
   });
   const [isProcessing, setIsProcessing] = useState(false);
-  const [residentTimetables, setResidentTimetables] = useState<
-    Resident[] | null
-  >(null);
+  const [residents, setResidents] = useState<Resident[] | null>(null);
+  const [apiResponse, setApiResponse] = useState<ApiResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedResident, setSelectedResident] = useState<string>("");
 
@@ -34,7 +34,7 @@ const App: React.FC = () => {
       }
       setCsvFiles((prev) => ({ ...prev, [fileType]: file }));
       setError(null);
-      setResidentTimetables(null);
+      setResidents(null);
     };
 
   const handleProcessFiles = async () => {
@@ -42,9 +42,9 @@ const App: React.FC = () => {
       !csvFiles.residents ||
       !csvFiles.resident_history ||
       !csvFiles.resident_preferences ||
-      !csvFiles.posting_quotas
+      !csvFiles.postings
     ) {
-      setError("Please upload all three CSV files");
+      setError("Please upload all four CSV files");
       return;
     }
 
@@ -55,14 +55,15 @@ const App: React.FC = () => {
     formData.append("residents", csvFiles.residents);
     formData.append("resident_history", csvFiles.resident_history);
     formData.append("resident_preferences", csvFiles.resident_preferences);
-    formData.append("posting_quotas", csvFiles.posting_quotas);
+    formData.append("postings", csvFiles.postings);
 
     try {
       const json: ApiResponse = await uploadCsv(formData);
-      if (json.success && json.schedule) {
-        setResidentTimetables(json.schedule || null);
-        if (json.schedule && json.schedule.length > 0) {
-          setSelectedResident(json.schedule[0].mcr);
+      if (json.success && json.residents) {
+        setResidents(json.residents);
+        setApiResponse(json);
+        if (json.residents.length > 0) {
+          setSelectedResident(json.residents[0].mcr);
         }
       } else {
         throw new Error("Processing failed");
@@ -79,7 +80,7 @@ const App: React.FC = () => {
   };
 
   const handleDownloadCSV = async () => {
-    if (!residentTimetables || residentTimetables.length === 0) {
+    if (!apiResponse) {
       setError("No timetable data available to download");
       return;
     }
@@ -88,11 +89,11 @@ const App: React.FC = () => {
     setError(null);
 
     try {
-      const blob = await downloadCsv(residentTimetables);
+      const blob = await downloadCsv(apiResponse);
       const downloadUrl = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = downloadUrl;
-      a.download = "final_timetable.csv";
+      a.download = "timetable_assignments.csv";
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -108,13 +109,13 @@ const App: React.FC = () => {
     }
   };
 
-  const selectedResidentData = residentTimetables?.find(
+  const selectedResidentData = residents?.find(
     (r) => r.mcr === selectedResident
   );
 
   return (
     <div className="min-h-screen bg-linear-to-br from-blue-50 to-indigo-100 p-6">
-      <div className="max-w-6xl mx-auto bg-white rounded-xl shadow-md p-8">
+      <div className="max-w-7xl mx-auto bg-white rounded-xl shadow-md p-8">
         <h1 className="text-3xl font-bold text-center mb-6 text-gray-800">
           Resident Rostering: Timetable Optimiser
         </h1>
@@ -134,13 +135,13 @@ const App: React.FC = () => {
             onChange={handleFileUpload("resident_preferences")}
           />
           <FileUpload
-            label="Posting Quotas CSV"
-            onChange={handleFileUpload("posting_quotas")}
+            label="Postings CSV"
+            onChange={handleFileUpload("postings")}
           />
         </div>
 
         {/* Buttons */}
-        <div className="flex flex-col space-y-2 sm:flex-row sm:gap-4 justify-center mb-6">
+        <div className="flex flex-col gap-2 sm:flex-row sm:gap-4 justify-center items-center">
           <Button
             onClick={handleProcessFiles}
             disabled={
@@ -148,7 +149,7 @@ const App: React.FC = () => {
               !csvFiles.residents ||
               !csvFiles.resident_preferences ||
               !csvFiles.resident_history ||
-              !csvFiles.posting_quotas
+              !csvFiles.postings
             }
             className="bg-blue-600 text-white hover:bg-blue-700"
           >
@@ -170,24 +171,25 @@ const App: React.FC = () => {
         {error && <ErrorAlert message={error} />}
 
         {/* Timetable Results */}
-        {residentTimetables && (
+        {residents && (
           <div className="mt-6">
-            <h2 className="text-lg font-semibold mb-4 text-gray-700">
-              Generated Timetable
-            </h2>
+            <Separator className="my-6" />
             <ResidentDropdown
-              residents={residentTimetables}
+              residents={residents}
               value={selectedResident}
               onChange={setSelectedResident}
             />
-            {selectedResidentData && (
-              <ResidentTimetable resident={selectedResidentData} />
+            {selectedResidentData && apiResponse && (
+              <ResidentTimetable
+                resident={selectedResidentData}
+                apiResponse={apiResponse}
+              />
             )}
           </div>
         )}
 
         {/* Download Button */}
-        {residentTimetables && (
+        {residents && (
           <div className="mt-6 flex justify-end">
             <Button
               className="bg-green-600 text-white hover:bg-green-700"

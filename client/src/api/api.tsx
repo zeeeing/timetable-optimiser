@@ -1,5 +1,5 @@
 import axios from "axios";
-import type { Resident, ApiResponse } from "../types";
+import type { ApiResponse } from "../types";
 
 const url = import.meta.env.VITE_API_BASE_URL || "http://localhost:3001/api";
 
@@ -24,11 +24,11 @@ export const uploadCsv = async (formData: FormData): Promise<ApiResponse> => {
   }
 };
 
-export const downloadCsv = async (timetable: Resident[]): Promise<Blob> => {
+export const downloadCsv = async (apiResponse: ApiResponse): Promise<Blob> => {
   try {
     const response = await axios.post<Blob>(
       `${url}/download-csv`,
-      { timetable },
+      apiResponse,
       { responseType: "blob", headers: { "Content-Type": "application/json" } }
     );
     return response.data;

@@ -2,43 +2,49 @@ import type { CsvRow } from "../types";
 
 export function generateSampleCSV(): void {
   const residents: CsvRow[] = [
-    { mcr: "R001", name: "John Smith", resident_year: 2 },
-    { mcr: "R002", name: "Jane Doe", resident_year: 1 },
+    { mcr: "R001", name: "Dr. Alice Johnson", resident_year: 2 },
+    { mcr: "R002", name: "Dr. Bob Smith", resident_year: 1 },
   ];
 
   const residentHistory: CsvRow[] = [
-    {
-      mcr: "R001",
-      resident_year: 1,
-      block_1: "GRM",
-      block_2: "GRM",
-      block_3: "GASTRO",
-      block_4: "GASTRO",
-      block_5: "GASTRO",
-      block_6: "GM",
-      block_7: "GM",
-      block_8: "GM",
-      block_9: "ED",
-      block_10: "CVM",
-      block_11: "CVM",
-      block_12: "CVM",
-    }
-    // no history entry for the Year 1 resident (R002) as they're in their first year
+    { mcr: "R001", year: 1, block: 1, posting_code: "GM" },
+    { mcr: "R001", year: 1, block: 2, posting_code: "GM" },
+    { mcr: "R001", year: 1, block: 3, posting_code: "GM" },
+    { mcr: "R001", year: 1, block: 4, posting_code: "ED" },
+    { mcr: "R001", year: 1, block: 5, posting_code: "CVM" },
+    { mcr: "R001", year: 1, block: 6, posting_code: "CVM" },
+    { mcr: "R001", year: 1, block: 7, posting_code: "CVM" },
+    { mcr: "R001", year: 1, block: 8, posting_code: "GASTRO" },
+    { mcr: "R001", year: 1, block: 9, posting_code: "GASTRO" },
+    { mcr: "R001", year: 1, block: 10, posting_code: "GASTRO" },
+    { mcr: "R001", year: 1, block: 11, posting_code: "NEPHRO" },
+    { mcr: "R001", year: 1, block: 12, posting_code: "NEPHRO" },
   ];
 
   const residentPreferences: CsvRow[] = [
-    { mcr: "R001", preference_1: "GASTRO", preference_2: "GM", preference_3: "", preference_4: "", preference_5: "" },
-    { mcr: "R002", preference_1: "GM", preference_2: "ED", preference_3: "CVM", preference_4: "NEPHRO", preference_5: "" },
+    { mcr: "R001", preference_rank: 1, posting_code: "GASTRO" },
+    { mcr: "R001", preference_rank: 2, posting_code: "ONCO" },
+    { mcr: "R001", preference_rank: 3, posting_code: "RADIO" },
+    { mcr: "R001", preference_rank: 4, posting_code: "PSYCH" },
+    { mcr: "R001", preference_rank: 5, posting_code: "DERM" },
+    { mcr: "R002", preference_rank: 1, posting_code: "GM" },
+    { mcr: "R002", preference_rank: 2, posting_code: "ED" },
+    { mcr: "R002", preference_rank: 3, posting_code: "CVM" },
+    { mcr: "R002", preference_rank: 4, posting_code: "NEPHRO" },
+    { mcr: "R002", preference_rank: 5, posting_code: "ONCO" },
   ];
 
-  const postingQuotas: CsvRow[] = [
-    { posting_code: "GRM", posting_type: "core", max_residents: 2, required_block_duration: 2 },
-    { posting_code: "GASTRO", posting_type: "core", max_residents: 1, required_block_duration: 3 },
-    { posting_code: "GM", posting_type: "core", max_residents: 2, required_block_duration: 3 },
-    { posting_code: "ED", posting_type: "core", max_residents: 1, required_block_duration: 1 },
-    { posting_code: "CVM", posting_type: "core", max_residents: 1, required_block_duration: 3 },
-    { posting_code: "MICU", posting_type: "core", max_residents: 1, required_block_duration: 3 },
-    { posting_code: "NEPHRO", posting_type: "core", max_residents: 1, required_block_duration: 2 },
+  const postings: CsvRow[] = [
+    { posting_code: "GM", posting_name: "General Medicine", posting_type: "core", max_residents: 4, required_block_duration: 3 },
+    { posting_code: "ED", posting_name: "Emergency Department", posting_type: "core", max_residents: 6, required_block_duration: 1 },
+    { posting_code: "CVM", posting_name: "Cardiovascular Medicine", posting_type: "core", max_residents: 3, required_block_duration: 3 },
+    { posting_code: "MICU", posting_name: "Medical ICU", posting_type: "core", max_residents: 3, required_block_duration: 3 },
+    { posting_code: "GASTRO", posting_name: "Gastroenterology", posting_type: "elective", max_residents: 2, required_block_duration: 3 },
+    { posting_code: "NEPHRO", posting_name: "Nephrology", posting_type: "elective", max_residents: 2, required_block_duration: 2 },
+    { posting_code: "ONCO", posting_name: "Oncology", posting_type: "elective", max_residents: 2, required_block_duration: 3 },
+    { posting_code: "RADIO", posting_name: "Radiology", posting_type: "elective", max_residents: 3, required_block_duration: 2 },
+    { posting_code: "PSYCH", posting_name: "Psychiatry", posting_type: "elective", max_residents: 2, required_block_duration: 2 },
+    { posting_code: "DERM", posting_name: "Dermatology", posting_type: "elective", max_residents: 1, required_block_duration: 1 },
   ];
 
   // convert object arrays to CSV string
@@ -55,7 +61,7 @@ export function generateSampleCSV(): void {
     { filename: "sample_residents.csv", content: toCsv(residents) },
     { filename: "sample_resident_history.csv", content: toCsv(residentHistory) },
     { filename: "sample_resident_preferences.csv", content: toCsv(residentPreferences) },
-    { filename: "sample_posting_quotas.csv", content: toCsv(postingQuotas) },
+    { filename: "sample_postings.csv", content: toCsv(postings) },
   ];
 
   // trigger downloads

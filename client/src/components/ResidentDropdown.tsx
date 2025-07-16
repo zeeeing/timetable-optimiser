@@ -1,33 +1,60 @@
-import React from "react";
+import React, { useMemo } from "react";
 import type { Resident } from "../types";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectGroup,
+  SelectLabel,
+  SelectItem,
+} from "./ui/select";
 
-interface ResidentDropdownProps {
+const ResidentDropdown: React.FC<{
   residents: Resident[] | null;
   value: string;
   onChange: (mcr: string) => void;
-}
+}> = ({ residents, value, onChange }) => {
+  // memoize grouped residents by year
+  const grouped = useMemo(() => {
+    if (!residents) return {};
+    return residents.reduce((acc, resident) => {
+      const year = resident.resident_year;
+      if (!acc[year]) acc[year] = [];
+      acc[year].push(resident);
+      return acc;
+    }, {} as Record<number, Resident[]>);
+  }, [residents]);
 
-const ResidentDropdown: React.FC<ResidentDropdownProps> = ({
-  residents,
-  value,
-  onChange,
-}) => (
-  <div className="mb-4">
-    <label className="block text-sm font-medium text-gray-700 mb-2">
-      Select Resident to View Timetable:
-    </label>
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="w-full max-w-md px-3 py-2 border border-gray-300 rounded-md shadow-xs focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-    >
-      {residents?.map((resident) => (
-        <option key={resident.mcr} value={resident.mcr}>
-          {resident.resident_name} (Year {resident.resident_year})
-        </option>
-      ))}
-    </select>
-  </div>
-);
+  const selectedResident = residents?.find((r) => r.mcr === value);
+
+  return (
+    <div className="mb-4 w-full max-w-md">
+      <Select onValueChange={onChange}>
+        <SelectTrigger className="w-full">
+          <SelectValue placeholder="Select Resident to View Timetable">
+            {selectedResident
+              ? `${selectedResident.name} (Year ${selectedResident.resident_year})`
+              : null}
+          </SelectValue>
+        </SelectTrigger>
+        <SelectContent>
+          {Object.keys(grouped)
+            .sort((a, b) => Number(a) - Number(b))
+            .map((year) => (
+              <SelectGroup key={year}>
+                <SelectLabel>{`Year ${year}`}</SelectLabel>
+                {grouped[Number(year)].map((resident) => (
+                  <SelectItem key={resident.mcr} value={resident.mcr}>
+                    {resident.name} (Year {resident.resident_year})
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+};
 
 export default ResidentDropdown;
