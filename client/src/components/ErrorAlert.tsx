@@ -1,10 +1,16 @@
 import React from "react";
-import { AlertCircle } from "lucide-react";
+import { AlertCircleIcon } from "lucide-react";
+import { Alert, AlertTitle, AlertDescription } from "./ui/alert";
 
 const ErrorAlert: React.FC<{ message: string }> = ({ message }) => (
-  <div className="bg-red-100 border border-red-300 text-red-700 rounded-lg p-4 flex items-center mb-6">
-    <AlertCircle className="w-5 h-5 mr-2" />
-    <span>{message}</span>
+  <div className="flex items-center my-6">
+    <Alert variant="destructive">
+      <AlertCircleIcon />
+      <AlertTitle>{message}</AlertTitle>
+      <AlertDescription>
+        <p>Please contact the administrator should this error persist.</p>
+      </AlertDescription>
+    </Alert>
   </div>
 );
 
