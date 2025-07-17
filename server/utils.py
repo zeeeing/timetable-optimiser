@@ -1,15 +1,129 @@
 from typing import List, Dict, Set
 
 
-def parse_resident_history(resident_history: List[Dict]) -> Dict[str, Set[str]]:
+def get_completed_postings(
+    resident_history: List[Dict], posting_info: Dict
+) -> Dict[str, Set[str]]:
     """
-    Parse resident_history (flat array) into a map of mcr -> set of completed postings
+    Get the set of truly completed postings based on duration requirements
+
+    Output:
+      {
+        mcr: {posting_code}
+      }
+    """
+    history_map = parse_resident_history(resident_history)
+    completed_postings_map = {}
+
+    for mcr, posting_counts in history_map.items():
+        completed_postings_map[mcr] = set()
+        for posting_code, blocks_completed in posting_counts.items():
+            if is_posting_completed(posting_code, blocks_completed, posting_info):
+                completed_postings_map[mcr].add(posting_code)
+
+    return completed_postings_map
+
+
+def get_posting_progress(
+    resident_history: List[Dict], posting_info: Dict
+) -> Dict[str, Dict[str, Dict[str, int]]]:
+    """
+    Get detailed progress for each resident's postings
+
+    Output:
+      {
+        mcr: {
+          posting_code: {
+            "completed": int,
+            "required": int,
+            "is_completed": bool
+          }
+        }
+      }
+    """
+    history_map = parse_resident_history(resident_history)
+    progress_map = {}
+
+    for mcr, posting_counts in history_map.items():
+        progress_map[mcr] = {}
+        for posting_code, blocks_completed in posting_counts.items():
+            base_posting = posting_code.split(" (")[0]
+            posting_data = posting_info.get(posting_code, {})
+            posting_type = posting_data.get("posting_type", "elective")
+
+            if posting_type == "core":
+                required_blocks = CORE_REQUIREMENTS.get(base_posting, 0)
+            else:
+                required_blocks = 1  # Electives require at least 1 block
+
+            progress_map[mcr][posting_code] = {
+                "completed": blocks_completed,
+                "required": required_blocks,
+                "is_completed": blocks_completed >= required_blocks,
+            }
+
+    return progress_map
+
+
+# helpers
+def parse_resident_history(resident_history: List[Dict]) -> Dict[str, Dict[str, int]]:
+    """
+    Parse resident_history (flat array) into a map of mcr -> {posting_code: block_count}
+
+    Example output:
+      {
+        "R001": {
+          "GM (TTSH)": 3,
+          "CVM (TTSH)": 2,
+        }
+      }
+
+    This tracks how many blocks each resident has completed for each posting
     """
     history_map = {}
-    for entry in resident_history:
-        mcr = entry["mcr"]
-        posting_code = entry["posting_code"]
+    for hist in resident_history:
+        mcr = hist["mcr"]
+        posting_code = hist["posting_code"]
         if mcr not in history_map:
-            history_map[mcr] = set()
-        history_map[mcr].add(posting_code)
+            history_map[mcr] = {}
+        if posting_code not in history_map[mcr]:
+            history_map[mcr][posting_code] = 0
+        history_map[mcr][posting_code] += 1
     return history_map
+
+
+def is_posting_completed(
+    posting_code: str, blocks_completed: int, posting_info: Dict
+) -> bool:
+    """
+    Determine if a posting is completed based on its type and requirements
+
+    Output:
+      bool
+    """
+    # Extract the base posting name (e.g., GM from "GM (TTSH)")
+    base_posting = posting_code.split(" (")[0]
+    # Get posting info
+    posting_data = posting_info.get(posting_code, {})
+    posting_type = posting_data.get("posting_type", "elective")
+
+    if posting_type == "core":
+        # For core postings, check against CORE_REQUIREMENTS
+        required_blocks = CORE_REQUIREMENTS.get(base_posting, 0)
+        return blocks_completed >= required_blocks
+    else:
+        # For elective postings, consider completed if they've done at least 1 block
+        # This prevents repeating electives they've already experienced
+        return blocks_completed >= 1
+
+
+CORE_REQUIREMENTS = {
+    # total blocks required for each core posting
+    "GM": 9,
+    "GRM": 2,
+    "CVM": 3,
+    "RCCM": 3,
+    "MICU": 3,
+    "ED": 1,
+    "NL": 3,
+}
