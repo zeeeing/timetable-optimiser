@@ -75,11 +75,15 @@ const ResidentTimetable: React.FC<{
             </p>
           </div>
           <div className="space-x-2">
+            {Object.entries(resident.core_blocks_completed).map(
+              ([key, value]) => (
+                <Badge variant="outline" className="text-sm">
+                  {key} : {value}
+                </Badge>
+              )
+            )}
             <Badge variant="outline" className="text-sm">
-              Total Core Completed: {resident.total_core_completed}
-            </Badge>
-            <Badge variant="outline" className="text-sm">
-              Total Elective Completed: {resident.total_elective_completed}
+              Total Electives Completed: {resident.unique_electives_completed}
             </Badge>
           </div>
         </div>
@@ -145,7 +149,7 @@ const ResidentTimetable: React.FC<{
               })}
 
             {/* Current year */}
-            <TableRow className="bg-blue-100">
+            <TableRow className="bg-blue-100 hover:bg-blue-200">
               <TableCell className="font-semibold">Current Year</TableCell>
               {monthLabels.map((month, index) => {
                 const blockNumber = index + 1;

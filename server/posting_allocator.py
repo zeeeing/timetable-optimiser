@@ -2,7 +2,12 @@ import json
 import sys
 from typing import List, Dict
 from ortools.sat.python import cp_model
-from utils import get_completed_postings, get_posting_progress
+from utils import (
+    get_completed_postings,
+    get_posting_progress,
+    get_unique_electives_completed,
+    get_core_blocks_completed,
+)
 import logging
 
 logging.basicConfig(level=logging.INFO)
@@ -18,11 +23,23 @@ def allocate_timetable(
     logger.info("STARTING POSTING ALLOCATION SERVICE")
     model = cp_model.CpModel()
 
+    ## DEFINE VARIABLES
+
+    # create map of posting codes to posting info
     posting_info = {p["posting_code"]: p for p in postings}
+    # create list of posting codes
     posting_codes = list(posting_info.keys())
+    # create list of blocks
     blocks = list(range(1, 13))
 
-    # Map resident MCRs to their preferences (ranked)
+    # create map of resident mcr to their preferences
+    # example output:
+    # {
+    #   "R001": {
+    #     1: "Gastro (TTSH)",
+    #     ...
+    #   }
+    # }
     pref_map = {}
     for pref in resident_preferences:
         mcr = pref["mcr"]
@@ -30,11 +47,13 @@ def allocate_timetable(
             pref_map[mcr] = {}
         pref_map[mcr][pref["preference_rank"]] = pref["posting_code"]
 
-    # Parse resident history (completed postings) - now with proper completion logic
+    # get resident history of completed postings
     completed_postings_map = get_completed_postings(resident_history, posting_info)
+    # get posting progress for each resident
     posting_progress = get_posting_progress(resident_history, posting_info)
 
-    # Create decision variables
+    ## CREATE DECISION VARIABLES
+
     x = {}
     for resident in residents:
         mcr = resident["mcr"]
@@ -44,13 +63,15 @@ def allocate_timetable(
             for block in blocks:
                 x[mcr][posting][block] = model.NewBoolVar(f"x_{mcr}_{posting}_{block}")
 
-    # Constraint: Each resident can be assigned to at most one posting per block
+    ## DEFINE CONSTRAINTS
+
+    # General Constraint 1: Each resident can be assigned to at most one posting per block
     for resident in residents:
         mcr = resident["mcr"]
         for block in blocks:
             model.AddAtMostOne(x[mcr][p][block] for p in posting_codes)
 
-    # Constraint: Respect max residents per posting
+    # General Constraint 2: Respect max residents per posting
     for posting in posting_codes:
         max_residents = posting_info[posting]["max_residents"]
         for block in blocks:
@@ -58,7 +79,7 @@ def allocate_timetable(
                 sum(x[r["mcr"]][posting][block] for r in residents) <= max_residents
             )
 
-    # Constraint: Residents can't be assigned to postings they've already completed
+    # General Constraint 3: Residents can't be assigned to postings they've already completed
     for resident in residents:
         mcr = resident["mcr"]
         completed_postings = completed_postings_map.get(mcr, set())
@@ -68,13 +89,96 @@ def allocate_timetable(
                     # Is resident `mcr` assigned to posting `posting` in block `block`?
                     model.Add(x[mcr][posting][block] == 0)
 
-    # Constraint: Ensure core posting requirements are met (only for Year 3 residents)
+    # General Constraint 4: Enforce required_block_duration for each posting per resident
+    for resident in residents:
+        mcr = resident["mcr"]
+        for posting_code in posting_codes:
+            required_duration = posting_info[posting_code].get(
+                "required_block_duration", 1
+            )
+            total_blocks = sum(x[mcr][posting_code][block] for block in blocks)
+            assigned = model.NewBoolVar(f"assigned_{mcr}_{posting_code}")
+            x[mcr][posting_code][
+                "assigned_var"
+            ] = assigned  # Store for later use in objective
+            model.Add(total_blocks == required_duration).OnlyEnforceIf(assigned)
+            model.Add(total_blocks == 0).OnlyEnforceIf(assigned.Not())
+
+    # Y1 Constraint: Ensure RCCM and MICU minimums
+    for resident in residents:
+        mcr = resident["mcr"]
+        resident_year = resident.get("resident_year", 1)
+        if resident_year == 1:
+            # Find all RCCM and MICU posting codes (any site)
+            rccm_postings = [p for p in posting_codes if p.startswith("RCCM")]
+            micu_postings = [p for p in posting_codes if p.startswith("MICU")]
+            # RCCM: at least 2 blocks
+            model.Add(
+                sum(x[mcr][p][block] for p in rccm_postings for block in blocks) >= 2
+            )
+            # MICU: at least 1 block
+            model.Add(
+                sum(x[mcr][p][block] for p in micu_postings for block in blocks) >= 1
+            )
+
+    # Y2/Y3 Constraint: Ensure minimum electives completed by end of each year
     for resident in residents:
         mcr = resident["mcr"]
         resident_year = resident.get("resident_year", 1)
         resident_progress = posting_progress.get(mcr, {})
 
-        # Only enforce core requirements for Year 3 residents
+        # Count completed electives from history
+        completed_electives = 0
+        for posting_code, progress in resident_progress.items():
+            posting_data = posting_info.get(posting_code, {})
+            if (
+                posting_data.get("posting_type") == "elective"
+                and progress["is_completed"]
+            ):
+                completed_electives += 1
+
+        # For Year 2 residents: must have at least 2 electives completed by end of year 2
+        if resident_year == 2:
+            # Count new elective assignments in this allocation
+            new_elective_assignments = []
+            for posting_code in posting_codes:
+                posting_data = posting_info[posting_code]
+                if posting_data.get("posting_type") == "elective":
+                    # Check if this elective is not already completed
+                    if not resident_progress.get(posting_code, {}).get(
+                        "is_completed", False
+                    ):
+                        for block in blocks:
+                            new_elective_assignments.append(x[mcr][posting_code][block])
+
+            # Total electives = completed from history + new assignments
+            # Must be at least 2 by end of year 2
+            model.Add(completed_electives + sum(new_elective_assignments) >= 2)
+
+        # For Year 3 residents: must have at least 5 electives completed by end of year 3
+        elif resident_year == 3:
+            # Count new elective assignments in this allocation
+            new_elective_assignments = []
+            for posting_code in posting_codes:
+                posting_data = posting_info[posting_code]
+                if posting_data.get("posting_type") == "elective":
+                    # Check if this elective is not already completed
+                    if not resident_progress.get(posting_code, {}).get(
+                        "is_completed", False
+                    ):
+                        for block in blocks:
+                            new_elective_assignments.append(x[mcr][posting_code][block])
+
+            # Total electives = completed from history + new assignments
+            # Must be at least 5 by end of year 3
+            model.Add(completed_electives + sum(new_elective_assignments) >= 5)
+
+    # Y3 Constraint: Ensure core posting requirements are met
+    for resident in residents:
+        mcr = resident["mcr"]
+        resident_year = resident.get("resident_year", 1)
+        resident_progress = posting_progress.get(mcr, {})
+
         if resident_year == 3:
             for posting_code in posting_codes:
                 posting_data = posting_info[posting_code]
@@ -95,22 +199,7 @@ def allocate_timetable(
                             == blocks_needed
                         )
 
-    # Constraint: Ensure RCCM and MICU minimums in Year 1
-    for resident in residents:
-        mcr = resident["mcr"]
-        resident_year = resident.get("resident_year", 1)
-        if resident_year == 1:
-            # Find all RCCM and MICU posting codes (any site)
-            rccm_postings = [p for p in posting_codes if p.startswith("RCCM")]
-            micu_postings = [p for p in posting_codes if p.startswith("MICU")]
-            # RCCM: at least 2 blocks
-            model.Add(
-                sum(x[mcr][p][block] for p in rccm_postings for block in blocks) >= 2
-            )
-            # MICU: at least 1 block
-            model.Add(
-                sum(x[mcr][p][block] for p in micu_postings for block in blocks) >= 1
-            )
+    ## DEFINE OBJECTIVE
 
     # Objective: Maximise preference satisfaction (weighted by preference rank)
     preference_weights = []
@@ -136,9 +225,24 @@ def allocate_timetable(
             for block in blocks:
                 seniority_bonus.append(resident_year * x[mcr][posting][block] * 0.1)
 
-    model.Maximize(sum(preference_weights) + sum(seniority_bonus))
+    # Add core completion bonus
+    core_completion_bonus = []
+    core_bonus_value = 10  # Adjust this value as needed
+    for resident in residents:
+        mcr = resident["mcr"]
+        for posting_code in posting_codes:
+            posting_data = posting_info[posting_code]
+            if posting_data.get("posting_type") == "core":
+                assigned = x[mcr][posting_code].get("assigned_var", None)
+                if assigned is not None:
+                    core_completion_bonus.append(core_bonus_value * assigned)
 
-    # Solve the model
+    model.Maximize(
+        sum(preference_weights) + sum(seniority_bonus) + sum(core_completion_bonus)
+    )
+
+    ## SOLVE MODEL AND PROCESS RESULTS
+
     logger.info("Initialising CP-SAT solver")
     solver = cp_model.CpSolver()
     status = solver.Solve(model)
@@ -148,16 +252,12 @@ def allocate_timetable(
 
     if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
         logger.info("Solver found a feasible or optimal solution, processing results")
-        # Prepare the result
         output_residents = []
         output_history = [dict(h, is_current_year=False) for h in resident_history]
         for resident in residents:
             mcr = resident["mcr"]
-            # Build new year assignments
-            # Find the next year for this resident
             years = [h["year"] for h in resident_history if h["mcr"] == mcr]
             next_year = max(years) + 1 if years else resident["resident_year"]
-            # Collect new assignments
             new_blocks = []
             for posting in posting_codes:
                 assigned_blocks = [
@@ -175,54 +275,28 @@ def allocate_timetable(
                             "is_current_year": True,
                         }
                     )
-            # Add to output_history
             output_history.extend(new_blocks)
-            # Calculate stats
-            core = 0
-            elective = 0
-            # From history
-            for h in [
-                h
-                for h in output_history
-                if h["mcr"] == mcr and not h["is_current_year"]
-            ]:
-                code = h["posting_code"]
-                if (
-                    code in posting_info
-                    and posting_info[code]["posting_type"] == "core"
-                ):
-                    core += 1
-                elif (
-                    code in posting_info
-                    and posting_info[code]["posting_type"] == "elective"
-                ):
-                    elective += 1
-            # From new assignments
-            for h in [
-                h for h in output_history if h["mcr"] == mcr and h["is_current_year"]
-            ]:
-                code = h["posting_code"]
-                if (
-                    code in posting_info
-                    and posting_info[code]["posting_type"] == "core"
-                ):
-                    core += 1
-                elif (
-                    code in posting_info
-                    and posting_info[code]["posting_type"] == "elective"
-                ):
-                    elective += 1
-            # Add to output_residents
+
+            # update history with current year data, filter by current resident
+            updated_history = [h for h in output_history if h["mcr"] == mcr]
+            progress = get_posting_progress(updated_history, posting_info).get(
+                mcr, {}
+            )
+            # get core blocks completed and unique electives completed
+            core_blocks_completed = get_core_blocks_completed(progress, posting_info)
+            unique_electives_completed = len(
+                get_unique_electives_completed(progress, posting_info)
+            )
+            # append results
             output_residents.append(
                 {
                     "mcr": mcr,
                     "name": resident["name"],
                     "resident_year": resident["resident_year"],
-                    "total_core_completed": core,
-                    "total_elective_completed": elective,
+                    "core_blocks_completed": core_blocks_completed,
+                    "unique_electives_completed": unique_electives_completed,
                 }
             )
-        # Compose output
         return {
             "success": True,
             "residents": output_residents,

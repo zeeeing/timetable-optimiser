@@ -2,8 +2,12 @@ export interface Resident {
   mcr: string;
   name: string;
   resident_year: number;
-  total_core_completed: number;
-  total_elective_completed: number;
+  core_blocks_completed: CoreBlocksCompleted;
+  unique_electives_completed: number;
+}
+
+export interface CoreBlocksCompleted {
+  [key: string]: number;
 }
 
 export interface ResidentHistory {

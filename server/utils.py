@@ -1,11 +1,12 @@
 from typing import List, Dict, Set
+from collections import defaultdict
 
 
 def get_completed_postings(
     resident_history: List[Dict], posting_info: Dict
 ) -> Dict[str, Set[str]]:
     """
-    Get the set of truly completed postings based on duration requirements
+    Get the set of completed postings per resident
 
     Output:
       {
@@ -37,7 +38,8 @@ def get_posting_progress(
             "completed": int,
             "required": int,
             "is_completed": bool
-          }
+          },
+          ...
         }
       }
     """
@@ -63,6 +65,44 @@ def get_posting_progress(
             }
 
     return progress_map
+
+
+def get_unique_electives_completed(
+    progress: Dict[str, Dict], posting_info: Dict
+) -> Set[str]:
+    """
+    Given a resident's posting progress and posting_info, return the set of unique electives completed.
+    """
+    unique_electives = set()
+    for posting_code, details in progress.items():
+        posting_data = posting_info.get(posting_code, {})
+        if posting_data.get("posting_type") == "elective":
+            blocks_completed = details.get("completed", 0)
+            if is_posting_completed(posting_code, blocks_completed, posting_info):
+                unique_electives.add(posting_code)
+    return unique_electives
+
+
+def get_core_blocks_completed(
+    progress: Dict[str, Dict], posting_info: Dict
+) -> Dict[str, int]:
+    """
+    Given a resident's posting progress and posting_info, return a dict of base core posting name to total blocks completed.
+
+    Example output:
+      {
+        "GM": 3,
+        "GRM": 2,
+        "CVM": 3,
+      }
+    """
+    core_blocks = defaultdict(int)
+    for posting_code, details in progress.items():
+        posting_data = posting_info.get(posting_code, {})
+        if posting_data.get("posting_type") == "core":
+            base_posting = posting_code.split(" (")[0]
+            core_blocks[base_posting] += details.get("completed", 0)
+    return dict(core_blocks)
 
 
 # helpers
@@ -127,3 +167,5 @@ CORE_REQUIREMENTS = {
     "ED": 1,
     "NL": 3,
 }
+
+CCR_POSTINGS = ["GM (NUH)", "GM (SGH)", "GM (CGH)", "GM (SKH)", "GM (WH)"]
