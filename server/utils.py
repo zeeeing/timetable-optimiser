@@ -67,22 +67,6 @@ def get_posting_progress(
     return progress_map
 
 
-def get_unique_electives_completed(
-    progress: Dict[str, Dict], posting_info: Dict
-) -> Set[str]:
-    """
-    Given a resident's posting progress and posting_info, return the set of unique electives completed.
-    """
-    unique_electives = set()
-    for posting_code, details in progress.items():
-        posting_data = posting_info.get(posting_code, {})
-        if posting_data.get("posting_type") == "elective":
-            blocks_completed = details.get("completed", 0)
-            if is_posting_completed(posting_code, blocks_completed, posting_info):
-                unique_electives.add(posting_code)
-    return unique_electives
-
-
 def get_core_blocks_completed(
     progress: Dict[str, Dict], posting_info: Dict
 ) -> Dict[str, int]:
@@ -103,6 +87,35 @@ def get_core_blocks_completed(
             base_posting = posting_code.split(" (")[0]
             core_blocks[base_posting] += details.get("completed", 0)
     return dict(core_blocks)
+
+
+def get_unique_electives_completed(
+    progress: Dict[str, Dict], posting_info: Dict
+) -> Set[str]:
+    """
+    Given a resident's posting progress and posting_info, return the set of unique electives completed.
+    """
+    unique_electives = set()
+    for posting_code, details in progress.items():
+        posting_data = posting_info.get(posting_code, {})
+        if posting_data.get("posting_type") == "elective":
+            blocks_completed = details.get("completed", 0)
+            if is_posting_completed(posting_code, blocks_completed, posting_info):
+                unique_electives.add(posting_code)
+    return unique_electives
+
+
+def get_ccr_completion_status(
+    completed_postings: set,
+) -> dict:
+    """
+    Given a set of completed postings, return CCR completion status.
+    Returns: {"completed": bool, "posting_code": str}
+    """
+    for posting_code in CCR_POSTINGS:
+        if posting_code in completed_postings:
+            return {"completed": True, "posting_code": posting_code}
+    return {"completed": False, "posting_code": "-"}
 
 
 # helpers

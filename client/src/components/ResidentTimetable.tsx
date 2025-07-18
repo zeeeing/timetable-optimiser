@@ -1,6 +1,6 @@
 import React from "react";
 import type { Resident, ApiResponse } from "../types";
-import { monthLabels } from "../utils/constants";
+import { monthLabels } from "../lib/constants";
 import {
   Table,
   TableBody,
@@ -84,6 +84,19 @@ const ResidentTimetable: React.FC<{
             )}
             <Badge variant="outline" className="text-sm">
               Total Electives Completed: {resident.unique_electives_completed}
+            </Badge>
+            <Badge
+              variant="outline"
+              className={`text-sm ${
+                resident.ccr_completed.completed
+                  ? "bg-green-100 text-green-800"
+                  : "bg-red-100 text-red-800"
+              }`}
+            >
+              CCR Completed : {resident.ccr_completed.completed ? "YES" : "NO"}
+            </Badge>
+            <Badge variant="outline" className="text-sm">
+              CCR Posting : {resident.ccr_completed.posting_code}
             </Badge>
           </div>
         </div>

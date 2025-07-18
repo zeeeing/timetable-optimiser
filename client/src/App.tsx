@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { generateSampleCSV } from "./utils/generateSampleCSV";
+import { generateSampleCSV } from "./lib/generateSampleCSV";
 import FileUpload from "./components/FileUpload";
 import ResidentDropdown from "./components/ResidentDropdown";
 import ResidentTimetable from "./components/ResidentTimetable";

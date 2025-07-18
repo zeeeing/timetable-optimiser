@@ -7,6 +7,7 @@ export function generateSampleCSV(): void {
   ];
 
   const residentHistory: CsvRow[] = [
+    // R001
     { mcr: "R001", year: 1, block: 1, posting_code: "GM (TTSH)" },
     { mcr: "R001", year: 1, block: 2, posting_code: "GM (TTSH)" },
     { mcr: "R001", year: 1, block: 3, posting_code: "GM (TTSH)" },
@@ -21,7 +22,6 @@ export function generateSampleCSV(): void {
     { mcr: "R001", year: 1, block: 12, posting_code: "NL (NNI)" },
   ];
 
-  // Preferences only for electives in the updated postings list
   const residentPreferences: CsvRow[] = [
     { mcr: "R001", preference_rank: 1, posting_code: "Gastro (TTSH)" },
     { mcr: "R001", preference_rank: 2, posting_code: "Endocrine (KTPH)" },

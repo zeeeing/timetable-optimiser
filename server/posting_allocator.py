@@ -7,6 +7,8 @@ from utils import (
     get_posting_progress,
     get_unique_electives_completed,
     get_core_blocks_completed,
+    get_ccr_completion_status,
+    CCR_POSTINGS,
 )
 import logging
 
@@ -104,6 +106,40 @@ def allocate_timetable(
             model.Add(total_blocks == required_duration).OnlyEnforceIf(assigned)
             model.Add(total_blocks == 0).OnlyEnforceIf(assigned.Not())
 
+    # General Constraint 5: Enforce required_block_duration happens in consecutive blocks
+    for resident in residents:
+        mcr = resident["mcr"]
+        for posting_code in posting_codes:
+            required_duration = posting_info[posting_code].get(
+                "required_block_duration", 1
+            )
+            if required_duration > 1:
+                window_vars = []
+                # iterate over blocks to find all possible windows of required duration
+                for start in range(1, len(blocks) - required_duration + 2):
+                    # for each possible start block, create a list of blocks in the window
+                    window = [
+                        x[mcr][posting_code][block]
+                        for block in range(start, start + required_duration)
+                    ]
+                    # create a boolean variable for the window
+                    window_var = model.NewBoolVar(
+                        f"window_{mcr}_{posting_code}_{start}"
+                    )
+                    # link window variable to block assignments
+                    # If window_var = 1 (window is selected):
+                    # AddBoolAnd(window) means ALL blocks in this window must be assigned (1)
+                    model.AddBoolAnd(window).OnlyEnforceIf(window_var)
+                    # If window_var = 0 (window is not selected):
+                    # AddBoolOr([b.Not() for b in window]) means AT LEAST ONE block is NOT assigned (0)
+                    model.AddBoolOr([b.Not() for b in window]).OnlyEnforceIf(
+                        window_var.Not()
+                    )
+                    # add the window variable to the list
+                    window_vars.append(window_var)
+                # add constraint that only one window can be selected if assigned
+                model.Add(sum(window_vars) == x[mcr][posting_code]["assigned_var"])
+
     # Y1 Constraint: Ensure RCCM and MICU minimums
     for resident in residents:
         mcr = resident["mcr"]
@@ -182,7 +218,11 @@ def allocate_timetable(
         if resident_year == 3:
             for posting_code in posting_codes:
                 posting_data = posting_info[posting_code]
+                # For GM, exclude CCR_POSTINGS from the core requirement
                 if posting_data["posting_type"] == "core":
+                    base_posting = posting_code.split(" (")[0]
+                    if base_posting == "GM" and posting_code in CCR_POSTINGS:
+                        continue  # Skip CCR_POSTINGS for GM core requirement
                     # Get current progress for this posting
                     current_progress = resident_progress.get(
                         posting_code, {"completed": 0, "required": 0}
@@ -198,6 +238,34 @@ def allocate_timetable(
                             sum(x[mcr][posting_code][block] for block in blocks)
                             == blocks_needed
                         )
+
+    # CCR constraint: ensure only one CCR posting is ever assigned per resident
+    for resident in residents:
+        mcr = resident["mcr"]
+        resident_year = resident.get("resident_year", 1)
+        # Check if resident has completed any CCR posting in history
+        completed_ccr = None
+        for posting_code in CCR_POSTINGS:
+            if posting_code in completed_postings_map.get(mcr, set()):
+                completed_ccr = posting_code
+                break
+
+        if completed_ccr:
+            # Prevent assignment to all other CCR postings in any block
+            for posting_code in CCR_POSTINGS:
+                if posting_code != completed_ccr and posting_code in posting_codes:
+                    for block in blocks:
+                        model.Add(x[mcr][posting_code][block] == 0)
+        elif resident_year == 2 or resident_year == 3:
+            # Only apply CCR constraint to Year 2 or Year 3 residents who haven't completed CCR
+            new_ccr_postings = []
+            for posting_code in CCR_POSTINGS:
+                if posting_code in posting_codes:
+                    if posting_code not in completed_postings_map.get(mcr, set()):
+                        for block in blocks:
+                            new_ccr_postings.append(x[mcr][posting_code][block])
+            # Must be exactly 1 CCR posting completed by end of Year 2 or Year 3 (if missed in Year 2)
+            model.Add(sum(new_ccr_postings) == 1)
 
     ## DEFINE OBJECTIVE
 
@@ -279,13 +347,20 @@ def allocate_timetable(
 
             # update history with current year data, filter by current resident
             updated_history = [h for h in output_history if h["mcr"] == mcr]
-            progress = get_posting_progress(updated_history, posting_info).get(
+            resident_progress = get_posting_progress(updated_history, posting_info).get(
                 mcr, {}
             )
             # get core blocks completed and unique electives completed
-            core_blocks_completed = get_core_blocks_completed(progress, posting_info)
+            core_blocks_completed = get_core_blocks_completed(
+                resident_progress, posting_info
+            )
             unique_electives_completed = len(
-                get_unique_electives_completed(progress, posting_info)
+                get_unique_electives_completed(resident_progress, posting_info)
+            )
+            # get CCR completion status
+            completed_postings = get_completed_postings(updated_history, posting_info)
+            ccr_completion_status = get_ccr_completion_status(
+                completed_postings.get(mcr, set())
             )
             # append results
             output_residents.append(
@@ -295,6 +370,7 @@ def allocate_timetable(
                     "resident_year": resident["resident_year"],
                     "core_blocks_completed": core_blocks_completed,
                     "unique_electives_completed": unique_electives_completed,
+                    "ccr_completed": ccr_completion_status,
                 }
             )
         return {
