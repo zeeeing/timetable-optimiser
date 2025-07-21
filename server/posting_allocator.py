@@ -7,8 +7,6 @@ from utils import (
     get_posting_progress,
     get_unique_electives_completed,
     get_core_blocks_completed,
-    get_ccr_completion_status,
-    CCR_POSTINGS,
 )
 import logging
 
@@ -218,11 +216,14 @@ def allocate_timetable(
         if resident_year == 3:
             for posting_code in posting_codes:
                 posting_data = posting_info[posting_code]
-                # For GM, exclude CCR_POSTINGS from the core requirement
+                # For GM, exclude CCR from the core requirement
                 if posting_data["posting_type"] == "core":
                     base_posting = posting_code.split(" (")[0]
-                    if base_posting == "GM" and posting_code in CCR_POSTINGS:
-                        continue  # Skip CCR_POSTINGS for GM core requirement
+                    if (
+                        base_posting == "GM"
+                        and posting_info[posting_code].get("posting_type") == "CCR"
+                    ):
+                        continue  # Skip CCR for GM core requirement
                     # Get current progress for this posting
                     current_progress = resident_progress.get(
                         posting_code, {"completed": 0, "required": 0}
@@ -243,23 +244,27 @@ def allocate_timetable(
     for resident in residents:
         mcr = resident["mcr"]
         resident_year = resident.get("resident_year", 1)
+        # Find all CCR postings
+        ccr_postings = [
+            p for p in posting_codes if posting_info[p].get("posting_type") == "CCR"
+        ]
         # Check if resident has completed any CCR posting in history
         completed_ccr = None
-        for posting_code in CCR_POSTINGS:
+        for posting_code in ccr_postings:
             if posting_code in completed_postings_map.get(mcr, set()):
                 completed_ccr = posting_code
                 break
 
         if completed_ccr:
             # Prevent assignment to all other CCR postings in any block
-            for posting_code in CCR_POSTINGS:
+            for posting_code in ccr_postings:
                 if posting_code != completed_ccr and posting_code in posting_codes:
                     for block in blocks:
                         model.Add(x[mcr][posting_code][block] == 0)
         elif resident_year == 2 or resident_year == 3:
             # Only apply CCR constraint to Year 2 or Year 3 residents who haven't completed CCR
             new_ccr_postings = []
-            for posting_code in CCR_POSTINGS:
+            for posting_code in ccr_postings:
                 if posting_code in posting_codes:
                     if posting_code not in completed_postings_map.get(mcr, set()):
                         for block in blocks:
@@ -319,7 +324,7 @@ def allocate_timetable(
     )
 
     if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
-        logger.info("Solver found a feasible or optimal solution, processing results")
+        logger.info("Processing results")
         output_residents = []
         output_history = [dict(h, is_current_year=False) for h in resident_history]
         for resident in residents:
@@ -357,11 +362,20 @@ def allocate_timetable(
             unique_electives_completed = len(
                 get_unique_electives_completed(resident_progress, posting_info)
             )
-            # get CCR completion status
-            completed_postings = get_completed_postings(updated_history, posting_info)
-            ccr_completion_status = get_ccr_completion_status(
-                completed_postings.get(mcr, set())
-            )
+            # get CCR completion status (if assigned in any year, including current year)
+            ccr_posting_assigned = None
+            for h in updated_history:
+                posting_data = posting_info.get(h["posting_code"], {})
+                if h["mcr"] == mcr and posting_data.get("posting_type") == "CCR":
+                    ccr_posting_assigned = h["posting_code"]
+                    break
+            if ccr_posting_assigned:
+                ccr_completion_status = {
+                    "completed": True,
+                    "posting_code": ccr_posting_assigned,
+                }
+            else:
+                ccr_completion_status = {"completed": False, "posting_code": "-"}
             # append results
             output_residents.append(
                 {
@@ -370,7 +384,7 @@ def allocate_timetable(
                     "resident_year": resident["resident_year"],
                     "core_blocks_completed": core_blocks_completed,
                     "unique_electives_completed": unique_electives_completed,
-                    "ccr_completed": ccr_completion_status,
+                    "ccr_status": ccr_completion_status,
                 }
             )
         return {

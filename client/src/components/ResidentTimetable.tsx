@@ -91,16 +91,16 @@ const ResidentTimetable: React.FC<{
               <Badge
                 variant="outline"
                 className={`text-sm ${
-                  resident.ccr_completed.completed
+                  resident.ccr_status.completed
                     ? "bg-green-100 text-green-800"
                     : "bg-red-100 text-red-800"
                 }`}
               >
                 CCR Completed :{" "}
-                {resident.ccr_completed.completed ? "YES" : "NO"}
+                {resident.ccr_status.completed ? "YES" : "NO"}
               </Badge>
               <Badge variant="outline" className="text-sm">
-                CCR Posting : {resident.ccr_completed.posting_code}
+                CCR Posting : {resident.ccr_status.posting_code}
               </Badge>
             </div>
           </div>

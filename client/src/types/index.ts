@@ -4,14 +4,14 @@ export interface Resident {
   resident_year: number;
   core_blocks_completed: CoreBlocksCompleted;
   unique_electives_completed: number;
-  ccr_completed: CCRCompleted;
+  ccr_status: CCRStatus;
 }
 
 export interface CoreBlocksCompleted {
   [key: string]: number;
 }
 
-export interface CCRCompleted {
+export interface CCRStatus {
   completed: boolean;
   posting_code: string;
 }

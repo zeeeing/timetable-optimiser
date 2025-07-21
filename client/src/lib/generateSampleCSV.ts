@@ -62,11 +62,11 @@ export function generateSampleCSV(): void {
     { posting_code: "Med Onco (NCC)", posting_name: "Medical Oncology (NCC)", posting_type: "elective", max_residents: 2, required_block_duration: 3 },
     { posting_code: "NL (NNI)", posting_name: "Neurology (NNI)", posting_type: "core", max_residents: 2, required_block_duration: 3 },
     { posting_code: "Derm (NSC)", posting_name: "Dermatology (NSC)", posting_type: "elective", max_residents: 1, required_block_duration: 3 },
-    { posting_code: "GM (NUH)", posting_name: "General Medicine (NUH)", posting_type: "core", max_residents: 2, required_block_duration: 1 },
-    { posting_code: "GM (SGH)", posting_name: "General Medicine (SGH)", posting_type: "core", max_residents: 2, required_block_duration: 1 },
-    { posting_code: "GM (CGH)", posting_name: "General Medicine (CGH)", posting_type: "core", max_residents: 1, required_block_duration: 1 },
-    { posting_code: "GM (SKH)", posting_name: "General Medicine (SKH)", posting_type: "core", max_residents: 2, required_block_duration: 1 },
-    { posting_code: "GM (WH)", posting_name: "General Medicine (WH)", posting_type: "core", max_residents: 3, required_block_duration: 3 },
+    { posting_code: "GM (NUH)", posting_name: "General Medicine (NUH)", posting_type: "CCR", max_residents: 2, required_block_duration: 1 },
+    { posting_code: "GM (SGH)", posting_name: "General Medicine (SGH)", posting_type: "CCR", max_residents: 2, required_block_duration: 1 },
+    { posting_code: "GM (CGH)", posting_name: "General Medicine (CGH)", posting_type: "CCR", max_residents: 1, required_block_duration: 1 },
+    { posting_code: "GM (SKH)", posting_name: "General Medicine (SKH)", posting_type: "CCR", max_residents: 2, required_block_duration: 1 },
+    { posting_code: "GM (WH)", posting_name: "General Medicine (WH)", posting_type: "CCR", max_residents: 3, required_block_duration: 3 },
   ];
 
   // convert object arrays to CSV string

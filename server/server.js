@@ -118,7 +118,7 @@ app.post(
           // catch error relating to posting allocator script response
           res.status(500).json({
             success: false,
-            message: "Invalid response from script",
+            message: "Invalid response from posting allocator service",
           });
         }
       });

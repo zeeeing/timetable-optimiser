@@ -105,19 +105,6 @@ def get_unique_electives_completed(
     return unique_electives
 
 
-def get_ccr_completion_status(
-    completed_postings: set,
-) -> dict:
-    """
-    Given a set of completed postings, return CCR completion status.
-    Returns: {"completed": bool, "posting_code": str}
-    """
-    for posting_code in CCR_POSTINGS:
-        if posting_code in completed_postings:
-            return {"completed": True, "posting_code": posting_code}
-    return {"completed": False, "posting_code": "-"}
-
-
 # helpers
 def parse_resident_history(resident_history: List[Dict]) -> Dict[str, Dict[str, int]]:
     """
@@ -180,5 +167,3 @@ CORE_REQUIREMENTS = {
     "ED": 1,
     "NL": 3,
 }
-
-CCR_POSTINGS = ["GM (NUH)", "GM (SGH)", "GM (CGH)", "GM (SKH)", "GM (WH)"]
