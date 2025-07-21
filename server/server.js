@@ -25,9 +25,10 @@ app.post(
   ]),
   async (req, res) => {
     if (!req.files || Object.keys(req.files).length === 0) {
+      // client did not upload any files
       return res
         .status(400)
-        .json({ success: false, message: "No files uploaded" });
+        .json({ success: false, message: "No files were uploaded" });
     }
 
     try {
@@ -105,28 +106,36 @@ app.post(
 
       // handle output and errors
       let output = "";
+
       process.stdout.on("data", (data) => {
         output += data.toString();
-        console.log("[PYTHON STDOUT]", data.toString());
       });
       process.stderr.on("data", (err) => {
-        console.log("[PYTHON STDERR]", err.toString());
+        // log python logs for debugging (not exactly 'error' logs)
+        console.log("[PYTHON LOG]", err.toString());
       });
+
       process.on("close", () => {
         fs.unlinkSync(inputPath); // deletes temporary input file
+
         try {
           const result = JSON.parse(output);
-          res.json(result); // send response back to client
+          if (result.success === false) {
+            // python script reported an error
+            res.status(400).json(result);
+          } else {
+            res.json(result);
+          }
         } catch (err) {
-          // catch error relating to posting allocator script response
+          // could not parse output as JSON
           res.status(500).json({
             success: false,
-            message: "Invalid response from posting allocator service",
+            message: "Internal server error: " + (output || err.message),
           });
         }
       });
     } catch (e) {
-      // catch error relating to file parsing or processing
+      // csv parsing/formatting failed
       console.error("Error processing files: ", e);
       res
         .status(500)
@@ -149,6 +158,7 @@ app.post("/api/download-csv", (req, res) => {
       !postings ||
       !Array.isArray(postings)
     ) {
+      // request body is missing required data / data not in expected format
       return res.status(400).json({
         success: false,
         message: "Missing or invalid data in request body",
@@ -200,6 +210,7 @@ app.post("/api/download-csv", (req, res) => {
     );
     res.send(csvContent); // send CSV content as response
   } catch (err) {
+    // unexpected server error while generating the CSV
     console.error(err);
     res.status(500).json({ success: false, message: "Server error" });
   }

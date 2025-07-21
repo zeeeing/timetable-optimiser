@@ -10,7 +10,11 @@ from utils import (
 )
 import logging
 
-logging.basicConfig(level=logging.INFO, stream=sys.stdout)
+logging.basicConfig(
+    level=logging.INFO,
+    stream=sys.stderr,
+    format="%(asctime)s %(levelname)s %(message)s",
+)
 logger = logging.getLogger(__name__)
 
 
@@ -86,7 +90,6 @@ def allocate_timetable(
         for posting in completed_postings:
             if posting in x[mcr]:
                 for block in blocks:
-                    # Is resident `mcr` assigned to posting `posting` in block `block`?
                     model.Add(x[mcr][posting][block] == 0)
 
     # General Constraint 4: Enforce required_block_duration for each posting per resident
@@ -138,109 +141,7 @@ def allocate_timetable(
                 # add constraint that only one window can be selected if assigned
                 model.Add(sum(window_vars) == x[mcr][posting_code]["assigned_var"])
 
-    # Y1 Constraint: Ensure RCCM and MICU minimums
-    for resident in residents:
-        mcr = resident["mcr"]
-        resident_year = resident.get("resident_year", 1)
-        if resident_year == 1:
-            # Find all RCCM and MICU posting codes (any site)
-            rccm_postings = [p for p in posting_codes if p.startswith("RCCM")]
-            micu_postings = [p for p in posting_codes if p.startswith("MICU")]
-            # RCCM: at least 2 blocks
-            model.Add(
-                sum(x[mcr][p][block] for p in rccm_postings for block in blocks) >= 2
-            )
-            # MICU: at least 1 block
-            model.Add(
-                sum(x[mcr][p][block] for p in micu_postings for block in blocks) >= 1
-            )
-
-    # Y2/Y3 Constraint: Ensure minimum electives completed by end of each year
-    for resident in residents:
-        mcr = resident["mcr"]
-        resident_year = resident.get("resident_year", 1)
-        resident_progress = posting_progress.get(mcr, {})
-
-        # Count completed electives from history
-        completed_electives = 0
-        for posting_code, progress in resident_progress.items():
-            posting_data = posting_info.get(posting_code, {})
-            if (
-                posting_data.get("posting_type") == "elective"
-                and progress["is_completed"]
-            ):
-                completed_electives += 1
-
-        # For Year 2 residents: must have at least 2 electives completed by end of year 2
-        if resident_year == 2:
-            # Count new elective assignments in this allocation
-            new_elective_assignments = []
-            for posting_code in posting_codes:
-                posting_data = posting_info[posting_code]
-                if posting_data.get("posting_type") == "elective":
-                    # Check if this elective is not already completed
-                    if not resident_progress.get(posting_code, {}).get(
-                        "is_completed", False
-                    ):
-                        for block in blocks:
-                            new_elective_assignments.append(x[mcr][posting_code][block])
-
-            # Total electives = completed from history + new assignments
-            # Must be at least 2 by end of year 2
-            model.Add(completed_electives + sum(new_elective_assignments) >= 2)
-
-        # For Year 3 residents: must have at least 5 electives completed by end of year 3
-        elif resident_year == 3:
-            # Count new elective assignments in this allocation
-            new_elective_assignments = []
-            for posting_code in posting_codes:
-                posting_data = posting_info[posting_code]
-                if posting_data.get("posting_type") == "elective":
-                    # Check if this elective is not already completed
-                    if not resident_progress.get(posting_code, {}).get(
-                        "is_completed", False
-                    ):
-                        for block in blocks:
-                            new_elective_assignments.append(x[mcr][posting_code][block])
-
-            # Total electives = completed from history + new assignments
-            # Must be at least 5 by end of year 3
-            model.Add(completed_electives + sum(new_elective_assignments) >= 5)
-
-    # Y3 Constraint: Ensure core posting requirements are met
-    for resident in residents:
-        mcr = resident["mcr"]
-        resident_year = resident.get("resident_year", 1)
-        resident_progress = posting_progress.get(mcr, {})
-
-        if resident_year == 3:
-            for posting_code in posting_codes:
-                posting_data = posting_info[posting_code]
-                # For GM, exclude CCR from the core requirement
-                if posting_data["posting_type"] == "core":
-                    base_posting = posting_code.split(" (")[0]
-                    if (
-                        base_posting == "GM"
-                        and posting_info[posting_code].get("posting_type") == "CCR"
-                    ):
-                        continue  # Skip CCR for GM core requirement
-                    # Get current progress for this posting
-                    current_progress = resident_progress.get(
-                        posting_code, {"completed": 0, "required": 0}
-                    )
-                    blocks_completed = current_progress["completed"]
-                    blocks_required = current_progress["required"]
-                    blocks_needed = blocks_required - blocks_completed
-
-                    if blocks_needed > 0:
-                        # Year 3 resident must complete the remaining blocks for this core posting
-                        # Sum of new assignments for this posting must equal blocks_needed
-                        model.Add(
-                            sum(x[mcr][posting_code][block] for block in blocks)
-                            == blocks_needed
-                        )
-
-    # CCR constraint: ensure only one CCR posting is ever assigned per resident
+    # General Constraint 6 (CCR): ensure only one CCR posting is ever assigned per resident
     for resident in residents:
         mcr = resident["mcr"]
         resident_year = resident.get("resident_year", 1)
@@ -272,6 +173,114 @@ def allocate_timetable(
             # Must be exactly 1 CCR posting completed by end of Year 2 or Year 3 (if missed in Year 2)
             model.Add(sum(new_ccr_postings) == 1)
 
+    ## DEFINE SOFT CONSTRAINTS
+
+    penalties = []
+    penalty_vars = {}
+    soft_penalty_weight = 10
+
+    # Y1 Constraint: Ensure RCCM and MICU minimums
+    for resident in residents:
+        mcr = resident["mcr"]
+        resident_year = resident.get("resident_year", 1)
+        if resident_year == 1:
+            rccm_postings = [p for p in posting_codes if p.startswith("RCCM")]
+            micu_postings = [p for p in posting_codes if p.startswith("MICU")]
+            # RCCM: at least 2 blocks
+            rccm_blocks = sum(
+                x[mcr][p][block] for p in rccm_postings for block in blocks
+            )
+            rccm_penalty = model.NewIntVar(0, 2, f"rccm_penalty_{mcr}")
+            model.Add(rccm_blocks + rccm_penalty >= 2)
+            penalties.append(soft_penalty_weight * rccm_penalty)
+            penalty_vars[f"rccm_penalty_{mcr}"] = rccm_penalty
+            # MICU: at least 1 block
+            micu_blocks = sum(
+                x[mcr][p][block] for p in micu_postings for block in blocks
+            )
+            micu_penalty = model.NewIntVar(0, 1, f"micu_penalty_{mcr}")
+            model.Add(micu_blocks + micu_penalty >= 1)
+            penalties.append(soft_penalty_weight * micu_penalty)
+            penalty_vars[f"micu_penalty_{mcr}"] = micu_penalty
+
+    # Y2/Y3 Constraint: Ensure minimum electives completed by end of each year
+    for resident in residents:
+        mcr = resident["mcr"]
+        resident_year = resident.get("resident_year", 1)
+        resident_progress = posting_progress.get(mcr, {})
+        completed_electives = 0
+        for posting_code, progress in resident_progress.items():
+            posting_data = posting_info.get(posting_code, {})
+            if (
+                posting_data.get("posting_type") == "elective"
+                and progress["is_completed"]
+            ):
+                completed_electives += 1
+        if resident_year == 2:
+            new_elective_assignments = []
+            for posting_code in posting_codes:
+                posting_data = posting_info[posting_code]
+                if posting_data.get("posting_type") == "elective":
+                    if not resident_progress.get(posting_code, {}).get(
+                        "is_completed", False
+                    ):
+                        for block in blocks:
+                            new_elective_assignments.append(x[mcr][posting_code][block])
+            elective_blocks = completed_electives + sum(new_elective_assignments)
+            elective_penalty = model.NewIntVar(0, 2, f"elective_penalty_{mcr}_y2")
+            model.Add(elective_blocks + elective_penalty >= 2)
+            penalties.append(soft_penalty_weight * elective_penalty)
+            penalty_vars[f"elective_penalty_{mcr}_y2"] = elective_penalty
+        elif resident_year == 3:
+            new_elective_assignments = []
+            for posting_code in posting_codes:
+                posting_data = posting_info[posting_code]
+                if posting_data.get("posting_type") == "elective":
+                    if not resident_progress.get(posting_code, {}).get(
+                        "is_completed", False
+                    ):
+                        for block in blocks:
+                            new_elective_assignments.append(x[mcr][posting_code][block])
+            elective_blocks = completed_electives + sum(new_elective_assignments)
+            elective_penalty = model.NewIntVar(0, 5, f"elective_penalty_{mcr}_y3")
+            model.Add(elective_blocks + elective_penalty >= 5)
+            penalties.append(soft_penalty_weight * elective_penalty)
+            penalty_vars[f"elective_penalty_{mcr}_y3"] = elective_penalty
+
+    # Y3 Constraint: Ensure core posting requirements are met
+    for resident in residents:
+        mcr = resident["mcr"]
+        resident_year = resident.get("resident_year", 1)
+        resident_progress = posting_progress.get(mcr, {})
+        if resident_year == 3:
+            for posting_code in posting_codes:
+                posting_data = posting_info[posting_code]
+                if posting_data["posting_type"] == "core":
+                    base_posting = posting_code.split(" (")[0]
+                    if (
+                        base_posting == "GM"
+                        and posting_info[posting_code].get("posting_type") == "CCR"
+                    ):
+                        continue
+                    current_progress = resident_progress.get(
+                        posting_code, {"completed": 0, "required": 0}
+                    )
+                    blocks_completed = current_progress["completed"]
+                    blocks_required = current_progress["required"]
+                    blocks_needed = blocks_required - blocks_completed
+                    if blocks_needed > 0:
+                        core_blocks = sum(
+                            x[mcr][posting_code][block] for block in blocks
+                        )
+                        core_penalty = model.NewIntVar(
+                            0, blocks_needed, f"core_penalty_{mcr}_{posting_code}"
+                        )
+                        model.Add(core_blocks + core_penalty >= blocks_needed)
+                        penalties.append(soft_penalty_weight * core_penalty)
+                        penalty_vars[f"core_penalty_{mcr}_{posting_code}"] = (
+                            core_penalty
+                        )
+
     ## DEFINE OBJECTIVE
 
     # Objective: Maximise preference satisfaction (weighted by preference rank)
@@ -288,6 +297,8 @@ def allocate_timetable(
             if weight > 0:
                 for block in blocks:
                     preference_weights.append(weight * x[mcr][posting][block])
+
+    ## DEFINE BONUSES
 
     # Bonus: Seniority
     seniority_bonus = []
@@ -311,7 +322,10 @@ def allocate_timetable(
                     core_completion_bonus.append(core_bonus_value * assigned)
 
     model.Maximize(
-        sum(preference_weights) + sum(seniority_bonus) + sum(core_completion_bonus)
+        sum(preference_weights)
+        + sum(seniority_bonus)
+        + sum(core_completion_bonus)
+        - sum(penalties)
     )
 
     ## SOLVE MODEL AND PROCESS RESULTS
@@ -436,9 +450,18 @@ def allocate_timetable(
                     core_completed += 1
             core_completion_bonus = core_completed * core_bonus_value
 
-            # 4. Total optimisation score
+            # d. Soft penalty
+            soft_penalties = 0
+            for var_name, var in penalty_vars.items():
+                if solver.Value(var) > 0:
+                    soft_penalties += soft_penalty_weight * solver.Value(var)
+
+            # append optimisation scores
             optimisation_scores.append(
-                preference_score + seniority_bonus + core_completion_bonus
+                preference_score
+                + seniority_bonus
+                + core_completion_bonus
+                + soft_penalties
             )
 
         # 2. posting utilisation
@@ -471,6 +494,8 @@ def allocate_timetable(
             "posting_util": posting_util,
         }
 
+        logger.info("Posting allocation service completed successfully")
+
         return {
             "success": True,
             "residents": output_residents,
@@ -483,12 +508,20 @@ def allocate_timetable(
             },
         }
     else:
-        return {"success": False}
+        logger.error("Posting allocation service failed")
+        return {"success": False, "error": "Posting allocation service failed"}
 
 
 def main():
     if len(sys.argv) != 2:
-        print("Usage: python posting_allocator.py <input_json_file>")
+        print(
+            json.dumps(
+                {
+                    "success": False,
+                    "error": f"Usage: python posting_allocator.py <input_json_file>",
+                }
+            )
+        )
         sys.exit(1)
     try:
         with open(sys.argv[1], "r") as f:
@@ -499,18 +532,37 @@ def main():
             resident_preferences=input_data["resident_preferences"],
             postings=input_data["postings"],
         )
+        # needs to be printed to stdout for server.js to read
         print(json.dumps(result, indent=2))
     except FileNotFoundError:
-        print(f"Error: Input file '{sys.argv[1]}' not found", file=sys.stderr)
+        print(
+            json.dumps(
+                {"success": False, "error": f"Input file '{sys.argv[1]}' not found"}
+            )
+        )
         sys.exit(1)
     except json.JSONDecodeError:
-        print(f"Error: Invalid JSON in input file '{sys.argv[1]}'", file=sys.stderr)
+        print(
+            json.dumps(
+                {
+                    "success": False,
+                    "error": f"Invalid JSON in input file '{sys.argv[1]}'",
+                }
+            )
+        )
         sys.exit(1)
     except KeyError as e:
-        print(f"Error: Missing required field in input data: {e}", file=sys.stderr)
+        print(
+            json.dumps(
+                {
+                    "success": False,
+                    "error": f"Missing required field in input data: {e}",
+                }
+            )
+        )
         sys.exit(1)
     except Exception as e:
-        print(f"Error: {str(e)}", file=sys.stderr)
+        print(json.dumps({"success": False, "error": str(e)}))
         sys.exit(1)
 
 
