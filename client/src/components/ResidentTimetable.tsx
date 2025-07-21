@@ -55,6 +55,13 @@ const ResidentTimetable: React.FC<{
     return map;
   }, {} as Record<number, Record<number, (typeof pastYearPostings)[0]>>);
 
+  // get optimisation score
+  const residentIndex = apiResponse.residents.findIndex(
+    (r) => r.mcr === resident.mcr
+  );
+  const optimisationScore =
+    apiResponse.statistics.cohort.optimisation_scores[residentIndex];
+
   return (
     <div className="bg-gray-50 rounded-lg p-6 space-y-6">
       {/* resident information */}
@@ -71,6 +78,14 @@ const ResidentTimetable: React.FC<{
               Resident Year:{" "}
               <Badge variant="outline" className="bg-blue-200 text-md">
                 {resident.resident_year}
+              </Badge>
+            </p>
+            <p>
+              <Badge
+                variant="outline"
+                className="text-md bg-yellow-100 text-yellow-800"
+              >
+                Optimisation Score: {optimisationScore}
               </Badge>
             </p>
           </div>
@@ -96,8 +111,7 @@ const ResidentTimetable: React.FC<{
                     : "bg-red-100 text-red-800"
                 }`}
               >
-                CCR Completed :{" "}
-                {resident.ccr_status.completed ? "YES" : "NO"}
+                CCR Completed : {resident.ccr_status.completed ? "YES" : "NO"}
               </Badge>
               <Badge variant="outline" className="text-sm">
                 CCR Posting : {resident.ccr_status.posting_code}
@@ -149,6 +163,8 @@ const ResidentTimetable: React.FC<{
                                 className={`${
                                   posting?.posting_type === "core"
                                     ? "bg-orange-100 text-orange-800"
+                                    : posting?.posting_type === "CCR"
+                                    ? "bg-purple-100 text-purple-800"
                                     : "bg-green-100 text-green-800"
                                 }`}
                                 variant="outline"
@@ -187,6 +203,8 @@ const ResidentTimetable: React.FC<{
                           className={`${
                             posting?.posting_type === "core"
                               ? "bg-orange-100 text-orange-800"
+                              : posting?.posting_type === "CCR"
+                              ? "bg-purple-100 text-purple-800"
                               : "bg-green-100 text-green-800"
                           }`}
                           variant="outline"

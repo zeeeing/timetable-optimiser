@@ -3,6 +3,7 @@ import { generateSampleCSV } from "./lib/generateSampleCSV";
 import FileUpload from "./components/FileUpload";
 import ResidentDropdown from "./components/ResidentDropdown";
 import ResidentTimetable from "./components/ResidentTimetable";
+import PostingStatistics from "./components/PostingStatistics";
 import ErrorAlert from "./components/ErrorAlert";
 import { uploadCsv, downloadCsv } from "./api/api";
 import { Button } from "./components/ui/button";
@@ -185,6 +186,7 @@ const App: React.FC = () => {
                 apiResponse={apiResponse}
               />
             )}
+            <PostingStatistics />
           </div>
         )}
 

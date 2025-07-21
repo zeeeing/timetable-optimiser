@@ -1,19 +1,25 @@
+// api response types
+export interface ApiResponse {
+  success: boolean;
+  residents: Resident[];
+  resident_history: ResidentHistory[];
+  resident_preferences: ResidentPreference[];
+  postings: Posting[];
+  statistics: Statistics;
+}
+
 export interface Resident {
   mcr: string;
   name: string;
   resident_year: number;
-  core_blocks_completed: CoreBlocksCompleted;
+  core_blocks_completed: {
+    [key: string]: number;
+  };
   unique_electives_completed: number;
-  ccr_status: CCRStatus;
-}
-
-export interface CoreBlocksCompleted {
-  [key: string]: number;
-}
-
-export interface CCRStatus {
-  completed: boolean;
-  posting_code: string;
+  ccr_status: {
+    completed: boolean;
+    posting_code: string;
+  };
 }
 
 export interface ResidentHistory {
@@ -40,17 +46,20 @@ export interface Posting {
 
 export interface Statistics {
   total_residents: number;
+  cohort: {
+    optimisation_scores: number[];
+    posting_util: PostingUtil[];
+  };
 }
 
-export interface ApiResponse {
-  success: boolean;
-  residents: Resident[];
-  resident_history: ResidentHistory[];
-  resident_preferences: ResidentPreference[];
-  postings: Posting[];
-  statistics: Statistics;
+export interface PostingUtil {
+  posting_code: string;
+  filled: number;
+  capacity: number;
+  demand_top3: number;
 }
 
+// csv file types
 export interface CsvFilesState {
   residents: File | null;
   resident_history: File | null;
@@ -58,6 +67,7 @@ export interface CsvFilesState {
   postings: File | null;
 }
 
+// generation of sample csv
 export interface CsvRow {
   [key: string]: string | number;
 }
