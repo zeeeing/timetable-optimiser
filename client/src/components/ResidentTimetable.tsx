@@ -137,7 +137,7 @@ const ResidentTimetable: React.FC<{
           <TableBody>
             {/* Past years */}
             {Object.keys(pastYearBlockPostings)
-              .sort((a, b) => parseInt(b) - parseInt(a))
+              .sort((a, b) => parseInt(a) - parseInt(b))
               .map((year) => {
                 const yearPostings = pastYearBlockPostings[parseInt(year)];
                 return (
