@@ -11,6 +11,7 @@ import {
   TableRow,
 } from "./ui/table";
 import { Badge } from "./ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 
 const ResidentTimetable: React.FC<{
   resident: Resident;
@@ -31,7 +32,7 @@ const ResidentTimetable: React.FC<{
     (h) => h.is_current_year === false
   );
 
-  // create posting map: look up by posting code
+  // create posting map for efficient lookup by posting code
   const postingMap = apiResponse.postings.reduce((map, posting) => {
     map[posting.posting_code] = posting;
     return map;
@@ -69,59 +70,28 @@ const ResidentTimetable: React.FC<{
         <h2 className="text-lg font-semibold text-gray-800">
           Resident Information
         </h2>
-        <div className="flex justify-between">
-          <div className="flex flex-col gap-2">
-            <p>
-              Name: {resident.name} ({resident.mcr})
-            </p>
-            <p>
-              Resident Year:{" "}
-              <Badge variant="outline" className="bg-blue-200 text-md">
-                {resident.resident_year}
-              </Badge>
-            </p>
-            <p>
-              <Badge
-                variant="outline"
-                className="text-md bg-yellow-100 text-yellow-800"
-              >
-                Optimisation Score: {optimisationScore}
-              </Badge>
-            </p>
-          </div>
-          <div className="grid grid-cols-2 gap-2 w-lg">
-            <div className="space-x-2 space-y-2">
-              {Object.entries(resident.core_blocks_completed)
-                .sort((a, b) => a[0].localeCompare(b[0]))
-                .map(([key, value]) => (
-                  <Badge variant="outline" className="text-sm">
-                    {key} : {value}
-                  </Badge>
-                ))}
-            </div>
-            <div className="flex flex-col gap-2 items-end">
-              <Badge variant="outline" className="text-sm">
-                Total Electives Completed: {resident.unique_electives_completed}
-              </Badge>
-              <Badge
-                variant="outline"
-                className={`text-sm ${
-                  resident.ccr_status.completed
-                    ? "bg-green-100 text-green-800"
-                    : "bg-red-100 text-red-800"
-                }`}
-              >
-                CCR Completed : {resident.ccr_status.completed ? "YES" : "NO"}
-              </Badge>
-              <Badge variant="outline" className="text-sm">
-                CCR Posting : {resident.ccr_status.posting_code}
-              </Badge>
-            </div>
-          </div>
+        <div className="flex gap-12 items-center text-sm">
+          <p>
+            Name: {resident.name} ({resident.mcr})
+          </p>
+          <p>
+            Current Resident Year:{" "}
+            <Badge variant="outline" className="bg-blue-200 text-md">
+              {resident.resident_year}
+            </Badge>
+          </p>
+          <p>
+            <Badge
+              variant="outline"
+              className="text-md bg-yellow-100 text-yellow-800"
+            >
+              Optimisation Score: {optimisationScore}
+            </Badge>
+          </p>
         </div>
       </div>
 
-      {/* timetable */}
+      {/* resident timetable */}
       <div className="rounded-md border">
         <Table>
           <TableHeader>
@@ -221,6 +191,75 @@ const ResidentTimetable: React.FC<{
             </TableRow>
           </TableBody>
         </Table>
+      </div>
+
+      {/* resident statistics */}
+      <div className="flex justify-between gap-6">
+        <div className="flex gap-12">
+          <div className="flex flex-col gap-2">
+            {Object.entries(resident.core_blocks_completed)
+              .sort((a, b) => a[0].localeCompare(b[0]))
+              .map(([key, value]) => (
+                <Badge variant="outline" className="text-sm" key={key}>
+                  {key} : {value}
+                </Badge>
+              ))}
+          </div>
+          <div className="flex flex-col gap-2">
+            <Badge
+              variant="outline"
+              className={`text-sm ${
+                resident.ccr_status.completed
+                  ? "bg-green-100 text-green-800"
+                  : "bg-red-100 text-red-800"
+              }`}
+            >
+              CCR Completed : {resident.ccr_status.completed ? "YES" : "NO"}
+            </Badge>
+            <Badge variant="outline" className="text-sm">
+              CCR Posting : {resident.ccr_status.posting_code}
+            </Badge>
+          </div>
+        </div>
+        <Card className="w-1/3 overflow-x-auto">
+          <CardHeader>
+            <CardTitle className="flex justify-center">
+              <Badge variant="outline" className="text-sm">
+                Total Electives Completed: {resident.unique_electives_completed}
+              </Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="text-center">Elective</TableHead>
+                  <TableHead className="text-center">Month(s)</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {Object.entries(
+                  allPostings
+                    .filter(
+                      (h) =>
+                        postingMap[h.posting_code]?.posting_type === "elective"
+                    )
+                    .reduce((acc, h) => {
+                      acc[h.posting_code] = (acc[h.posting_code] || 0) + 1;
+                      return acc;
+                    }, {} as Record<string, number>)
+                ).map(([code, count]) => (
+                  <TableRow key={code}>
+                    <TableCell className="text-center">
+                      {postingMap[code]?.posting_name || code}
+                    </TableCell>
+                    <TableCell className="text-center">{count}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );
