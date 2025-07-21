@@ -105,10 +105,13 @@ app.post(
 
       // handle output and errors
       let output = "";
-      process.stdout.on("data", (data) => (output += data.toString()));
-      process.stderr.on("data", (err) =>
-        console.error("Posting allocation error: ", err.toString())
-      );
+      process.stdout.on("data", (data) => {
+        output += data.toString();
+        console.log("[PYTHON STDOUT]", data.toString());
+      });
+      process.stderr.on("data", (err) => {
+        console.log("[PYTHON STDERR]", err.toString());
+      });
       process.on("close", () => {
         fs.unlinkSync(inputPath); // deletes temporary input file
         try {

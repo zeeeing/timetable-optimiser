@@ -10,7 +10,7 @@ from utils import (
 )
 import logging
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 logger = logging.getLogger(__name__)
 
 
@@ -25,14 +25,14 @@ def allocate_timetable(
 
     ## DEFINE VARIABLES
 
-    # create map of posting codes to posting info
+    # 1. create map of posting codes to posting info
     posting_info = {p["posting_code"]: p for p in postings}
-    # create list of posting codes
+    # 2. create list of posting codes
     posting_codes = list(posting_info.keys())
-    # create list of blocks
+    # 3. create list of blocks
     blocks = list(range(1, 13))
 
-    # create map of resident mcr to their preferences
+    # 4. create map of resident mcr to their preferences
     # example output:
     # {
     #   "R001": {
@@ -47,9 +47,9 @@ def allocate_timetable(
             pref_map[mcr] = {}
         pref_map[mcr][pref["preference_rank"]] = pref["posting_code"]
 
-    # get resident history of completed postings
+    # 5. get resident history of completed postings
     completed_postings_map = get_completed_postings(resident_history, posting_info)
-    # get posting progress for each resident
+    # 6. get posting progress for each resident
     posting_progress = get_posting_progress(resident_history, posting_info)
 
     ## CREATE DECISION VARIABLES
@@ -289,7 +289,7 @@ def allocate_timetable(
                 for block in blocks:
                     preference_weights.append(weight * x[mcr][posting][block])
 
-    # Add seniority bonus
+    # Bonus: Seniority
     seniority_bonus = []
     for resident in residents:
         mcr = resident["mcr"]
@@ -298,7 +298,7 @@ def allocate_timetable(
             for block in blocks:
                 seniority_bonus.append(resident_year * x[mcr][posting][block] * 0.1)
 
-    # Add core completion bonus
+    # Bonus: Core completion
     core_completion_bonus = []
     core_bonus_value = 10  # Adjust this value as needed
     for resident in residents:
@@ -318,15 +318,20 @@ def allocate_timetable(
 
     logger.info("Initialising CP-SAT solver")
     solver = cp_model.CpSolver()
+    # solver.parameters.log_search_progress = True
     status = solver.Solve(model)
     logger.info(
         f"Solver returned status {solver.StatusName(status)} with objective {solver.ObjectiveValue()}"
     )
 
+    ## PROCESS RESULTS
+
     if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
         logger.info("Processing results")
         output_residents = []
         output_history = [dict(h, is_current_year=False) for h in resident_history]
+
+        # append current year data to history
         for resident in residents:
             mcr = resident["mcr"]
             years = [h["year"] for h in resident_history if h["mcr"] == mcr]
@@ -376,7 +381,8 @@ def allocate_timetable(
                 }
             else:
                 ccr_completion_status = {"completed": False, "posting_code": "-"}
-            # append results
+
+            # append to output
             output_residents.append(
                 {
                     "mcr": mcr,
@@ -387,13 +393,94 @@ def allocate_timetable(
                     "ccr_status": ccr_completion_status,
                 }
             )
+
+        ## CALCULATE STATISTICS
+
+        # 1. optimisation score per resident
+        optimisation_scores = []
+        for resident in residents:
+            mcr = resident["mcr"]
+            resident_year = resident.get("resident_year", 1)
+            assigned_postings = [
+                h for h in output_history if h["mcr"] == mcr and h["is_current_year"]
+            ]
+
+            # a. Preference satisfaction
+            prefs = pref_map.get(mcr, {})
+            preference_score = 0
+            for h in assigned_postings:
+                assigned_posting = h["posting_code"]
+                for rank in range(1, 6):
+                    if prefs.get(rank) == assigned_posting:
+                        preference_score += 6 - rank
+                        break
+
+            # b. Seniority bonus
+            seniority_bonus = len(assigned_postings) * resident_year * 0.1
+
+            # c. Core completion bonus
+            core_completed = 0
+            core_postings = set(
+                h["posting_code"]
+                for h in assigned_postings
+                if posting_info.get(h["posting_code"], {}).get("posting_type") == "core"
+            )
+            for posting_code in core_postings:
+                required_blocks = posting_info[posting_code].get(
+                    "required_block_duration", 1
+                )
+                blocks_assigned = [
+                    h for h in assigned_postings if h["posting_code"] == posting_code
+                ]
+                if len(blocks_assigned) == required_blocks:
+                    core_completed += 1
+            core_completion_bonus = core_completed * core_bonus_value
+
+            # 4. Total optimisation score
+            optimisation_scores.append(
+                preference_score + seniority_bonus + core_completion_bonus
+            )
+
+        # 2. posting utilisation
+        posting_util = []
+        for posting in posting_codes:
+            filled = sum(
+                1
+                for h in output_history
+                if h["posting_code"] == posting and h["is_current_year"]
+            )
+            capacity = sum(posting_info[posting]["max_residents"] for _ in blocks)
+            demand = sum(
+                1
+                for pref in resident_preferences
+                for r in range(1, 4)
+                if pref["preference_rank"] == r and pref["posting_code"] == posting
+            )
+            posting_util.append(
+                {
+                    "posting_code": posting,
+                    "filled": filled,
+                    "capacity": capacity,
+                    "demand_top3": demand,
+                }
+            )
+
+        # add all results to output
+        cohort_statistics = {
+            "optimisation_scores": optimisation_scores,
+            "posting_util": posting_util,
+        }
+
         return {
             "success": True,
             "residents": output_residents,
             "resident_history": output_history,
             "resident_preferences": resident_preferences,
             "postings": postings,
-            "statistics": {"total_residents": len(residents)},
+            "statistics": {
+                "total_residents": len(residents),
+                "cohort": cohort_statistics,
+            },
         }
     else:
         return {"success": False}
