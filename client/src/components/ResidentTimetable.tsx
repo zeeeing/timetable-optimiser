@@ -56,7 +56,7 @@ const ResidentTimetable: React.FC<{
   }, {} as Record<number, Record<number, (typeof pastYearPostings)[0]>>);
 
   return (
-    <div className="bg-gray-50 rounded-lg p-6 space-y-4">
+    <div className="bg-gray-50 rounded-lg p-6 space-y-6">
       {/* resident information */}
       <div className="flex flex-col space-y-4">
         <h2 className="text-lg font-semibold text-gray-800">
@@ -74,30 +74,35 @@ const ResidentTimetable: React.FC<{
               </Badge>
             </p>
           </div>
-          <div className="space-x-2">
-            {Object.entries(resident.core_blocks_completed).map(
-              ([key, value]) => (
-                <Badge variant="outline" className="text-sm">
-                  {key} : {value}
-                </Badge>
-              )
-            )}
-            <Badge variant="outline" className="text-sm">
-              Total Electives Completed: {resident.unique_electives_completed}
-            </Badge>
-            <Badge
-              variant="outline"
-              className={`text-sm ${
-                resident.ccr_completed.completed
-                  ? "bg-green-100 text-green-800"
-                  : "bg-red-100 text-red-800"
-              }`}
-            >
-              CCR Completed : {resident.ccr_completed.completed ? "YES" : "NO"}
-            </Badge>
-            <Badge variant="outline" className="text-sm">
-              CCR Posting : {resident.ccr_completed.posting_code}
-            </Badge>
+          <div className="grid grid-cols-2 gap-2 w-lg">
+            <div className="space-x-2 space-y-2">
+              {Object.entries(resident.core_blocks_completed)
+                .sort((a, b) => a[0].localeCompare(b[0]))
+                .map(([key, value]) => (
+                  <Badge variant="outline" className="text-sm">
+                    {key} : {value}
+                  </Badge>
+                ))}
+            </div>
+            <div className="flex flex-col gap-2 items-end">
+              <Badge variant="outline" className="text-sm">
+                Total Electives Completed: {resident.unique_electives_completed}
+              </Badge>
+              <Badge
+                variant="outline"
+                className={`text-sm ${
+                  resident.ccr_completed.completed
+                    ? "bg-green-100 text-green-800"
+                    : "bg-red-100 text-red-800"
+                }`}
+              >
+                CCR Completed :{" "}
+                {resident.ccr_completed.completed ? "YES" : "NO"}
+              </Badge>
+              <Badge variant="outline" className="text-sm">
+                CCR Posting : {resident.ccr_completed.posting_code}
+              </Badge>
+            </div>
           </div>
         </div>
       </div>
