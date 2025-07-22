@@ -23,6 +23,7 @@ def allocate_timetable(
     resident_history: List[Dict],
     resident_preferences: List[Dict],
     postings: List[Dict],
+    weightages: Dict,
 ) -> Dict:
     logger.info("STARTING POSTING ALLOCATION SERVICE")
     model = cp_model.CpModel()
@@ -175,9 +176,9 @@ def allocate_timetable(
 
     ## DEFINE SOFT CONSTRAINTS
 
-    penalties = []
-    penalty_vars = {}
-    soft_penalty_weight = 10
+    curr_nonad_penalties = []
+    curr_nonad_penalty_vars = {}
+    curr_nonad_penalty_weight = weightages.get("curr_nonad_penalty", 10)
 
     # Y1 Constraint: Ensure RCCM and MICU minimums
     for resident in residents:
@@ -192,16 +193,16 @@ def allocate_timetable(
             )
             rccm_penalty = model.NewIntVar(0, 2, f"rccm_penalty_{mcr}")
             model.Add(rccm_blocks + rccm_penalty >= 2)
-            penalties.append(soft_penalty_weight * rccm_penalty)
-            penalty_vars[f"rccm_penalty_{mcr}"] = rccm_penalty
+            curr_nonad_penalties.append(curr_nonad_penalty_weight * rccm_penalty)
+            curr_nonad_penalty_vars[f"rccm_penalty_{mcr}"] = rccm_penalty
             # MICU: at least 1 block
             micu_blocks = sum(
                 x[mcr][p][block] for p in micu_postings for block in blocks
             )
             micu_penalty = model.NewIntVar(0, 1, f"micu_penalty_{mcr}")
             model.Add(micu_blocks + micu_penalty >= 1)
-            penalties.append(soft_penalty_weight * micu_penalty)
-            penalty_vars[f"micu_penalty_{mcr}"] = micu_penalty
+            curr_nonad_penalties.append(curr_nonad_penalty_weight * micu_penalty)
+            curr_nonad_penalty_vars[f"micu_penalty_{mcr}"] = micu_penalty
 
     # Y2/Y3 Constraint: Ensure minimum electives completed by end of each year
     for resident in residents:
@@ -229,8 +230,8 @@ def allocate_timetable(
             elective_blocks = completed_electives + sum(new_elective_assignments)
             elective_penalty = model.NewIntVar(0, 2, f"elective_penalty_{mcr}_y2")
             model.Add(elective_blocks + elective_penalty >= 2)
-            penalties.append(soft_penalty_weight * elective_penalty)
-            penalty_vars[f"elective_penalty_{mcr}_y2"] = elective_penalty
+            curr_nonad_penalties.append(curr_nonad_penalty_weight * elective_penalty)
+            curr_nonad_penalty_vars[f"elective_penalty_{mcr}_y2"] = elective_penalty
         elif resident_year == 3:
             new_elective_assignments = []
             for posting_code in posting_codes:
@@ -244,8 +245,8 @@ def allocate_timetable(
             elective_blocks = completed_electives + sum(new_elective_assignments)
             elective_penalty = model.NewIntVar(0, 5, f"elective_penalty_{mcr}_y3")
             model.Add(elective_blocks + elective_penalty >= 5)
-            penalties.append(soft_penalty_weight * elective_penalty)
-            penalty_vars[f"elective_penalty_{mcr}_y3"] = elective_penalty
+            curr_nonad_penalties.append(curr_nonad_penalty_weight * elective_penalty)
+            curr_nonad_penalty_vars[f"elective_penalty_{mcr}_y3"] = elective_penalty
 
     # Y3 Constraint: Ensure core posting requirements are met
     for resident in residents:
@@ -276,16 +277,18 @@ def allocate_timetable(
                             0, blocks_needed, f"core_penalty_{mcr}_{posting_code}"
                         )
                         model.Add(core_blocks + core_penalty >= blocks_needed)
-                        penalties.append(soft_penalty_weight * core_penalty)
-                        penalty_vars[f"core_penalty_{mcr}_{posting_code}"] = (
-                            core_penalty
+                        curr_nonad_penalties.append(
+                            curr_nonad_penalty_weight * core_penalty
                         )
+                        curr_nonad_penalty_vars[
+                            f"core_penalty_{mcr}_{posting_code}"
+                        ] = core_penalty
 
     ## DEFINE OBJECTIVE
 
     # Objective: Maximise preference satisfaction
     preference_weights = []
-    preference_weight_value = 1
+    preference_weight_value = weightages.get("preference", 1)
     for resident in residents:
         mcr = resident["mcr"]
         prefs = pref_map.get(mcr, {})
@@ -297,13 +300,15 @@ def allocate_timetable(
                     break
             if weight > 0:
                 for block in blocks:
-                    preference_weights.append(weight * x[mcr][posting][block])
+                    preference_weights.append(
+                        preference_weight_value * weight * x[mcr][posting][block]
+                    )
 
     ## DEFINE BONUSES
 
     # Bonus: Seniority
     seniority_bonus = []
-    seniority_bonus_value = 2
+    seniority_bonus_value = weightages.get("seniority", 2)
     for resident in residents:
         mcr = resident["mcr"]
         resident_year = resident.get("resident_year", 1)
@@ -315,7 +320,7 @@ def allocate_timetable(
 
     # Bonus: Core completion
     core_completion_bonus = []
-    core_bonus_value = 10
+    core_bonus_value = weightages.get("core", 10)
     for resident in residents:
         mcr = resident["mcr"]
         for posting_code in posting_codes:
@@ -326,10 +331,10 @@ def allocate_timetable(
                     core_completion_bonus.append(core_bonus_value * assigned)
 
     model.Maximize(
-        sum(preference_weights)  # factor of 1 per rank
-        + sum(seniority_bonus)  # factor of 2 per year
-        + sum(core_completion_bonus)  # factor of 10 per core block
-        - sum(penalties)  # factor of 10 per penalty
+        sum(preference_weights)
+        + sum(seniority_bonus)
+        + sum(core_completion_bonus)
+        - sum(curr_nonad_penalties)
     )
 
     ## SOLVE MODEL AND PROCESS RESULTS
@@ -430,11 +435,13 @@ def allocate_timetable(
                 assigned_posting = h["posting_code"]
                 for rank in range(1, 6):
                     if prefs.get(rank) == assigned_posting:
-                        preference_score += 6 - rank
+                        preference_score += (6 - rank) * preference_weight_value
                         break
 
             # b. Seniority bonus
-            seniority_bonus = len(assigned_postings) * resident_year * 0.1
+            seniority_bonus = (
+                len(assigned_postings) * resident_year * seniority_bonus_value
+            )
 
             # c. Core completion bonus
             core_completed = 0
@@ -454,18 +461,20 @@ def allocate_timetable(
                     core_completed += 1
             core_completion_bonus = core_completed * core_bonus_value
 
-            # d. Soft penalty
-            soft_penalties = 0
-            for var_name, var in penalty_vars.items():
+            # d. Curriculum non-adherence penalty
+            curr_nonad_penalty_score = 0
+            for var_name, var in curr_nonad_penalty_vars.items():
                 if solver.Value(var) > 0:
-                    soft_penalties += soft_penalty_weight * solver.Value(var)
+                    curr_nonad_penalty_score += (
+                        curr_nonad_penalty_weight * solver.Value(var)
+                    )
 
             # append optimisation scores
             optimisation_scores.append(
                 preference_score
                 + seniority_bonus
                 + core_completion_bonus
-                + soft_penalties
+                - curr_nonad_penalty_score
             )
 
         # 2. posting utilisation
@@ -535,6 +544,7 @@ def main():
             resident_history=input_data["resident_history"],
             resident_preferences=input_data["resident_preferences"],
             postings=input_data["postings"],
+            weightages=input_data["weightages"],
         )
         # needs to be printed to stdout for server.js to read
         print(json.dumps(result, indent=2))

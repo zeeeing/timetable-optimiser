@@ -11,6 +11,7 @@ import { Separator } from "./components/ui/separator";
 import { Loader2Icon } from "lucide-react";
 import type { Resident, ApiResponse, CsvFilesState } from "./types";
 import CohortStatistics from "./components/CohortStatistics";
+import WeightageSelector from "./components/WeightageSelector";
 
 const App: React.FC = () => {
   const [csvFiles, setCsvFiles] = useState<CsvFilesState>({
@@ -24,6 +25,12 @@ const App: React.FC = () => {
   const [apiResponse, setApiResponse] = useState<ApiResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedResident, setSelectedResident] = useState<string>("");
+  const [weightages, setWeightages] = useState({
+    preference: 1,
+    seniority: 2,
+    core: 10,
+    curr_nonad_penalty: 10,
+  });
 
   const handleFileUpload =
     (fileType: keyof typeof csvFiles) =>
@@ -58,6 +65,7 @@ const App: React.FC = () => {
     formData.append("resident_history", csvFiles.resident_history);
     formData.append("resident_preferences", csvFiles.resident_preferences);
     formData.append("postings", csvFiles.postings);
+    formData.append("weightages", JSON.stringify(weightages));
 
     try {
       const json: ApiResponse = await uploadCsv(formData);
@@ -117,13 +125,13 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-linear-to-br from-blue-50 to-indigo-100 p-6">
-      <div className="max-w-7xl mx-auto bg-white rounded-xl shadow-md p-8">
-        <h1 className="text-3xl font-bold text-center mb-6 text-gray-800">
+      <div className="max-w-7xl mx-auto bg-white rounded-xl shadow-md p-8 flex flex-col gap-6">
+        <h1 className="text-2xl font-bold text-center mb-6 text-gray-800">
           Resident Rostering: Timetable Optimiser
         </h1>
 
         {/* Upload Section */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
           <FileUpload
             label="Residents CSV"
             onChange={handleFileUpload("residents")}
@@ -141,6 +149,9 @@ const App: React.FC = () => {
             onChange={handleFileUpload("postings")}
           />
         </div>
+
+        {/* weightage selector */}
+        <WeightageSelector value={weightages} setValue={setWeightages} />
 
         {/* Buttons */}
         <div className="flex flex-col gap-2 sm:flex-row sm:gap-4 justify-center items-center">
@@ -174,7 +185,7 @@ const App: React.FC = () => {
 
         {/* Timetable Results */}
         {residents && (
-          <div className="mt-6 space-y-6">
+          <div className="space-y-6">
             <Separator />
             <ResidentDropdown
               residents={residents}

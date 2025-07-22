@@ -22,6 +22,7 @@ app.post(
     { name: "resident_history", maxCount: 1 },
     { name: "resident_preferences", maxCount: 1 },
     { name: "postings", maxCount: 1 },
+    { name: "weightages", maxCount: 1 },
   ]),
   async (req, res) => {
     if (!req.files || Object.keys(req.files).length === 0) {
@@ -58,6 +59,9 @@ app.post(
         skip_empty_lines: true,
       });
 
+      // get weightages from request body
+      const weightages = JSON.parse(req.body.weightages);
+
       // format parsed files
       const residentsFormatted = residents.map((r) => ({
         mcr: r.mcr,
@@ -91,6 +95,7 @@ app.post(
         resident_history: residentHistoryFormatted,
         resident_preferences: residentPreferencesFormatted,
         postings: postingsFormatted,
+        weightages: weightages,
       };
 
       // create temp JSON file with input data

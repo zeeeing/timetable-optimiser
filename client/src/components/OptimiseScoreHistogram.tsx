@@ -9,46 +9,48 @@ const defaultWidth = 1000;
 const defaultHeight = 333;
 const verticalMargin = 40;
 
-const getBins = (scores: number[], binSize = 1) => {
-  if (scores.length === 0) return [];
-
-  // determine bin range
-  const min = Math.min(...scores);
-  const max = Math.max(...scores);
-
-  // calc num bins
-  const binCount = Math.ceil((max - min) / binSize) + 1;
-
-  // initialise bins (array of objects with score and count fields)
-  const bins: { score: number; count: number }[] = Array.from(
-    { length: binCount }, // define length of array
-    (_, i) => ({
-      score: min + i * binSize,
-      count: 0,
-    })
-  );
-
-  // assign each score to bin
-  scores.forEach((score) => {
-    const binIndex = Math.floor((score - min) / binSize);
-    bins[binIndex].count += 1;
-  });
-
-  // filter out empty bins and sort by score
-  return bins.filter((bin) => bin.count > 0).sort((a, b) => a.score - b.score);
-};
-
-export type BarsProps = {
+interface BarsProps {
   optimisationScores: number[];
   width?: number;
   height?: number;
-};
+}
 
 const OptimiseScoreHistogram: React.FC<BarsProps> = ({
   optimisationScores,
   width = defaultWidth,
   height = defaultHeight,
 }) => {
+  const getBins = (scores: number[], binSize = 2) => {
+    if (scores.length === 0) return [];
+
+    // determine bin range
+    const min = Math.min(...scores);
+    const max = Math.max(...scores);
+
+    // calc num bins
+    const binCount = Math.ceil((max - min) / binSize) + 1;
+
+    // initialise bins (array of objects with score and count fields)
+    const bins: { score: number; count: number }[] = Array.from(
+      { length: binCount }, // define length of array
+      (_, i) => ({
+        score: min + i * binSize,
+        count: 0,
+      })
+    );
+
+    // assign each score to bin
+    scores.forEach((score) => {
+      const binIndex = Math.floor((score - min) / binSize);
+      bins[binIndex].count += 1;
+    });
+
+    // filter out empty bins and sort by score
+    return bins
+      .filter((bin) => bin.count > 0)
+      .sort((a, b) => a.score - b.score);
+  };
+
   // parse scores into bins
   const bins = useMemo(() => getBins(optimisationScores), [optimisationScores]);
 
