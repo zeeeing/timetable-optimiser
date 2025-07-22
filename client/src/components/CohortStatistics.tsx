@@ -15,6 +15,12 @@ const CohortStatistics: React.FC<{
   const { total_residents, cohort } = statistics;
   const { optimisation_scores } = cohort;
 
+  // mock data
+  // const mockOptimisationScores = [
+  //   10, 12, 12, 13, 14, 14, 14, 15, 16, 16, 17, 18, 18, 18, 18, 19, 20, 20, 20,
+  //   21,
+  // ];
+
   return (
     <Card className="bg-gray-50">
       <CardHeader>
