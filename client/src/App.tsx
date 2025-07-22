@@ -10,6 +10,7 @@ import { Button } from "./components/ui/button";
 import { Separator } from "./components/ui/separator";
 import { Loader2Icon } from "lucide-react";
 import type { Resident, ApiResponse, CsvFilesState } from "./types";
+import CohortStatistics from "./components/CohortStatistics";
 
 const App: React.FC = () => {
   const [csvFiles, setCsvFiles] = useState<CsvFilesState>({
@@ -67,7 +68,7 @@ const App: React.FC = () => {
           setSelectedResident(json.residents[0].mcr);
         }
       } else {
-        throw new Error("Processing failed");
+        throw new Error("Failed to retrieve api response");
       }
     } catch (err: unknown) {
       if (err instanceof Error) {
@@ -173,20 +174,29 @@ const App: React.FC = () => {
 
         {/* Timetable Results */}
         {residents && (
-          <div className="mt-6">
-            <Separator className="my-6" />
+          <div className="mt-6 space-y-6">
+            <Separator />
             <ResidentDropdown
               residents={residents}
               value={selectedResident}
               onChange={setSelectedResident}
             />
-            {selectedResidentData && apiResponse && (
-              <ResidentTimetable
-                resident={selectedResidentData}
-                apiResponse={apiResponse}
-              />
+            {apiResponse && (
+              <>
+                {selectedResidentData && (
+                  <ResidentTimetable
+                    resident={selectedResidentData}
+                    apiResponse={apiResponse}
+                  />
+                )}
+                <CohortStatistics statistics={apiResponse.statistics} />
+                <div className="w-1/2">
+                  <PostingStatistics
+                    postingUtil={apiResponse.statistics.cohort.posting_util}
+                  />
+                </div>
+              </>
             )}
-            <PostingStatistics />
           </div>
         )}
 

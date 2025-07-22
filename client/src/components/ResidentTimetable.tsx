@@ -4,14 +4,20 @@ import { monthLabels } from "../lib/constants";
 import {
   Table,
   TableBody,
-  // TableCaption,
   TableCell,
   TableHead,
   TableHeader,
   TableRow,
 } from "./ui/table";
 import { Badge } from "./ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "./ui/card";
 
 const ResidentTimetable: React.FC<{
   resident: Resident;
@@ -64,147 +70,155 @@ const ResidentTimetable: React.FC<{
     apiResponse.statistics.cohort.optimisation_scores[residentIndex];
 
   return (
-    <div className="bg-gray-50 rounded-lg p-6 space-y-6">
+    <Card className="bg-gray-50">
       {/* resident information */}
-      <div className="flex flex-col space-y-4">
-        <h2 className="text-lg font-semibold text-gray-800">
-          Resident Information
-        </h2>
-        <div className="flex gap-12 items-center text-sm">
+      <CardHeader>
+        <CardTitle>Resident Information</CardTitle>
+        <CardDescription className="flex gap-8 items-center">
           <p>
             Name: {resident.name} ({resident.mcr})
           </p>
           <p>
             Current Resident Year:{" "}
-            <Badge variant="outline" className="bg-blue-200 text-md">
+            <Badge
+              variant="outline"
+              className="bg-blue-200 text-blue-800 text-md"
+            >
               {resident.resident_year}
             </Badge>
           </p>
-          <p>
-            <Badge
-              variant="outline"
-              className="text-md bg-yellow-100 text-yellow-800"
-            >
-              Optimisation Score: {optimisationScore}
-            </Badge>
-          </p>
-        </div>
-      </div>
+        </CardDescription>
+        <CardAction>
+          <Badge
+            variant="outline"
+            className="text-md bg-yellow-100 text-yellow-800"
+          >
+            Optimisation Score: {optimisationScore}
+          </Badge>
+        </CardAction>
+      </CardHeader>
 
       {/* resident timetable */}
-      <div className="rounded-md border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="text-left">Year</TableHead>
-              {monthLabels.map((month) => (
-                <TableHead key={month} className="text-center">
-                  {month}
-                </TableHead>
-              ))}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {/* Past years */}
-            {Object.keys(pastYearBlockPostings)
-              .sort((a, b) => parseInt(a) - parseInt(b))
-              .map((year) => {
-                const yearPostings = pastYearBlockPostings[parseInt(year)];
-                return (
-                  <TableRow key={`year-${year}`}>
-                    <TableCell className="font-medium text-gray-600">
-                      Year {year}
-                    </TableCell>
-                    {monthLabels.map((month, index) => {
-                      const blockNumber = index + 1;
-                      const assignment = yearPostings[blockNumber];
-                      const posting = assignment
-                        ? postingMap[assignment.posting_code]
-                        : null;
+      <CardContent>
+        <div className="bg-white rounded-md overflow-hidden p-2">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="text-left">Year</TableHead>
+                {monthLabels.map((month) => (
+                  <TableHead key={month} className="text-center">
+                    {month}
+                  </TableHead>
+                ))}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {/* Past years */}
+              {Object.keys(pastYearBlockPostings)
+                .sort((a, b) => parseInt(a) - parseInt(b))
+                .map((year) => {
+                  const yearPostings = pastYearBlockPostings[parseInt(year)];
+                  return (
+                    <TableRow key={`year-${year}`}>
+                      <TableCell className="font-medium text-gray-600">
+                        Year {year}
+                      </TableCell>
+                      {monthLabels.map((month, index) => {
+                        const blockNumber = index + 1;
+                        const assignment = yearPostings[blockNumber];
+                        const posting = assignment
+                          ? postingMap[assignment.posting_code]
+                          : null;
 
-                      return (
-                        <TableCell key={month} className="text-center">
-                          {assignment ? (
-                            <div className="space-y-1">
-                              <div className="font-medium text-sm text-gray-600">
-                                {assignment.posting_code}
+                        return (
+                          <TableCell key={month} className="text-center">
+                            {assignment ? (
+                              <div className="space-y-1">
+                                <div className="font-medium text-sm text-gray-600">
+                                  {assignment.posting_code}
+                                </div>
+                                <Badge
+                                  className={`${
+                                    posting?.posting_type === "core"
+                                      ? "bg-orange-100 text-orange-800"
+                                      : posting?.posting_type === "CCR"
+                                      ? "bg-purple-100 text-purple-800"
+                                      : "bg-green-100 text-green-800"
+                                  }`}
+                                  variant="outline"
+                                >
+                                  {posting?.posting_type.toUpperCase() || ""}
+                                </Badge>
                               </div>
-                              <Badge
-                                className={`${
-                                  posting?.posting_type === "core"
-                                    ? "bg-orange-100 text-orange-800"
-                                    : posting?.posting_type === "CCR"
-                                    ? "bg-purple-100 text-purple-800"
-                                    : "bg-green-100 text-green-800"
-                                }`}
-                                variant="outline"
-                              >
-                                {posting?.posting_type.toUpperCase() || ""}
-                              </Badge>
-                            </div>
-                          ) : (
-                            <span className="text-gray-300 text-sm">-</span>
-                          )}
-                        </TableCell>
-                      );
-                    })}
-                  </TableRow>
-                );
-              })}
+                            ) : (
+                              <span className="text-gray-300 text-sm">-</span>
+                            )}
+                          </TableCell>
+                        );
+                      })}
+                    </TableRow>
+                  );
+                })}
 
-            {/* Current year */}
-            <TableRow className="bg-blue-100 hover:bg-blue-200">
-              <TableCell className="font-semibold">Current Year</TableCell>
-              {monthLabels.map((month, index) => {
-                const blockNumber = index + 1;
-                const assignment = currentYearBlockPostings[blockNumber];
-                const posting = assignment
-                  ? postingMap[assignment.posting_code]
-                  : null;
+              {/* Current year */}
+              <TableRow className="bg-blue-100 hover:bg-blue-200">
+                <TableCell className="font-semibold">Current Year</TableCell>
+                {monthLabels.map((month, index) => {
+                  const blockNumber = index + 1;
+                  const assignment = currentYearBlockPostings[blockNumber];
+                  const posting = assignment
+                    ? postingMap[assignment.posting_code]
+                    : null;
 
-                return (
-                  <TableCell key={month} className="text-center">
-                    {assignment ? (
-                      <div className="space-y-1">
-                        <div className="font-medium text-sm text-blue-800">
-                          {assignment.posting_code}
+                  return (
+                    <TableCell key={month} className="text-center">
+                      {assignment ? (
+                        <div className="space-y-1">
+                          <div className="font-medium text-sm text-blue-800">
+                            {assignment.posting_code}
+                          </div>
+                          <Badge
+                            className={`${
+                              posting?.posting_type === "core"
+                                ? "bg-orange-100 text-orange-800"
+                                : posting?.posting_type === "CCR"
+                                ? "bg-purple-100 text-purple-800"
+                                : "bg-green-100 text-green-800"
+                            }`}
+                            variant="outline"
+                          >
+                            {posting?.posting_type.toUpperCase() || ""}
+                          </Badge>
                         </div>
-                        <Badge
-                          className={`${
-                            posting?.posting_type === "core"
-                              ? "bg-orange-100 text-orange-800"
-                              : posting?.posting_type === "CCR"
-                              ? "bg-purple-100 text-purple-800"
-                              : "bg-green-100 text-green-800"
-                          }`}
-                          variant="outline"
-                        >
-                          {posting?.posting_type.toUpperCase() || ""}
-                        </Badge>
-                      </div>
-                    ) : (
-                      <span className="text-gray-400 text-sm">-</span>
-                    )}
-                  </TableCell>
-                );
-              })}
-            </TableRow>
-          </TableBody>
-        </Table>
-      </div>
+                      ) : (
+                        <span className="text-gray-400 text-sm">-</span>
+                      )}
+                    </TableCell>
+                  );
+                })}
+              </TableRow>
+            </TableBody>
+          </Table>
+        </div>
+      </CardContent>
 
       {/* resident statistics */}
-      <div className="flex justify-between gap-6">
+      <CardContent className="flex justify-between gap-6">
         <div className="flex gap-12">
-          <div className="flex flex-col gap-2">
+          {/* core postings completed */}
+          <div className="grid grid-rows-4 grid-cols-2 grid-flow-col">
             {Object.entries(resident.core_blocks_completed)
               .sort((a, b) => a[0].localeCompare(b[0]))
               .map(([key, value]) => (
-                <Badge variant="outline" className="text-sm" key={key}>
-                  {key} : {value}
-                </Badge>
+                <div key={key}>
+                  <Badge variant="outline" className="text-sm">
+                    {key} : {value}
+                  </Badge>
+                </div>
               ))}
           </div>
+
+          {/* ccr status */}
           <div className="flex flex-col gap-2">
             <Badge
               variant="outline"
@@ -221,15 +235,15 @@ const ResidentTimetable: React.FC<{
             </Badge>
           </div>
         </div>
+
+        {/* electives completed */}
         <Card className="w-1/3 overflow-x-auto">
-          <CardHeader>
-            <CardTitle className="flex justify-center">
-              <Badge variant="outline" className="text-sm">
+          <CardContent>
+            <div className="flex justify-center mb-2">
+              <Badge variant="secondary" className="text-sm">
                 Total Electives Completed: {resident.unique_electives_completed}
               </Badge>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
+            </div>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -260,8 +274,8 @@ const ResidentTimetable: React.FC<{
             </Table>
           </CardContent>
         </Card>
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 };
 

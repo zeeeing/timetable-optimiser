@@ -263,10 +263,10 @@ def allocate_timetable(
                     ):
                         continue
                     current_progress = resident_progress.get(
-                        posting_code, {"completed": 0, "required": 0}
+                        posting_code, {"blocks_completed": 0, "blocks_required": 0}
                     )
-                    blocks_completed = current_progress["completed"]
-                    blocks_required = current_progress["required"]
+                    blocks_completed = current_progress["blocks_completed"]
+                    blocks_required = current_progress["blocks_required"]
                     blocks_needed = blocks_required - blocks_completed
                     if blocks_needed > 0:
                         core_blocks = sum(
@@ -283,8 +283,9 @@ def allocate_timetable(
 
     ## DEFINE OBJECTIVE
 
-    # Objective: Maximise preference satisfaction (weighted by preference rank)
+    # Objective: Maximise preference satisfaction
     preference_weights = []
+    preference_weight_value = 1
     for resident in residents:
         mcr = resident["mcr"]
         prefs = pref_map.get(mcr, {})
@@ -302,16 +303,19 @@ def allocate_timetable(
 
     # Bonus: Seniority
     seniority_bonus = []
+    seniority_bonus_value = 2
     for resident in residents:
         mcr = resident["mcr"]
         resident_year = resident.get("resident_year", 1)
         for posting in posting_codes:
             for block in blocks:
-                seniority_bonus.append(resident_year * x[mcr][posting][block] * 0.1)
+                seniority_bonus.append(
+                    resident_year * x[mcr][posting][block] * seniority_bonus_value
+                )
 
     # Bonus: Core completion
     core_completion_bonus = []
-    core_bonus_value = 10  # Adjust this value as needed
+    core_bonus_value = 10
     for resident in residents:
         mcr = resident["mcr"]
         for posting_code in posting_codes:
@@ -322,10 +326,10 @@ def allocate_timetable(
                     core_completion_bonus.append(core_bonus_value * assigned)
 
     model.Maximize(
-        sum(preference_weights)
-        + sum(seniority_bonus)
-        + sum(core_completion_bonus)
-        - sum(penalties)
+        sum(preference_weights)  # factor of 1 per rank
+        + sum(seniority_bonus)  # factor of 2 per year
+        + sum(core_completion_bonus)  # factor of 10 per core block
+        - sum(penalties)  # factor of 10 per penalty
     )
 
     ## SOLVE MODEL AND PROCESS RESULTS
@@ -472,7 +476,7 @@ def allocate_timetable(
                 for h in output_history
                 if h["posting_code"] == posting and h["is_current_year"]
             )
-            capacity = sum(posting_info[posting]["max_residents"] for _ in blocks)
+            capacity = posting_info[posting]["max_residents"]
             demand = sum(
                 1
                 for pref in resident_preferences

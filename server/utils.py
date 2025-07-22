@@ -35,8 +35,8 @@ def get_posting_progress(
       {
         mcr: {
           posting_code: {
-            "completed": int,
-            "required": int,
+            "blocks_completed": int,
+            "blocks_required": int,
             "is_completed": bool
           },
           ...
@@ -59,8 +59,8 @@ def get_posting_progress(
                 required_blocks = 1  # Electives require at least 1 block
 
             progress_map[mcr][posting_code] = {
-                "completed": blocks_completed,
-                "required": required_blocks,
+                "blocks_completed": blocks_completed,
+                "blocks_required": required_blocks,
                 "is_completed": blocks_completed >= required_blocks,
             }
 
@@ -85,7 +85,7 @@ def get_core_blocks_completed(
         posting_data = posting_info.get(posting_code, {})
         if posting_data.get("posting_type") == "core":
             base_posting = posting_code.split(" (")[0]
-            core_blocks[base_posting] += details.get("completed", 0)
+            core_blocks[base_posting] += details.get("blocks_completed", 0)
     return dict(core_blocks)
 
 
@@ -99,7 +99,7 @@ def get_unique_electives_completed(
     for posting_code, details in progress.items():
         posting_data = posting_info.get(posting_code, {})
         if posting_data.get("posting_type") == "elective":
-            blocks_completed = details.get("completed", 0)
+            blocks_completed = details.get("blocks_completed", 0)
             if is_posting_completed(posting_code, blocks_completed, posting_info):
                 unique_electives.add(posting_code)
     return unique_electives
