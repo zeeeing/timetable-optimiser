@@ -13,13 +13,12 @@ const CohortStatistics: React.FC<{
   statistics: Statistics;
 }> = ({ statistics }) => {
   const { total_residents, cohort } = statistics;
-  const { optimisation_scores } = cohort;
+  const { optimisation_scores_normalised } = cohort;
 
   // mock data
-  // Generate 100 random integers between 50 and 100 (inclusive)
-  const mockOptimisationScores = Array.from({ length: 100 }, () =>
-    Math.floor(Math.random() * 51) + 50
-  );
+  // const mockOptimisationScores = Array.from({ length: 100 }, () =>
+  //   Math.floor(Math.random() * 51) + 50
+  // );
 
   return (
     <Card className="bg-gray-50">
@@ -30,7 +29,7 @@ const CohortStatistics: React.FC<{
 
       {/* histogram of optimisation scores */}
       <CardContent>
-        <OptimiseScoreHistogram optimisationScores={mockOptimisationScores} />
+        <OptimiseScoreHistogram optimisationScores={optimisation_scores_normalised} />
       </CardContent>
       <CardFooter className="flex justify-center">
         <p>Optimisation Score Distribution</p>

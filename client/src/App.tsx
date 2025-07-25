@@ -29,7 +29,7 @@ const App: React.FC = () => {
     preference: 1,
     seniority: 2,
     core: 10,
-    curr_nonad_penalty: 10,
+    curr_deviation_penalty: 10,
   });
 
   const handleFileUpload =
@@ -164,7 +164,7 @@ const App: React.FC = () => {
               !csvFiles.resident_history ||
               !csvFiles.postings
             }
-            className="bg-blue-600 text-white hover:bg-blue-700"
+            className="bg-blue-600 text-white hover:bg-blue-700 cursor-pointer"
           >
             {isProcessing ? (
               <>
@@ -175,7 +175,7 @@ const App: React.FC = () => {
               "Upload & Generate Timetable"
             )}
           </Button>
-          <Button variant="secondary" onClick={generateSampleCSV}>
+          <Button variant="secondary" onClick={generateSampleCSV} className="cursor-pointer">
             Download Sample CSV
           </Button>
         </div>

@@ -3,14 +3,19 @@ from collections import defaultdict
 
 
 def get_completed_postings(
-    resident_history: List[Dict], posting_info: Dict
+    resident_history: List[Dict], posting_info: Dict[str, Dict]
 ) -> Dict[str, Set[str]]:
     """
-    Get the set of completed postings per resident
+    Get the set of completed postings for each resident
 
     Output:
       {
-        mcr: {posting_code}
+        mcr_1: {
+          posting_code_1,
+          posting_code_2,
+          ...
+        },
+        ...
       }
     """
     history_map = parse_resident_history(resident_history)
@@ -26,21 +31,22 @@ def get_completed_postings(
 
 
 def get_posting_progress(
-    resident_history: List[Dict], posting_info: Dict
+    resident_history: List[Dict], posting_info: Dict[str, Dict]
 ) -> Dict[str, Dict[str, Dict[str, int]]]:
     """
-    Get detailed progress for each resident's postings
+    Get detailed progress for each posting for each resident
 
     Output:
       {
-        mcr: {
-          posting_code: {
+        mcr_1: {
+          posting_code_1: {
             "blocks_completed": int,
             "blocks_required": int,
             "is_completed": bool
           },
           ...
-        }
+        },
+        ...
       }
     """
     history_map = parse_resident_history(resident_history)
@@ -56,7 +62,8 @@ def get_posting_progress(
             if posting_type == "core":
                 required_blocks = CORE_REQUIREMENTS.get(base_posting, 0)
             else:
-                required_blocks = 1  # Electives require at least 1 block
+                # Electives require at least 1 block to be considered completed
+                required_blocks = 1
 
             progress_map[mcr][posting_code] = {
                 "blocks_completed": blocks_completed,
@@ -68,20 +75,21 @@ def get_posting_progress(
 
 
 def get_core_blocks_completed(
-    progress: Dict[str, Dict], posting_info: Dict
+    resident_progress: Dict[str, Dict], posting_info: Dict[str, Dict]
 ) -> Dict[str, int]:
     """
-    Given a resident's posting progress and posting_info, return a dict of base core posting name to total blocks completed.
+    Given a resident's posting progress and posting info,
+    return a dictionary of base core posting names to total blocks completed.
 
     Example output:
       {
         "GM": 3,
         "GRM": 2,
-        "CVM": 3,
+        ...
       }
     """
     core_blocks = defaultdict(int)
-    for posting_code, details in progress.items():
+    for posting_code, details in resident_progress.items():
         posting_data = posting_info.get(posting_code, {})
         if posting_data.get("posting_type") == "core":
             base_posting = posting_code.split(" (")[0]
@@ -90,13 +98,21 @@ def get_core_blocks_completed(
 
 
 def get_unique_electives_completed(
-    progress: Dict[str, Dict], posting_info: Dict
+    resident_progress: Dict[str, Dict], posting_info: Dict
 ) -> Set[str]:
     """
-    Given a resident's posting progress and posting_info, return the set of unique electives completed.
+    Given a resident's posting progress and posting info,
+    return the set of unique electives completed.
+
+    Example output:
+      {
+        "Rehab (TTSH)",
+        "Endocrine (KTPH)",
+        ...
+      }
     """
     unique_electives = set()
-    for posting_code, details in progress.items():
+    for posting_code, details in resident_progress.items():
         posting_data = posting_info.get(posting_code, {})
         if posting_data.get("posting_type") == "elective":
             blocks_completed = details.get("blocks_completed", 0)
@@ -105,17 +121,38 @@ def get_unique_electives_completed(
     return unique_electives
 
 
+def get_ccr_postings_completed(
+    resident_progress: Dict[str, Dict[str, int]],
+    posting_info: Dict[str, Dict],
+) -> List[str]:
+    """
+    Return all CCR posting codes completed (blocks_completed == required_block_duration),
+    or None if none fully completed.
+    """
+    completed_postings = []
+    for p in CCR_POSTINGS:
+        blocks_completed = resident_progress.get(p, {}).get("blocks_completed", 0)
+        required_block_duration = posting_info.get(p, {}).get(
+            "required_block_duration", 0
+        )
+        if blocks_completed == required_block_duration:
+            completed_postings.append(p)
+    return completed_postings
+
+
 # helpers
 def parse_resident_history(resident_history: List[Dict]) -> Dict[str, Dict[str, int]]:
     """
-    Parse resident_history (flat array) into a map of mcr -> {posting_code: block_count}
+    Parse resident history (flat array) into a dictionary of mcr to {posting_code: block_count}
 
     Example output:
       {
-        "R001": {
+        "M123123A": {
           "GM (TTSH)": 3,
           "CVM (TTSH)": 2,
-        }
+          ...
+        },
+        ...
       }
 
     This tracks how many blocks each resident has completed for each posting
@@ -157,6 +194,7 @@ def is_posting_completed(
         return blocks_completed >= 1
 
 
+# constants
 CORE_REQUIREMENTS = {
     # total blocks required for each core posting
     "GM": 9,
@@ -167,3 +205,5 @@ CORE_REQUIREMENTS = {
     "ED": 1,
     "NL": 3,
 }
+
+CCR_POSTINGS = ["GM (NUH)", "GM (SGH)", "GM (CGH)", "GM (SKH)", "GM (WH)"]

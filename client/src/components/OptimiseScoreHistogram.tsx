@@ -3,6 +3,7 @@ import { Bar } from "@visx/shape";
 import { Group } from "@visx/group";
 import { scaleBand, scaleLinear } from "@visx/scale";
 import { GridRows, GridColumns } from "@visx/grid";
+import { bin } from "@visx/vendor/d3-array";
 
 // default config
 const defaultWidth = 1000;
@@ -23,32 +24,31 @@ const OptimiseScoreHistogram: React.FC<BarsProps> = ({
   const getBins = (scores: number[], binSize = 2) => {
     if (scores.length === 0) return [];
 
-    // determine bin range
     const min = Math.min(...scores);
     const max = Math.max(...scores);
 
-    // calc num bins
-    const binCount = Math.ceil((max - min) / binSize) + 1;
+    // Create thresholds for bins at specific intervals
+    const thresholds: number[] = [];
+    for (let i = min; i <= max + binSize; i += binSize) {
+      thresholds.push(i);
+    }
 
-    // initialise bins (array of objects with score and count fields)
-    const bins: { score: number; count: number }[] = Array.from(
-      { length: binCount }, // define length of array
-      (_, i) => ({
-        score: min + i * binSize,
-        count: 0,
-      })
-    );
+    // Use D3's bin generator
+    const binGenerator = bin<number, number>()
+      .domain([min, max])
+      .thresholds(thresholds)
+      .value((d) => d);
 
-    // assign each score to bin
-    scores.forEach((score) => {
-      const binIndex = Math.floor((score - min) / binSize);
-      bins[binIndex].count += 1;
-    });
+    const bins = binGenerator(scores);
 
-    // filter out empty bins and sort by score
     return bins
-      .filter((bin) => bin.count > 0)
-      .sort((a, b) => a.score - b.score);
+      .filter((bin) => bin.length > 0)
+      .map((bin) => ({
+        score: bin.x0!,
+        count: bin.length,
+        x0: bin.x0!,
+        x1: bin.x1!,
+      }));
   };
 
   // parse scores into bins

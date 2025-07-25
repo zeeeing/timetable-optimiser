@@ -18,6 +18,8 @@ import {
   CardHeader,
   CardTitle,
 } from "./ui/card";
+import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
+import { Info } from "lucide-react";
 
 const ResidentTimetable: React.FC<{
   resident: Resident;
@@ -66,7 +68,9 @@ const ResidentTimetable: React.FC<{
   const residentIndex = apiResponse.residents.findIndex(
     (r) => r.mcr === resident.mcr
   );
-  const optimisationScore =
+  const optimisationScoreNormalised =
+    apiResponse.statistics.cohort.optimisation_scores_normalised[residentIndex];
+  const optimisationScoreRaw =
     apiResponse.statistics.cohort.optimisation_scores[residentIndex];
 
   return (
@@ -91,9 +95,30 @@ const ResidentTimetable: React.FC<{
         <CardAction>
           <Badge
             variant="outline"
-            className="text-md bg-yellow-100 text-yellow-800"
+            className="text-md bg-yellow-100 text-yellow-800 flex items-center gap-1"
           >
-            Optimisation Score: {optimisationScore}
+            Optimisation Score: {optimisationScoreNormalised}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="cursor-pointer">
+                  <Info size={16} />
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="max-w-xs w-[250px]">
+                <div className="flex flex-col justify-center items-center text-center">
+                  <p>
+                    This score reflects how well this resident's timetable
+                    matches their preferences and program goals, normalised to
+                    the top-performing resident in the cohort (100% = best score
+                    achieved).
+                  </p>
+                  <br />
+                  {optimisationScoreRaw !== undefined && (
+                    <span>(Raw Score: {optimisationScoreRaw})</span>
+                  )}
+                </div>
+              </TooltipContent>
+            </Tooltip>
           </Badge>
         </CardAction>
       </CardHeader>
@@ -139,15 +164,19 @@ const ResidentTimetable: React.FC<{
                                 </div>
                                 <Badge
                                   className={`${
-                                    posting?.posting_type === "core"
-                                      ? "bg-orange-100 text-orange-800"
-                                      : posting?.posting_type === "CCR"
+                                    posting?.posting_code ===
+                                    resident.ccr_status.posting_code
                                       ? "bg-purple-100 text-purple-800"
+                                      : posting?.posting_type === "core"
+                                      ? "bg-orange-100 text-orange-800"
                                       : "bg-green-100 text-green-800"
                                   }`}
                                   variant="outline"
                                 >
-                                  {posting?.posting_type.toUpperCase() || ""}
+                                  {posting?.posting_code ===
+                                  resident.ccr_status.posting_code
+                                    ? "CCR"
+                                    : posting?.posting_type.toUpperCase() || ""}
                                 </Badge>
                               </div>
                             ) : (
@@ -179,15 +208,19 @@ const ResidentTimetable: React.FC<{
                           </div>
                           <Badge
                             className={`${
-                              posting?.posting_type === "core"
-                                ? "bg-orange-100 text-orange-800"
-                                : posting?.posting_type === "CCR"
+                              posting?.posting_code ===
+                              resident.ccr_status.posting_code
                                 ? "bg-purple-100 text-purple-800"
+                                : posting?.posting_type === "core"
+                                ? "bg-orange-100 text-orange-800"
                                 : "bg-green-100 text-green-800"
                             }`}
                             variant="outline"
                           >
-                            {posting?.posting_type.toUpperCase() || ""}
+                            {posting?.posting_code ===
+                            resident.ccr_status.posting_code
+                              ? "CCR"
+                              : posting?.posting_type.toUpperCase() || ""}
                           </Badge>
                         </div>
                       ) : (
@@ -237,11 +270,12 @@ const ResidentTimetable: React.FC<{
         </div>
 
         {/* electives completed */}
-        <Card className="w-1/3 overflow-x-auto">
+        <Card className="w-full md:w-1/3 overflow-x-auto">
           <CardContent>
             <div className="flex justify-center mb-2">
               <Badge variant="secondary" className="text-sm">
-                Total Electives Completed: {resident.unique_electives_completed}
+                Total Electives Completed:{" "}
+                {resident.unique_electives_completed.length}
               </Badge>
             </div>
             <Table>
@@ -256,7 +290,11 @@ const ResidentTimetable: React.FC<{
                   allPostings
                     .filter(
                       (h) =>
-                        postingMap[h.posting_code]?.posting_type === "elective"
+                        postingMap[h.posting_code]?.posting_type ===
+                          "elective" &&
+                        resident.unique_electives_completed.includes(
+                          h.posting_code
+                        )
                     )
                     .reduce((acc, h) => {
                       acc[h.posting_code] = (acc[h.posting_code] || 0) + 1;

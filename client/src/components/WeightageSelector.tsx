@@ -1,19 +1,21 @@
 import React from "react";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
+import { Info } from "lucide-react";
+import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
 
 interface WeightageSelectorProps {
   value: {
     preference: number;
     seniority: number;
     core: number;
-    curr_nonad_penalty: number;
+    curr_deviation_penalty: number;
   };
   setValue: (val: {
     preference: number;
     seniority: number;
     core: number;
-    curr_nonad_penalty: number;
+    curr_deviation_penalty: number;
   }) => void;
 }
 
@@ -22,7 +24,7 @@ const WeightageSelector: React.FC<WeightageSelectorProps> = ({
   setValue,
 }) => {
   const handleChange =
-    (field: "preference" | "seniority" | "core" | "curr_nonad_penalty") =>
+    (field: "preference" | "seniority" | "core" | "curr_deviation_penalty") =>
     (e: React.ChangeEvent<HTMLInputElement>) => {
       setValue({ ...value, [field]: Number(e.target.value) });
     };
@@ -36,45 +38,88 @@ const WeightageSelector: React.FC<WeightageSelectorProps> = ({
       </p>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="flex flex-col gap-2">
-          <Label htmlFor="preference">Preference Weight</Label>
+          <Label htmlFor="preference">
+            Preference Weight
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="cursor-pointer">
+                  <Info size={16} />
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="top">
+                How much weightage to give each preference level.
+              </TooltipContent>
+            </Tooltip>
+          </Label>
           <Input
             id="preference"
             type="number"
             value={value.preference}
             onChange={handleChange("preference")}
-            defaultValue={1}
           />
         </div>
         <div className="flex flex-col gap-2">
-          <Label htmlFor="seniority">Seniority Bonus</Label>
+          <Label htmlFor="seniority">
+            Seniority Bonus
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="cursor-pointer">
+                  <Info size={16} />
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="top">
+                Prioritise more senior residents (e.g. R3 {">"} R2 {">"} R1).
+              </TooltipContent>
+            </Tooltip>
+          </Label>
           <Input
             id="seniority"
             type="number"
             value={value.seniority}
             onChange={handleChange("seniority")}
-            defaultValue={2}
           />
         </div>
         <div className="flex flex-col gap-2">
-          <Label htmlFor="core">Core Completion Bonus</Label>
+          <Label htmlFor="core">
+            Core Completion Bonus
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="cursor-pointer">
+                  <Info size={16} />
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="top">
+                Bonus for completing all required core postings earlier.
+              </TooltipContent>
+            </Tooltip>
+          </Label>
           <Input
             id="core"
             type="number"
             value={value.core}
             onChange={handleChange("core")}
-            defaultValue={10}
           />
         </div>
         <div className="flex flex-col gap-2">
-          <Label htmlFor="curr_nonad_penalty">
-            Curriculum Non-Adherence Penalty
+          <Label htmlFor="curr_deviation_penalty">
+            Curriculum Deviation Penalty
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="cursor-pointer">
+                  <Info size={16} />
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="top">
+                Penalty for deviating from set curriculum timeline (e.g.
+                completing at least 2 electives by year 2).
+              </TooltipContent>
+            </Tooltip>
           </Label>
           <Input
-            id="curr_nonad_penalty"
+            id="curr_deviation_penalty"
             type="number"
-            value={value.curr_nonad_penalty}
-            onChange={handleChange("curr_nonad_penalty")}
-            defaultValue={10}
+            value={value.curr_deviation_penalty}
+            onChange={handleChange("curr_deviation_penalty")}
           />
         </div>
       </div>

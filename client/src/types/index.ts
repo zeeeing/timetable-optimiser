@@ -15,7 +15,7 @@ export interface Resident {
   core_blocks_completed: {
     [key: string]: number;
   };
-  unique_electives_completed: number;
+  unique_electives_completed: string[];
   ccr_status: {
     completed: boolean;
     posting_code: string;
@@ -48,6 +48,7 @@ export interface Statistics {
   total_residents: number;
   cohort: {
     optimisation_scores: number[];
+    optimisation_scores_normalised: number[];
     posting_util: PostingUtil[];
   };
 }
