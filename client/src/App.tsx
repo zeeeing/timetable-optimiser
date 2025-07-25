@@ -1,17 +1,21 @@
 import React, { useState } from "react";
-import { generateSampleCSV } from "./lib/generateSampleCSV";
+
 import FileUpload from "./components/FileUpload";
+import WeightageSelector from "./components/WeightageSelector";
+import ErrorAlert from "./components/ErrorAlert";
 import ResidentDropdown from "./components/ResidentDropdown";
 import ResidentTimetable from "./components/ResidentTimetable";
+import CohortStatistics from "./components/CohortStatistics";
 import PostingStatistics from "./components/PostingStatistics";
-import ErrorAlert from "./components/ErrorAlert";
+import { generateSampleCSV } from "./lib/generateSampleCSV";
+
 import { uploadCsv, downloadCsv } from "./api/api";
+
 import { Button } from "./components/ui/button";
 import { Separator } from "./components/ui/separator";
 import { Loader2Icon } from "lucide-react";
+
 import type { Resident, ApiResponse, CsvFilesState } from "./types";
-import CohortStatistics from "./components/CohortStatistics";
-import WeightageSelector from "./components/WeightageSelector";
 
 const App: React.FC = () => {
   const [csvFiles, setCsvFiles] = useState<CsvFilesState>({
@@ -175,7 +179,11 @@ const App: React.FC = () => {
               "Upload & Generate Timetable"
             )}
           </Button>
-          <Button variant="secondary" onClick={generateSampleCSV} className="cursor-pointer">
+          <Button
+            variant="secondary"
+            onClick={generateSampleCSV}
+            className="cursor-pointer"
+          >
             Download Sample CSV
           </Button>
         </div>
