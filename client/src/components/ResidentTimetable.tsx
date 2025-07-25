@@ -248,7 +248,7 @@ const ResidentTimetable: React.FC<{
       <CardContent className="flex justify-between gap-6">
         <div className="flex gap-12">
           {/* core postings completed */}
-          <div className="grid grid-rows-4 grid-cols-2 grid-flow-col">
+          <div className="flex flex-col gap-2">
             {Object.entries(resident.core_blocks_completed)
               .sort((a, b) => a[0].localeCompare(b[0]))
               .map(([key, value]) => (
