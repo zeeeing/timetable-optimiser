@@ -111,12 +111,14 @@ app.post(
 
       // handle output and errors
       let output = "";
+      let errOutput = "";
 
       process.stdout.on("data", (data) => {
         output += data.toString();
       });
       process.stderr.on("data", (err) => {
         // log python logs for debugging (not exactly 'error' logs)
+        errOutput += err.toString();
         console.log("[PYTHON LOG]", err.toString());
       });
 
@@ -128,6 +130,7 @@ app.post(
           if (result.success === false) {
             // python script reported an error
             res.status(400).json(result);
+            console.log("[PYTHON LOG]", result.error);
           } else {
             res.json(result);
           }

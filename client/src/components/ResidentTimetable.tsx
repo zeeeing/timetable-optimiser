@@ -25,28 +25,28 @@ const ResidentTimetable: React.FC<{
   resident: Resident;
   apiResponse: ApiResponse;
 }> = ({ resident, apiResponse }) => {
-  // all postings for current resident
-  const allPostings = apiResponse.resident_history.filter(
+  // all postings
+  const allResidentHistory = apiResponse.resident_history.filter(
     (h) => h.mcr === resident.mcr
   );
 
-  // current year optimised postings
-  const currentYearPostings = allPostings.filter(
+  // current year assigned postings
+  const currentYearPostings = allResidentHistory.filter(
     (h) => h.is_current_year === true
   );
 
   // past year postings
-  const pastYearPostings = allPostings.filter(
+  const pastYearPostings = allResidentHistory.filter(
     (h) => h.is_current_year === false
   );
 
-  // create posting map for efficient lookup by posting code
+  // create [posting_code : posting_info] map
   const postingMap = apiResponse.postings.reduce((map, posting) => {
     map[posting.posting_code] = posting;
     return map;
   }, {} as Record<string, (typeof apiResponse.postings)[0]>);
 
-  // create block to posting map for current year
+  // create [block : resident current year assignment] map
   const currentYearBlockPostings = currentYearPostings.reduce(
     (map, assignment) => {
       map[assignment.block] = assignment;
@@ -55,7 +55,7 @@ const ResidentTimetable: React.FC<{
     {} as Record<number, (typeof currentYearPostings)[0]>
   );
 
-  // create year to block to posting nested map for past years
+  // create [year : [block : resident history]] nested map for past years
   const pastYearBlockPostings = pastYearPostings.reduce((map, assignment) => {
     if (!map[assignment.year]) {
       map[assignment.year] = {};
@@ -63,6 +63,15 @@ const ResidentTimetable: React.FC<{
     map[assignment.year][assignment.block] = assignment;
     return map;
   }, {} as Record<number, Record<number, (typeof pastYearPostings)[0]>>);
+
+  // create preference map
+  const preferenceMap = apiResponse.resident_preferences.reduce(
+    (map, preference) => {
+      map[preference.preference_rank] = preference.posting_code;
+      return map;
+    },
+    {} as Record<number, string>
+  );
 
   // get optimisation score
   const residentIndex = apiResponse.residents.findIndex(
@@ -269,6 +278,33 @@ const ResidentTimetable: React.FC<{
           </div>
         </div>
 
+        {/* resident preferences */}
+        <Card className="w-full md:w-1/3 overflow-x-auto">
+          <CardContent>
+            <div className="flex justify-center mb-2">
+              <Badge variant="secondary" className="text-sm">
+                Total Preferences: {Object.keys(preferenceMap).length}
+              </Badge>
+            </div>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="text-center">Preference</TableHead>
+                  <TableHead className="text-center">Month(s)</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {Object.entries(preferenceMap).map(([rank, postingCode]) => (
+                  <TableRow key={rank}>
+                    <TableCell className="text-center">{rank}</TableCell>
+                    <TableCell className="text-center">{postingCode}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+
         {/* electives completed */}
         <Card className="w-full md:w-1/3 overflow-x-auto">
           <CardContent>
@@ -287,7 +323,7 @@ const ResidentTimetable: React.FC<{
               </TableHeader>
               <TableBody>
                 {Object.entries(
-                  allPostings
+                  allResidentHistory
                     .filter(
                       (h) =>
                         postingMap[h.posting_code]?.posting_type ===
