@@ -231,104 +231,76 @@ def allocate_timetable(
     #             if assigned_elective_vars:
     #                 model.Add(sum(assigned_elective_vars) <= 1)
 
-    # # General Constraint 8: Pair MICU and RCCM consecutively within the same institution
-    # for resident in residents:
-    #     mcr = resident["mcr"]
-    #     institutions = set(
-    #         p.split(" (")[1].rstrip(")")
-    #         for p in posting_codes
-    #         if p.startswith("MICU (") or p.startswith("RCCM (")
-    #     )
+    # General Constraint 8: Pair MICU and RCCM consecutively within the same institution
+    # group MICU and RCCM postings by institution
+    institutions = set(
+        p.split(" (")[1].rstrip(")")
+        for p in posting_codes
+        if p.startswith("MICU (") or p.startswith("RCCM (")
+    )
 
-    #     for inst in institutions:
-    #         micu_postings = [p for p in posting_codes if p.startswith("MICU (") and f"({inst})" in p]
-    #         rccm_postings = [p for p in posting_codes if p.startswith("RCCM (") and f"({inst})" in p]
+    for resident in residents:
+        mcr = resident["mcr"]
 
-    #         if not micu_postings or not rccm_postings:
-    #             continue
+        for inst in institutions:
+            micu_postings = [
+                p for p in posting_codes if p.startswith("MICU (") and f"({inst})" in p
+            ]
+            rccm_postings = [
+                p for p in posting_codes if p.startswith("RCCM (") and f"({inst})" in p
+            ]
 
-    #         # Create interval variables and track their properties
-    #         micu_intervals_info = []  # (interval_var, presence_var, start_time, duration, posting)
-    #         rccm_intervals_info = []
+            if not micu_postings or not rccm_postings:
+                continue
 
-    #         # MICU intervals
-    #         for p in micu_postings:
-    #             duration = posting_info[p]["required_block_duration"]
-    #             for start_block in range(len(blocks) - duration + 1):
-    #                 presence_var = model.NewBoolVar(f"micu_presence_{mcr}_{p}_{start_block}")
+            # Create list of (block, block+1) pairs
+            # assumes MICU and RCCM have required_block_duration = 1
+            consecutive_block_pairs = [(b, b + 1) for b in blocks if b + 1 in blocks]
 
-    #                 # Link presence to assignments
-    #                 assignment_sum = sum(x[mcr][p][start_block + offset] for offset in range(duration))
-    #                 model.Add(assignment_sum == duration).OnlyEnforceIf(presence_var)
-    #                 model.Add(assignment_sum < duration).OnlyEnforceIf(presence_var.Not())
+            adjacency_vars = []
 
-    #                 interval_var = model.NewOptionalIntervalVar(
-    #                     start_block, duration, start_block + duration,
-    #                     presence_var, f"micu_interval_{mcr}_{p}_{start_block}"
-    #                 )
+            for micu_p in micu_postings:
+                for rccm_p in rccm_postings:
+                    for b1, b2 in consecutive_block_pairs:
+                        # MICU then RCCM
+                        pair1 = model.NewBoolVar(
+                            f"adj_micu_rccm_{mcr}_{inst}_{b1}_{b2}"
+                        )
+                        # If you set pair1 == 1, then both MICU in b1 and RCCM in b2 must be true
+                        model.Add(x[mcr][micu_p][b1] == 1).OnlyEnforceIf(pair1)
+                        model.Add(x[mcr][rccm_p][b2] == 1).OnlyEnforceIf(pair1)
+                        # If pair1 == 0, then at least one of MICU in b1 or RCCM in b2 must be off
+                        model.AddBoolOr(
+                            [x[mcr][micu_p][b1].Not(), x[mcr][rccm_p][b2].Not()]
+                        ).OnlyEnforceIf(pair1.Not())
+                        # collect all valid pairs
+                        adjacency_vars.append(pair1)
 
-    #                 micu_intervals_info.append((interval_var, presence_var, start_block, duration, p))
+                        # RCCM then MICU
+                        pair2 = model.NewBoolVar(
+                            f"adj_rccm_micu_{mcr}_{inst}_{b2}_{b1}"
+                        )
+                        model.Add(x[mcr][rccm_p][b1] == 1).OnlyEnforceIf(pair2)
+                        model.Add(x[mcr][micu_p][b2] == 1).OnlyEnforceIf(pair2)
+                        model.AddBoolOr(
+                            [x[mcr][rccm_p][b1].Not(), x[mcr][micu_p][b2].Not()]
+                        ).OnlyEnforceIf(pair2.Not())
+                        adjacency_vars.append(pair2)
 
-    #         # RCCM intervals
-    #         for p in rccm_postings:
-    #             duration = posting_info[p]["required_block_duration"]
-    #             for start_block in range(len(blocks) - duration + 1):
-    #                 presence_var = model.NewBoolVar(f"rccm_presence_{mcr}_{p}_{start_block}")
+            # both MICU and RCCM must be assigned together, or not at all
+            micu_assigned = model.NewBoolVar(f"micu_assigned_{mcr}_{inst}")
+            rccm_assigned = model.NewBoolVar(f"rccm_assigned_{mcr}_{inst}")
+            model.Add(
+                sum(x[mcr][p][b] for p in micu_postings for b in blocks) >= 1
+            ).OnlyEnforceIf(micu_assigned)
+            model.Add(
+                sum(x[mcr][p][b] for p in rccm_postings for b in blocks) >= 1
+            ).OnlyEnforceIf(rccm_assigned)
+            model.Add(micu_assigned == rccm_assigned)
 
-    #                 assignment_sum = sum(x[mcr][p][start_block + offset] for offset in range(duration))
-    #                 model.Add(assignment_sum == duration).OnlyEnforceIf(presence_var)
-    #                 model.Add(assignment_sum < duration).OnlyEnforceIf(presence_var.Not())
-
-    #                 interval_var = model.NewOptionalIntervalVar(
-    #                     start_block, duration, start_block + duration,
-    #                     presence_var, f"rccm_interval_{mcr}_{p}_{start_block}"
-    #                 )
-
-    #                 rccm_intervals_info.append((interval_var, presence_var, start_block, duration, p))
-
-    #         # At most one of each type
-    #         model.Add(sum(info[1] for info in micu_intervals_info) <= 1)
-    #         model.Add(sum(info[1] for info in rccm_intervals_info) <= 1)
-
-    #         # If one is assigned, both must be assigned
-    #         micu_assigned = model.NewBoolVar(f"micu_assigned_{mcr}_{inst}")
-    #         rccm_assigned = model.NewBoolVar(f"rccm_assigned_{mcr}_{inst}")
-
-    #         model.Add(sum(info[1] for info in micu_intervals_info) >= 1).OnlyEnforceIf(micu_assigned)
-    #         model.Add(sum(info[1] for info in rccm_intervals_info) >= 1).OnlyEnforceIf(rccm_assigned)
-    #         model.Add(micu_assigned == rccm_assigned)
-
-    #         # Consecutive constraint using explicit start/end relationships
-    #         consecutive_pairs = []
-
-    #         for micu_info in micu_intervals_info:
-    #             _, micu_presence, micu_start, micu_duration, _ = micu_info
-    #             micu_end = micu_start + micu_duration
-
-    #             for rccm_info in rccm_intervals_info:
-    #                 _, rccm_presence, rccm_start, rccm_duration, _ = rccm_info
-    #                 rccm_end = rccm_start + rccm_duration
-
-    #                 # Check if they can be consecutive
-    #                 if micu_end == rccm_start:  # MICU then RCCM
-    #                     pair_var = model.NewBoolVar(f"pair_micu_rccm_{mcr}_{inst}_{micu_start}_{rccm_start}")
-    #                     model.AddBoolAnd([micu_presence, rccm_presence]).OnlyEnforceIf(pair_var)
-    #                     consecutive_pairs.append(pair_var)
-
-    #                 elif rccm_end == micu_start:  # RCCM then MICU
-    #                     pair_var = model.NewBoolVar(f"pair_rccm_micu_{mcr}_{inst}_{rccm_start}_{micu_start}")
-    #                     model.AddBoolAnd([micu_presence, rccm_presence]).OnlyEnforceIf(pair_var)
-    #                     consecutive_pairs.append(pair_var)
-
-    #         # If both are assigned, exactly one consecutive pair must be active
-    #         both_assigned = model.NewBoolVar(f"both_assigned_{mcr}_{inst}")
-    #         model.AddBoolAnd([micu_assigned, rccm_assigned]).OnlyEnforceIf(both_assigned)
-
-    #         if consecutive_pairs:
-    #             model.Add(sum(consecutive_pairs) == 1).OnlyEnforceIf(both_assigned)
-    #         else:
-    #             # No valid consecutive arrangements possible - force both to be unassigned
-    #             model.Add(both_assigned == 0)
+            # Enforce that this constraint is needed only if both MICU and RCCM are assigned
+            if adjacency_vars:
+                model.Add(sum(adjacency_vars) >= 1).OnlyEnforceIf(micu_assigned)
 
     ###########################################################################
     # DEFINE SOFT CONSTRAINTS WITH PENALTIES
