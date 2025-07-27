@@ -283,7 +283,12 @@ const ResidentTimetable: React.FC<{
           <CardContent>
             <div className="flex justify-center mb-2">
               <Badge variant="secondary" className="text-sm">
-                Total Preferences: {Object.keys(preferenceMap).length}
+                Total Preferences:{" "}
+                {
+                  Object.values(preferenceMap).filter(
+                    (code) => code.trim() !== ""
+                  ).length
+                }
               </Badge>
             </div>
             <Table>
@@ -297,7 +302,9 @@ const ResidentTimetable: React.FC<{
                 {Object.entries(preferenceMap).map(([rank, postingCode]) => (
                   <TableRow key={rank}>
                     <TableCell className="text-center">{rank}</TableCell>
-                    <TableCell className="text-center">{postingCode}</TableCell>
+                    <TableCell className="text-center">
+                      {postingCode.length > 0 ? postingCode : "-"}
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>

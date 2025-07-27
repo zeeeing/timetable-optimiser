@@ -11,54 +11,92 @@ import {
 import {
   Card,
   CardHeader,
+  CardAction,
   CardContent,
   CardTitle,
   CardDescription,
 } from "./ui/card";
+import { monthLabels } from "../lib/constants";
+import { Badge } from "./ui/badge";
 
 const PostingStatistics: React.FC<{
   postingUtil: PostingUtil[];
 }> = ({ postingUtil }) => {
+  // get block utlisation for a specific block
+  const getBlockUtilisation = (postingCode: string, blockNumber: number) => {
+    const utilPerBlockArr = postingUtil.find(
+      (p) => p.posting_code === postingCode
+    )?.util_per_block;
+    return (
+      utilPerBlockArr?.find((b) => b.block === blockNumber) ?? {
+        block: blockNumber,
+        filled: 0,
+        capacity: 0,
+        is_over_capacity: false,
+      }
+    );
+  };
+
+  // get all unique posting codes sorted
+  const postingCodesSorted = postingUtil
+    .map((p) => p.posting_code)
+    .sort((a, b) => a.localeCompare(b));
+
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Posting Utilisation</CardTitle>
+        <CardTitle>Posting Utilisation By Month</CardTitle>
         <CardDescription>
-          Number of Postings: {postingUtil.length}
+          Displaying utilisation across all blocks for{" "}
+          {postingCodesSorted.length} postings.
         </CardDescription>
+        <CardAction>
+          <Badge variant="secondary" className="text-sm">
+            AY2025/2026
+          </Badge>
+        </CardAction>
       </CardHeader>
-      <CardContent>
+      <CardContent className="overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="text-left">Posting Code</TableHead>
-              <TableHead className="text-left">Filled</TableHead>
-              <TableHead className="text-left">Capacity / Month</TableHead>
-              <TableHead className="text-left">In Top 3 Demand</TableHead>
+              <TableHead>Posting Code</TableHead>
+              {monthLabels.map((month) => (
+                <TableHead key={month} className="text-center">
+                  {month}
+                </TableHead>
+              ))}
             </TableRow>
           </TableHeader>
           <TableBody>
-            {postingUtil
-              .sort((a, b) => a.posting_code.localeCompare(b.posting_code))
-              .map((util, idx) => (
+            {postingCodesSorted.map((postingCode, idx) => {
+              return (
                 <TableRow
-                  key={util.posting_code}
+                  key={postingCode}
                   className={idx % 2 === 0 ? "bg-white" : "bg-gray-50"}
                 >
-                  <TableCell className="px-3 py-2 text-sm">
-                    {util.posting_code}
-                  </TableCell>
-                  <TableCell className="px-3 py-2 text-sm">
-                    {util.filled}
-                  </TableCell>
-                  <TableCell className="px-3 py-2 text-sm">
-                    {util.capacity}
-                  </TableCell>
-                  <TableCell className="px-3 py-2 text-sm">
-                    {util.demand_top3}
-                  </TableCell>
+                  <TableCell>{postingCode}</TableCell>
+                  {monthLabels.map((_, index) => {
+                    const blockNumber = index + 1;
+                    const { filled, capacity, is_over_capacity } =
+                      getBlockUtilisation(postingCode, blockNumber);
+
+                    return (
+                      <TableCell
+                        key={`${postingCode}-${blockNumber}`}
+                        className={`text-center ${
+                          is_over_capacity ? "bg-red-100 text-red-800" : ""
+                        }`}
+                      >
+                        {filled != null
+                          ? `${capacity - filled} / ${capacity}`
+                          : "-"}
+                      </TableCell>
+                    );
+                  })}
                 </TableRow>
-              ))}
+              );
+            })}
           </TableBody>
         </Table>
       </CardContent>

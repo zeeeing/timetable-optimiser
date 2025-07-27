@@ -208,12 +208,13 @@ const App: React.FC = () => {
                     apiResponse={apiResponse}
                   />
                 )}
-                <CohortStatistics statistics={apiResponse.statistics} />
-                <div className="w-1/2">
-                  <PostingStatistics
-                    postingUtil={apiResponse.statistics.cohort.posting_util}
-                  />
-                </div>
+                <CohortStatistics
+                  statistics={apiResponse.statistics}
+                  residents={apiResponse.residents}
+                />
+                <PostingStatistics
+                  postingUtil={apiResponse.statistics.cohort.posting_util}
+                />
               </>
             )}
           </div>

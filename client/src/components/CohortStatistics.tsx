@@ -1,24 +1,44 @@
 import type { Statistics } from "../types";
-import OptimiseScoreHistogram from "./OptimiseScoreHistogram";
+import OptimisationScoreHistogram from "./OptimisationScoreHistogram";
+import OptimisationScoreTable from "./OptimisationScoreTable";
 import {
   Card,
   CardContent,
-  CardFooter,
   CardHeader,
   CardTitle,
   CardDescription,
 } from "./ui/card";
 
-const CohortStatistics: React.FC<{
+type Props = {
   statistics: Statistics;
-}> = ({ statistics }) => {
+  residents: Array<{
+    mcr: string;
+    name: string;
+  }>;
+};
+
+const CohortStatistics: React.FC<Props> = ({ statistics, residents }) => {
   const { total_residents, cohort } = statistics;
-  const { optimisation_scores_normalised } = cohort;
+  const { optimisation_scores } = cohort;
 
   // mock data
-  // const mockOptimisationScores = Array.from({ length: 100 }, () =>
-  //   Math.floor(Math.random() * 51) + 50
-  // );
+  const mockResidentScores = Array.from(
+    { length: 50 },
+    () => Math.floor(Math.random() * 51) + 50
+  );
+
+  // change as when needed to use mock data
+  let optimisationScores = optimisation_scores;
+  optimisationScores = mockResidentScores;
+
+  // Map optimisation scores to resident scores with actual names
+  const mappedScores = optimisationScores.map((score, index) => {
+    const resident = residents[index];
+    return {
+      residentName: resident ? resident.name : `Resident ${index + 1}`,
+      score: score,
+    };
+  });
 
   return (
     <Card className="bg-gray-50">
@@ -28,12 +48,12 @@ const CohortStatistics: React.FC<{
       </CardHeader>
 
       {/* histogram of optimisation scores */}
-      <CardContent>
-        <OptimiseScoreHistogram optimisationScores={optimisation_scores_normalised} />
+      <CardContent className="flex justify-center items-center gap-6">
+        <OptimisationScoreHistogram
+          optimisationScores={mappedScores.map((r) => r.score)}
+        />
+        <OptimisationScoreTable scores={mappedScores} />
       </CardContent>
-      <CardFooter className="flex justify-center">
-        <p>Optimisation Score Distribution</p>
-      </CardFooter>
     </Card>
   );
 };

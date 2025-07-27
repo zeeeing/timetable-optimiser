@@ -55,9 +55,14 @@ export interface Statistics {
 
 export interface PostingUtil {
   posting_code: string;
+  util_per_block: UtilPerBlock[];
+}
+
+export interface UtilPerBlock {
+  block: number;
   filled: number;
   capacity: number;
-  demand_top3: number;
+  is_over_capacity: boolean;
 }
 
 // csv file types

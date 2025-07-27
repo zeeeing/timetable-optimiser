@@ -1,5 +1,4 @@
 from typing import List, Dict, Set
-from collections import defaultdict
 
 
 def get_completed_postings(
@@ -88,13 +87,15 @@ def get_core_blocks_completed(
         ...
       }
     """
-    core_blocks = defaultdict(int)
+    core_blocks = {}
+    for base_posting in CORE_REQUIREMENTS:
+        core_blocks[base_posting] = 0
     for posting_code, details in resident_progress.items():
         posting_data = posting_info.get(posting_code, {})
         if posting_data.get("posting_type") == "core":
             base_posting = posting_code.split(" (")[0]
             core_blocks[base_posting] += details.get("blocks_completed", 0)
-    return dict(core_blocks)
+    return core_blocks
 
 
 def get_unique_electives_completed(

@@ -6,8 +6,8 @@ import { GridRows, GridColumns } from "@visx/grid";
 import { bin } from "@visx/vendor/d3-array";
 
 // default config
-const defaultWidth = 1000;
-const defaultHeight = 333;
+const defaultWidth = 750;
+const defaultHeight = 350;
 const verticalMargin = 40;
 
 interface BarsProps {
@@ -21,7 +21,7 @@ const OptimiseScoreHistogram: React.FC<BarsProps> = ({
   width = defaultWidth,
   height = defaultHeight,
 }) => {
-  const getBins = (scores: number[], binSize = 2) => {
+  const getBins = (scores: number[], binSize = 5) => {
     if (scores.length === 0) return [];
 
     const min = Math.min(...scores);
