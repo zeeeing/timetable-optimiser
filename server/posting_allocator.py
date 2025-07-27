@@ -5,11 +5,12 @@ from ortools.sat.python import cp_model
 from utils import (
     get_completed_postings,
     get_posting_progress,
-    get_unique_electives_completed,
     get_core_blocks_completed,
+    get_unique_electives_completed,
+    get_ccr_postings_completed,
+    to_snake_case,
     CORE_REQUIREMENTS,
     CCR_POSTINGS,
-    get_ccr_postings_completed,
 )
 import logging
 
@@ -29,12 +30,25 @@ def allocate_timetable(
     weightages: Dict,
 ) -> Dict:
 
+    ###########################################################################
+    # SET UP
+    ###########################################################################
+
     # instantiate the cp-sat model
     logger.info("STARTING POSTING ALLOCATION SERVICE")
     model = cp_model.CpModel()
 
-    assumption_literals = []
-    assumption_var_map = {}
+    # some background on the assumption variables
+
+    # `.OnlyEnforceIf(assumption_var)`
+    # makes your constraint conditional on that literal
+
+    # `model.AddBoolOr([assumption_var])`
+    # forces that literal to be true (so the constraint is in effect)
+    # and makes it show up in the unsat-core if it must be
+    # (i.e. if the solver has to set it false to solve the model)
+
+    assumption_vars = {}
 
     ###########################################################################
     # DEFINE VARIABLES
@@ -100,13 +114,14 @@ def allocate_timetable(
     # General Constraint 2: Each posting block cannot exceed max residents
     for posting_code in posting_codes:
         max_residents = posting_info[posting_code]["max_residents"]
+
         for block in blocks:
             model.Add(
                 sum(x[r["mcr"]][posting_code][block] for r in residents)
                 <= max_residents
             )
 
-    # # General Constraint 3: Residents can't be assigned to postings they've already completed
+    # General Constraint 3: Residents can't be assigned to postings they've already completed
     # for resident in residents:
     #     mcr = resident["mcr"]
     #     resident_completed_postings = completed_postings_map.get(mcr, set())
@@ -129,28 +144,28 @@ def allocate_timetable(
                     x[mcr][posting_code][block]
                     for block in range(start, start + required_duration)
                 ]
-                window_var = model.NewBoolVar(f"window_{mcr}_{posting_code}_{start}")
+                window_var = model.NewBoolVar(
+                    f"window_{mcr}_{to_snake_case(posting_code)}_{start}"
+                )
                 window_vars.append(window_var)
 
-                # Link window_var to window blocks
+                # Link window_var to whether this window is filled
                 model.AddBoolAnd(window).OnlyEnforceIf(window_var)
                 model.AddBoolOr([b.Not() for b in window]).OnlyEnforceIf(
                     window_var.Not()
                 )
 
-            # Create the "assigned" variable: whether the posting is assigned at all
-            assigned = model.NewBoolVar(f"assigned_{mcr}_{posting_code}")
+            # create "assigned" variable - whether the posting is assigned at all
+            assigned = model.NewBoolVar(f"assigned_{mcr}_{to_snake_case(posting_code)}")
             x[mcr][posting_code]["assigned_var"] = assigned
 
-            # Constraint: If assigned → exactly one window must be selected
-            model.Add(sum(window_vars) == 1).OnlyEnforceIf(assigned)
-
-            # If not assigned → all windows must be 0
+            model.Add(sum(window_vars) == 1).OnlyEnforceIf([assigned])
             model.Add(sum(window_vars) == 0).OnlyEnforceIf(assigned.Not())
 
-            # Optionally, link total blocks for this resident/posting = duration * assigned
-            total_blocks = sum(x[mcr][posting_code][block] for block in blocks)
-            model.Add(total_blocks == required_duration * assigned)
+            model.Add(
+                sum(x[mcr][posting_code][block] for block in blocks)
+                == required_duration * assigned
+            )
 
     # General Constraint 5 (CCR): Ensure only one CCR posting is ever assigned per resident
     for resident in residents:
@@ -158,12 +173,11 @@ def allocate_timetable(
         resident_year = resident["resident_year"]
         resident_progress = posting_progress.get(mcr, {})
 
-        completed_ccr = None
-        if len(get_ccr_postings_completed(resident_progress, posting_info)) >= 1:
-            completed_ccr = get_ccr_postings_completed(resident_progress, posting_info)[
-                0
-            ]
-        if len(get_ccr_postings_completed(resident_progress, posting_info)) > 1:
+        # determine if they’ve already done a CCR
+        completed_ccr_list = get_ccr_postings_completed(resident_progress, posting_info)
+        completed_ccr = completed_ccr_list[0] if completed_ccr_list else None
+
+        if len(completed_ccr_list) > 1:
             logger.warning(f"Resident {mcr} has completed more than one CCR posting")
 
         # If completed or year 1, prevent assignment to all CCR postings in any block
@@ -205,7 +219,7 @@ def allocate_timetable(
             else:
                 model.Add(blocks_completed + assigned_blocks <= required_blocks)
 
-    # General Constraint 7: Prevent residents from repeating the same elective (base code) regardless of hospital
+    # # General Constraint 7: Prevent residents from repeating the same elective regardless of hospital
     # for resident in residents:
     #     mcr = resident["mcr"]
     #     resident_progress = posting_progress.get(mcr, {})
@@ -216,37 +230,22 @@ def allocate_timetable(
 
     #     for elective_base in ELECTIVE_BASE_CODES:
     #         # elective postings of current base
-    #         possible_elective_postings = [
+    #         possible_postings = [
     #             p
     #             for p in posting_codes
     #             if p.startswith(elective_base + " (")
     #             and posting_info[p].get("posting_type") == "elective"
     #         ]
 
-    #         # Collect all the block assignment variables for this base's postings
-    #         elective_block_assignments = [
-    #             x[mcr][p][b] for p in possible_elective_postings for b in blocks
-    #         ]
-
-    #         # Total number of assigned blocks across all postings of this elective base
-    #         total_blocks_assigned = sum(elective_block_assignments)
+    #         # re-use the assigned_var set up earlier
+    #         assigned_vars = [x[mcr][p]["assigned_var"] for p in possible_postings]
 
     #         if elective_base in completed_elective_bases:
-    #             lit = model.NewBoolVar(f"assume_no_repeat_{mcr}_{elective_base}")
-    #             model.Add(total_blocks_assigned == 0).OnlyEnforceIf(lit)
-    #             assumption_literals.append(lit)
-    #             assumption_var_map[lit.Index()] = lit
+    #             # elective done
+    #             model.Add(sum(assigned_vars) == 0)
     #         else:
-    #             # First time doing this base → allow only one posting of this elective base this year
-    #             model.Add(
-    #                 total_blocks_assigned
-    #                 <= max(
-    #                     posting_info[p]["required_block_duration"]
-    #                     for p in possible_elective_postings
-    #                 )
-    #                 if possible_elective_postings
-    #                 else 0
-    #             )
+    #             # elective not done; allow at most 1 elective
+    #             model.Add(sum(assigned_vars) <= 1)
 
     # # General Constraint 8a: MICU and RCCM must be from a single institution per resident
     # institutions = set(
@@ -255,32 +254,37 @@ def allocate_timetable(
     #     if p.startswith("MICU (") or p.startswith("RCCM (")
     # )
 
-    # # for resident in residents:
-    # mcr = resident["mcr"]
-    # micu_rccm_inst_flags = []
+    # for resident in residents:
+    #     mcr = resident["mcr"]
 
-    # for inst in institutions:
-    #     micu_postings = [
-    #         p for p in posting_codes if p.startswith("MICU (") and f"({inst})" in p
-    #     ]
-    #     rccm_postings = [
-    #         p for p in posting_codes if p.startswith("RCCM (") and f"({inst})" in p
-    #     ]
-    #     micu_rccm_postings = micu_postings + rccm_postings
+    #     # build flag per institution
+    #     # "did we assign any MICU/RCCM from this institution?"
+    #     micu_rccm_inst_flags = []
+    #     for inst in institutions:
+    #         micu_postings = [
+    #             p for p in posting_codes if p.startswith("MICU (") and f"({inst})" in p
+    #         ]
+    #         rccm_postings = [
+    #             p for p in posting_codes if p.startswith("RCCM (") and f"({inst})" in p
+    #         ]
+    #         micu_rccm_postings = micu_postings + rccm_postings
 
-    #     # Boolean var: true if any MICU/RCCM from this institution is assigned
-    #     inst_used = model.NewBoolVar(f"{mcr}_uses_micurccm_{inst}")
-    #     model.Add(
-    #         sum(x[mcr][p][b] for p in micu_rccm_postings for b in blocks) >= 1
-    #     ).OnlyEnforceIf(inst_used)
-    #     model.Add(
-    #         sum(x[mcr][p][b] for p in micu_rccm_postings for b in blocks) == 0
-    #     ).OnlyEnforceIf(inst_used.Not())
+    #         if not micu_rccm_postings:
+    #             continue
 
-    #     micu_rccm_inst_flags.append(inst_used)
+    #         # Boolean var: true if any MICU/RCCM from this institution is assigned
+    #         inst_used = model.NewBoolVar(f"{mcr}_uses_micu_rccm_{inst}")
+    #         model.Add(
+    #             sum(x[mcr][p][b] for p in micu_rccm_postings for b in blocks) >= 1
+    #         ).OnlyEnforceIf(inst_used)
+    #         model.Add(
+    #             sum(x[mcr][p][b] for p in micu_rccm_postings for b in blocks) == 0
+    #         ).OnlyEnforceIf(inst_used.Not())
 
-    # # Only one institution's MICU/RCCM can be used per resident
-    # model.Add(sum(micu_rccm_inst_flags) <= 1)
+    #         micu_rccm_inst_flags.append(inst_used)
+
+    #     # only one institution's MICU/RCCM can be used per resident
+    #     model.Add(sum(micu_rccm_inst_flags) <= 1)
 
     # # General Constraint 8b: MICU and RCCM must be assigned in contiguous blocks (no breaks)
     # for resident in residents:
@@ -298,42 +302,41 @@ def allocate_timetable(
     #         if not micu_rccm_postings:
     #             continue
 
-    #         assigned = [
-    #             model.NewBoolVar(f"{mcr}_{inst}_micurccm_block_{b}") for b in blocks
-    #         ]
-    #         for b_idx, b in enumerate(blocks):
-    #             relevant = [x[mcr][p][b] for p in micu_rccm_postings]
-    #             if relevant:
-    #                 model.AddMaxEquality(assigned[b_idx], relevant)
-    #             else:
-    #                 model.Add(assigned[b_idx] == 0)
+    #         assigned = []
+    #         for b in blocks:
+    #             var = model.NewBoolVar(f"{mcr}_{inst}_micurccm_block_{b}")
+    #             assigned.append(var)
+    #             model.AddMaxEquality(var, [x[mcr][p][b] for p in micu_rccm_postings])
 
-    #         # Track the first and last block of the contiguous segment
+    #         # track first and last block of this contiguous segment
     #         first = model.NewIntVar(0, len(blocks) - 1, f"{mcr}_{inst}_micurccm_first")
     #         last = model.NewIntVar(0, len(blocks) - 1, f"{mcr}_{inst}_micurccm_last")
 
-    #         # Define indicators for first/last
-    #         model.AddMinEquality(
-    #             first, [b for b, var in zip(blocks, assigned) if var is not None]
-    #         )
-    #         model.AddMaxEquality(
-    #             last, [b for b, var in zip(blocks, assigned) if var is not None]
-    #         )
+    #         model.AddMinEquality(first, [b for b, var in zip(blocks, assigned)])
+    #         model.AddMaxEquality(last, [b for b, var in zip(blocks, assigned)])
 
-    #         # Force that all blocks between first and last are fully filled
+    #         model.Add(last - first + 1 <= 2)
+
+    #         # define min/max indicators for first/last
+    #         model.AddMinEquality(first, [b for b, var in zip(blocks, assigned)])
+    #         model.AddMaxEquality(last, [b for b, var in zip(blocks, assigned)])
+
+    #         # force that all blocks between first and last are fully filled
     #         for b, var in zip(blocks, assigned):
     #             in_range = model.NewBoolVar(f"{mcr}_{inst}_micurccm_inrange_{b}")
+
     #             model.Add(b >= first).OnlyEnforceIf(in_range)
     #             model.Add(b < first).OnlyEnforceIf(in_range.Not())
     #             model.Add(b <= last).OnlyEnforceIf(in_range)
     #             model.Add(b > last).OnlyEnforceIf(in_range.Not())
 
-    #             # If in range, must be assigned (== 1)
+    #             # if in range, must be assigned (== 1)
     #             model.Add(var == 1).OnlyEnforceIf(in_range)
 
     # Y1 Constraint 1: GM capped at 3 blocks in Year 1
     gm_ktph_bonus_value = 2
     gm_ktph_bonus = []
+
     for resident in residents:
         mcr = resident["mcr"]
         if resident["resident_year"] == 1:
@@ -343,6 +346,7 @@ def allocate_timetable(
                 if p.split(" (")[0] == "GM"
                 for b in blocks
             )
+
             model.Add(gm_blocks_count <= 3)
 
             # bonus for assigning GM (KTPH)
@@ -358,6 +362,78 @@ def allocate_timetable(
     curr_deviation_penalties = []
     curr_deviation_penalty_vars = {}
     curr_deviation_penalty_weight = weightages.get("curr_deviation_penalty", 10)
+
+    # General Soft Constraint 1: 6-block window with 1 ED + 2 GRM + 3 GM and ED/GRM adjacent
+    for resident in residents:
+        mcr = resident["mcr"]
+        history = get_core_blocks_completed(posting_progress.get(mcr, {}), posting_info)
+
+        # if they've done any ED, GRM or GM before, skip penalty
+        if any(history.get(base, 0) > 0 for base in ("ED", "GRM", "GM")):
+            # define a zero-penalty IntVar so it still appears in the penalty dict
+            zero_pen = model.NewIntVar(0, 0, f"ed_grm_gm_penalty_{mcr}")
+            curr_deviation_penalties.append(curr_deviation_penalty_weight * zero_pen)
+            curr_deviation_penalty_vars[f"ed_grm_gm_penalty_{mcr}"] = zero_pen
+            continue
+
+        # otherwise, build the sliding-window deviation vars
+        # slide a length-6 window from block 1 to block len(blocks)−5
+        window_dev_vars = []
+        for start in range(1, len(blocks) - 6 + 2):
+            win = range(start, start + 6)
+            # count how many blocks in this window are ED, GRM, GM
+            ed_cnt = sum(
+                x[mcr][p][b]
+                for p in posting_codes
+                if posting_info[p].get("posting_type") == "core"
+                and p.split(" (")[0] == "ED"
+                for b in win
+            )
+            grm_cnt = sum(
+                x[mcr][p][b]
+                for p in posting_codes
+                if posting_info[p].get("posting_type") == "core"
+                and p.split(" (")[0] == "GRM"
+                for b in win
+            )
+            gm_cnt = sum(
+                x[mcr][p][b]
+                for p in posting_codes
+                if posting_info[p].get("posting_type") == "core"
+                and p.split(" (")[0] == "GM"
+                for b in win
+            )
+
+            # deviation from the ideal (1,2,3)
+            ed_dev = model.NewIntVar(0, 6, f"ed_dev_{mcr}_{start}")
+            model.Add(ed_dev >= ed_cnt - 1)
+            model.Add(ed_dev >= 1 - ed_cnt)
+
+            grm_dev = model.NewIntVar(0, 6, f"grm_dev_{mcr}_{start}")
+            model.Add(grm_dev >= grm_cnt - 2)
+            model.Add(grm_dev >= 2 - grm_cnt)
+
+            gm_dev = model.NewIntVar(0, 6, f"gm_dev_{mcr}_{start}")
+            model.Add(gm_dev >= gm_cnt - 3)
+            model.Add(gm_dev >= 3 - gm_cnt)
+
+            # total deviation for this window
+            window_dev = model.NewIntVar(0, 12, f"window_dev_{mcr}_{start}")
+            model.Add(window_dev == ed_dev + grm_dev + gm_dev)
+
+            window_dev_vars.append(window_dev)
+
+        # pick minimum deviation across all windows
+        overall_dev = model.NewIntVar(0, 12, f"ed_grm_gm_penalty_{mcr}")
+        if window_dev_vars:
+            model.AddMinEquality(overall_dev, window_dev_vars)
+        else:
+            # no possible window → maximum deviation
+            model.Add(overall_dev == 6)  # or len(blocks)
+
+        # add to your penalty list (weighted)
+        curr_deviation_penalties.append(curr_deviation_penalty_weight * overall_dev)
+        curr_deviation_penalty_vars[f"ed_grm_gm_penalty_{mcr}"] = overall_dev
 
     # Y1 Soft Constraint 1: Penalty if RCCM >= 2 and MICU >= 1 are not met
     for resident in residents:
@@ -480,97 +556,6 @@ def allocate_timetable(
                     core_under_var
                 )
 
-    # # General Soft Constraint 2: 6-block window with 1 ED + 2 GRM + 3 GM and ED/GRM adjacent
-    # for resident in residents:
-    #     mcr = resident["mcr"]
-    #     resident_progress = posting_progress.get(mcr, {})
-    #     core_completed = get_core_blocks_completed(resident_progress, posting_info)
-    #     if not (
-    #         core_completed.get("ED", 0) >= CORE_REQUIREMENTS.get("ED", 1)
-    #         and core_completed.get("GRM", 0) >= 2
-    #         and core_completed.get("GM", 0) >= CORE_REQUIREMENTS.get("GM", 9)
-    #     ):
-    #         window_ok_vars = []
-    #         for start in range(1, 8):
-    #             win = list(range(start, start + 6))
-    #             ed_cnt = sum(
-    #                 x[mcr][p][b]
-    #                 for p in posting_codes
-    #                 for b in win
-    #                 if posting_info[p].get("posting_type") == "core"
-    #                 and p.split(" (")[0] == "ED"
-    #             )
-    #             grm_cnt = sum(
-    #                 x[mcr][p][b]
-    #                 for p in posting_codes
-    #                 for b in win
-    #                 if posting_info[p].get("posting_type") == "core"
-    #                 and p.split(" (")[0] == "GRM"
-    #             )
-    #             gm_cnt = sum(
-    #                 x[mcr][p][b]
-    #                 for p in posting_codes
-    #                 for b in win
-    #                 if posting_info[p].get("posting_type") == "core"
-    #                 and p.split(" (")[0] == "GM"
-    #             )
-    #             adj = model.NewBoolVar(f"ed_grm_adj_{mcr}_{start}")
-    #             opts = []
-    #             for i in range(5):
-    #                 b1, b2 = win[i], win[i + 1]
-    #                 o1 = model.NewBoolVar(f"ed_then_grm_{mcr}_{b1}_{b2}")
-    #                 model.Add(
-    #                     sum(
-    #                         x[mcr][p][b1]
-    #                         for p in posting_codes
-    #                         if posting_info[p].get("posting_type") == "core"
-    #                         and p.split(" (")[0] == "ED"
-    #                     )
-    #                     == 1
-    #                 ).OnlyEnforceIf(o1)
-    #                 model.Add(
-    #                     sum(
-    #                         x[mcr][p][b2]
-    #                         for p in posting_codes
-    #                         if posting_info[p].get("posting_type") == "core"
-    #                         and p.split(" (")[0] == "GRM"
-    #                     )
-    #                     >= 1
-    #                 ).OnlyEnforceIf(o1)
-    #                 o2 = model.NewBoolVar(f"grm_then_ed_{mcr}_{b1}_{b2}")
-    #                 model.Add(
-    #                     sum(
-    #                         x[mcr][p][b1]
-    #                         for p in posting_codes
-    #                         if posting_info[p].get("posting_type") == "core"
-    #                         and p.split(" (")[0] == "GRM"
-    #                     )
-    #                     >= 1
-    #                 ).OnlyEnforceIf(o2)
-    #                 model.Add(
-    #                     sum(
-    #                         x[mcr][p][b2]
-    #                         for p in posting_codes
-    #                         if posting_info[p].get("posting_type") == "core"
-    #                         and p.split(" (")[0] == "ED"
-    #                     )
-    #                     == 1
-    #                 ).OnlyEnforceIf(o2)
-    #                 opts.extend([o1, o2])
-    #             model.Add(sum(opts) >= 1).OnlyEnforceIf(adj)
-    #             model.Add(sum(opts) == 0).OnlyEnforceIf(adj.Not())
-    #             win_var = model.NewBoolVar(f"ed_grm_gm_window_{mcr}_{start}")
-    #             model.Add(ed_cnt == 1).OnlyEnforceIf(win_var)
-    #             model.Add(grm_cnt == 2).OnlyEnforceIf(win_var)
-    #             model.Add(gm_cnt == 3).OnlyEnforceIf(win_var)
-    #             model.Add(adj == 1).OnlyEnforceIf(win_var)
-    #             window_ok_vars.append(win_var)
-    #         pen = model.NewIntVar(0, 1, f"ed_grm_gm_penalty_{mcr}")
-    #         if window_ok_vars:
-    #             model.Add(sum(window_ok_vars) >= 1 - pen)
-    #         curr_deviation_penalties.append(curr_deviation_penalty_weight * pen)
-    #         curr_deviation_penalty_vars[f"ed_grm_gm_penalty_{mcr}"] = pen
-
     ###########################################################################
     # DEFINE BONUSES AND OBJECTIVE
     ###########################################################################
@@ -607,23 +592,10 @@ def allocate_timetable(
                     resident_year * x[mcr][posting_code][block] * seniority_bonus_value
                 )
 
-    # # Core completion bonus
-    # core_completion_bonus = []
-    # core_bonus_value = weightages.get("core", 10)
-    # for resident in residents:
-    #     mcr = resident["mcr"]
-    #     for posting_code in posting_codes:
-    #         posting_data = posting_info[posting_code]
-    #         if posting_data.get("posting_type") == "core":
-    #             assigned = x[mcr][posting_code].get("assigned_var", None)
-    #             if assigned is not None:
-    #                 core_completion_bonus.append(core_bonus_value * assigned)
-
     # Objective
     model.Maximize(
         sum(preference_weights)
         + sum(seniority_bonus)
-        # + sum(core_completion_bonus)
         + sum(gm_ktph_bonus)
         - sum(curr_deviation_penalties)
     )
@@ -637,9 +609,7 @@ def allocate_timetable(
 
     # Enable solver progress logging to stderr (will be captured as [PYTHON LOG] by Node.js backend)
     solver.parameters.log_search_progress = False  # Only enable for debugging
-
     solver.parameters.enumerate_all_solutions = False
-    model.AddAssumptions(assumption_literals)
 
     # retrieve status of model
     status = solver.Solve(model)
@@ -696,9 +666,11 @@ def allocate_timetable(
 
     if status == cp_model.INFEASIBLE:
         logger.info("Model is infeasible.")
-        logger.info("Unsat core (conflicting assumptions):")
-        for idx in solver.SufficientAssumptionsForInfeasibility():
-            logger.info(f"- {assumption_var_map[ assumption_literals[idx] ]}")
+        logger.info("Conflict set:")
+
+        for lit in solver.SufficientAssumptionsForInfeasibility():
+            key = lit.Name()
+            logger.info(f"- Conflict: {key}")
 
     if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
         logger.info("Processing results")

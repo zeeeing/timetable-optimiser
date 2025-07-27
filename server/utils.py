@@ -141,6 +141,16 @@ def get_ccr_postings_completed(
     return completed_postings
 
 
+def to_snake_case(posting_code: str) -> str:
+    return (
+        posting_code.lower()
+        .replace(" ", "_")
+        .replace("(", "")
+        .replace(")", "")
+        .replace("-", "_")
+    )
+
+
 # helpers
 def parse_resident_history(resident_history: List[Dict]) -> Dict[str, Dict[str, int]]:
     """

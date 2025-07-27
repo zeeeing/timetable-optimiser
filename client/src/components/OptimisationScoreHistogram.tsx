@@ -6,8 +6,8 @@ import { GridRows, GridColumns } from "@visx/grid";
 import { bin } from "@visx/vendor/d3-array";
 
 // default config
-const defaultWidth = 750;
-const defaultHeight = 350;
+const defaultWidth = 600;
+const defaultHeight = 300;
 const verticalMargin = 40;
 
 interface BarsProps {

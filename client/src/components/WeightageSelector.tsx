@@ -8,13 +8,11 @@ interface WeightageSelectorProps {
   value: {
     preference: number;
     seniority: number;
-    core: number;
     curr_deviation_penalty: number;
   };
   setValue: (val: {
     preference: number;
     seniority: number;
-    core: number;
     curr_deviation_penalty: number;
   }) => void;
 }
@@ -24,7 +22,7 @@ const WeightageSelector: React.FC<WeightageSelectorProps> = ({
   setValue,
 }) => {
   const handleChange =
-    (field: "preference" | "seniority" | "core" | "curr_deviation_penalty") =>
+    (field: "preference" | "seniority" | "curr_deviation_penalty") =>
     (e: React.ChangeEvent<HTMLInputElement>) => {
       setValue({ ...value, [field]: Number(e.target.value) });
     };
@@ -79,7 +77,7 @@ const WeightageSelector: React.FC<WeightageSelectorProps> = ({
             onChange={handleChange("seniority")}
           />
         </div>
-        <div className="flex flex-col gap-2">
+        {/* <div className="flex flex-col gap-2">
           <Label htmlFor="core">
             Core Completion Bonus
             <Tooltip>
@@ -99,7 +97,7 @@ const WeightageSelector: React.FC<WeightageSelectorProps> = ({
             value={value.core}
             onChange={handleChange("core")}
           />
-        </div>
+        </div> */}
         <div className="flex flex-col gap-2">
           <Label htmlFor="curr_deviation_penalty">
             Curriculum Deviation Penalty

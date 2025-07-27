@@ -32,7 +32,6 @@ const App: React.FC = () => {
   const [weightages, setWeightages] = useState({
     preference: 1,
     seniority: 2,
-    core: 10,
     curr_deviation_penalty: 10,
   });
 
