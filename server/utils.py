@@ -217,4 +217,4 @@ CORE_REQUIREMENTS = {
     "NL": 3,
 }
 
-CCR_POSTINGS = ["GM (NUH)", "GM (SGH)", "GM (CGH)", "GM (SKH)", "GM (WH)"]
+CCR_POSTINGS = ["GM (NUH)", "GM (SGH)", "GM (CGH)", "GM (SKH)"]

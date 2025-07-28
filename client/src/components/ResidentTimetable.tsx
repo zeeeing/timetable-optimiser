@@ -295,7 +295,7 @@ const ResidentTimetable: React.FC<{
               <TableHeader>
                 <TableRow>
                   <TableHead className="text-center">Preference</TableHead>
-                  <TableHead className="text-center">Month(s)</TableHead>
+                  <TableHead className="text-center">Elective Code</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -324,7 +324,7 @@ const ResidentTimetable: React.FC<{
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="text-center">Elective</TableHead>
+                  <TableHead className="text-center">Elective Name</TableHead>
                   <TableHead className="text-center">Month(s)</TableHead>
                 </TableRow>
               </TableHeader>

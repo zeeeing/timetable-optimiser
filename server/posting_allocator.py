@@ -38,28 +38,24 @@ def allocate_timetable(
     logger.info("STARTING POSTING ALLOCATION SERVICE")
     model = cp_model.CpModel()
 
-    # some background on the assumption variables
-
-    # `.OnlyEnforceIf(assumption_var)`
-    # makes your constraint conditional on that literal
-
-    # `model.AddBoolOr([assumption_var])`
-    # forces that literal to be true (so the constraint is in effect)
-    # and makes it show up in the unsat-core if it must be
-    # (i.e. if the solver has to set it false to solve the model)
-
-    assumption_vars = {}
+    # helper to create and register an assumption literal (for debugging infeasibility)
+    def new_assumption_literal(name):
+        flag = model.NewBoolVar(name)
+        model.AddAssumption(flag)
+        return flag
 
     ###########################################################################
     # DEFINE VARIABLES
     ###########################################################################
 
     # 0. define list of all unique elective base codes
-    ELECTIVE_BASE_CODES = [
-        p["posting_code"].split(" (")[0]
-        for p in postings
-        if p.get("posting_type") == "elective"
-    ]
+    ELECTIVE_BASE_CODES = set(
+        [
+            p["posting_code"].split(" (")[0]
+            for p in postings
+            if p.get("posting_type") == "elective"
+        ]
+    )
 
     # 1. create map of posting codes to posting info
     posting_info = {p["posting_code"]: p for p in postings}
@@ -565,15 +561,15 @@ def allocate_timetable(
     preference_weight_value = weightages.get("preference", 1)
     for resident in residents:
         mcr = resident["mcr"]
-        prefs = pref_map.get(mcr, {})
+        resident_prefs = pref_map.get(mcr, {})
         for posting_code in posting_codes:
             weight = 0
             for rank in range(1, 6):
-                if prefs.get(rank) == posting_code:
+                if resident_prefs.get(rank) == posting_code:
                     weight = 6 - rank
                     break
             if weight > 0:
-                # provide bonus based on assignment and not number of blocks
+                # provide bonus based on assignment
                 assigned_var = x[mcr][posting_code].get("assigned_var")
                 if assigned_var is not None:
                     preference_weights.append(
@@ -594,9 +590,9 @@ def allocate_timetable(
 
     # Objective
     model.Maximize(
-        sum(preference_weights)
+        sum(gm_ktph_bonus)
+        + sum(preference_weights)
         + sum(seniority_bonus)
-        + sum(gm_ktph_bonus)
         - sum(curr_deviation_penalties)
     )
 
@@ -611,7 +607,7 @@ def allocate_timetable(
     solver.parameters.log_search_progress = False  # Only enable for debugging
     solver.parameters.enumerate_all_solutions = False
 
-    # retrieve status of model
+    # solve and retrieve status of model
     status = solver.Solve(model)
     logger.info(
         f"Solver returned status {solver.StatusName(status)} with objective {solver.ObjectiveValue()}"
@@ -621,59 +617,59 @@ def allocate_timetable(
     # PROCESS RESULTS
     ###########################################################################
 
-    # log penalties incurred
-    for name, var in curr_deviation_penalty_vars.items():
-        value = solver.Value(var)
-        if value > 0:
-            logger.info(f"⚠️ Penalty triggered: {name} → {value}")
+    # infeasible model handling
+    if status == cp_model.INFEASIBLE:
+        logger.info("Model is infeasible. Checking assumptions...")
+        for idx in solver.SufficientAssumptionsForInfeasibility():
+            logger.info("  • %s", model.GetBoolVarFromProtoIndex(idx).Name())
 
-    # print summary of soft constraints violated
-    resident_summary = {}
-    for resident in residents:
-        mcr = resident["mcr"]
-        summary = {}
+    # feasible/optimal model handling
+    if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
+        ## LOG PENALTIES INCURRED
+        logger.info("Processing penalties...")
+        for name, var in curr_deviation_penalty_vars.items():
+            value = solver.Value(var)
+            if value > 0:
+                logger.info(f"⚠️ Penalty triggered: {name} → {value}")
 
-        # Core underassignments (if any)
-        for base in CORE_REQUIREMENTS:
-            penalty_key = f"core_under_{mcr}_{base}"
-            penalty_var = curr_deviation_penalty_vars.get(penalty_key)
-            if penalty_var is not None and solver.Value(penalty_var) > 0:
-                summary[f"Missing Core: {base}"] = solver.Value(penalty_var)
+        # print summary of soft constraints violated
+        resident_summary = {}
+        for resident in residents:
+            mcr = resident["mcr"]
+            summary = {}
 
-        # RCCM & MICU Y1
-        if resident["resident_year"] == 1:
-            for key in ["rccm_penalty", "micu_penalty"]:
-                penalty_key = f"{key}_{mcr}"
+            # Core underassignments (if any)
+            for base in CORE_REQUIREMENTS:
+                penalty_key = f"core_under_{mcr}_{base}"
                 penalty_var = curr_deviation_penalty_vars.get(penalty_key)
                 if penalty_var is not None and solver.Value(penalty_var) > 0:
-                    label = "Missing RCCM" if "rccm" in key else "Missing MICU"
-                    summary[label] = solver.Value(penalty_var)
+                    summary[f"Missing Core: {base}"] = solver.Value(penalty_var)
 
-        # Elective gaps
-        for year in [2, 3]:
-            penalty_key = f"elective_penalty_{mcr}_y{year}"
-            penalty_var = curr_deviation_penalty_vars.get(penalty_key)
-            if penalty_var is not None and solver.Value(penalty_var) > 0:
-                summary[f"Elective shortfall (Y{year})"] = solver.Value(penalty_var)
+            # RCCM & MICU Y1
+            if resident["resident_year"] == 1:
+                for key in ["rccm_penalty", "micu_penalty"]:
+                    penalty_key = f"{key}_{mcr}"
+                    penalty_var = curr_deviation_penalty_vars.get(penalty_key)
+                    if penalty_var is not None and solver.Value(penalty_var) > 0:
+                        label = "Missing RCCM" if "rccm" in key else "Missing MICU"
+                        summary[label] = solver.Value(penalty_var)
 
-        if summary:
-            resident_summary[mcr] = summary
+            # Elective gaps
+            for year in [2, 3]:
+                penalty_key = f"elective_penalty_{mcr}_y{year}"
+                penalty_var = curr_deviation_penalty_vars.get(penalty_key)
+                if penalty_var is not None and solver.Value(penalty_var) > 0:
+                    summary[f"Elective shortfall (Y{year})"] = solver.Value(penalty_var)
 
-    for mcr, summary in resident_summary.items():
-        logger.info(f"🔍 {mcr} Soft Constraint Summary:")
-        for label, value in summary.items():
-            logger.info(f"   - {label}: {value}")
+            if summary:
+                resident_summary[mcr] = summary
 
-    if status == cp_model.INFEASIBLE:
-        logger.info("Model is infeasible.")
-        logger.info("Conflict set:")
+        for mcr, summary in resident_summary.items():
+            logger.info(f"🔍 {mcr} Soft Constraint Summary:")
+            for label, value in summary.items():
+                logger.info(f"   - {label}: {value}")
 
-        for lit in solver.SufficientAssumptionsForInfeasibility():
-            key = lit.Name()
-            logger.info(f"- Conflict: {key}")
-
-    if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
-        logger.info("Processing results")
+        logger.info("Processing output results...")
         output_residents = []
 
         # add is_current_year field to resident history

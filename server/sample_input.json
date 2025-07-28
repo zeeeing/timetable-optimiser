@@ -2,7 +2,9 @@
   "residents": [
     { "mcr": "M000001A", "name": "Dr. Alice Johnson", "resident_year": 3 },
     { "mcr": "M000002A", "name": "Dr. Bob Smith", "resident_year": 2 },
-    { "mcr": "M000003A", "name": "Dr. Carol Lee", "resident_year": 1 }
+    { "mcr": "M000003A", "name": "Dr. Carol Lee", "resident_year": 1 },
+    { "mcr": "M000004A", "name": "Dr. Abdul Lee", "resident_year": 1 },
+    { "mcr": "M000005A", "name": "Dr. Jabaar Wong", "resident_year": 1 }
   ],
   "resident_history": [
     { "mcr": "M000001A", "year": 1, "block": 1, "posting_code": "GM (TTSH)" },
@@ -57,6 +59,16 @@
     { "mcr": "M000003A", "preference_rank": 2, "posting_code": "Endocrine (TTSH)" },
     { "mcr": "M000003A", "preference_rank": 3, "posting_code": "Haemato (TTSH)" },
     { "mcr": "M000003A", "preference_rank": 4, "posting_code": "MedComm (Comm)" },
+    { "mcr": "M000003A", "preference_rank": 5, "posting_code": "Renal (KTPH)" },
+    { "mcr": "M000003A", "preference_rank": 1, "posting_code": "Gastro (TTSH)" },
+    { "mcr": "M000003A", "preference_rank": 2, "posting_code": "Endocrine (TTSH)" },
+    { "mcr": "M000003A", "preference_rank": 3, "posting_code": "Haemato (TTSH)" },
+    { "mcr": "M000003A", "preference_rank": 4, "posting_code": "MedComm (Comm)" },
+    { "mcr": "M000003A", "preference_rank": 5, "posting_code": "Renal (KTPH)" },
+    { "mcr": "M000003A", "preference_rank": 1, "posting_code": "Gastro (TTSH)" },
+    { "mcr": "M000003A", "preference_rank": 2, "posting_code": "Endocrine (TTSH)" },
+    { "mcr": "M000003A", "preference_rank": 3, "posting_code": "Haemato (TTSH)" },
+    { "mcr": "M000003A", "preference_rank": 4, "posting_code": "MedComm (Comm)" },
     { "mcr": "M000003A", "preference_rank": 5, "posting_code": "Renal (KTPH)" }
   ],
   "postings": [
@@ -95,7 +107,6 @@
   "weightages": {
     "preference": 1,
     "seniority": 2,
-    "core": 10,
     "curr_deviation_penalty": 10
   }
 }

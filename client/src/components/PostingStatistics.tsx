@@ -88,9 +88,7 @@ const PostingStatistics: React.FC<{
                           is_over_capacity ? "bg-red-100 text-red-800" : ""
                         }`}
                       >
-                        {filled != null
-                          ? `${capacity - filled} / ${capacity}`
-                          : "-"}
+                        {filled != null ? `${filled} / ${capacity}` : "-"}
                       </TableCell>
                     );
                   })}

@@ -119,7 +119,7 @@ app.post(
       process.stderr.on("data", (err) => {
         // log python logs for debugging (not exactly 'error' logs)
         errOutput += err.toString();
-        console.log("[PYTHON LOG]", err.toString());
+        console.log("[PYTHON LOG]\n", err.toString());
       });
 
       process.on("close", () => {
