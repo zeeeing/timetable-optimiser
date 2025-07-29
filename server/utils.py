@@ -5,7 +5,7 @@ def get_completed_postings(
     resident_history: List[Dict], posting_info: Dict[str, Dict]
 ) -> Dict[str, Set[str]]:
     """
-    Get the set of completed postings for each resident
+    Returns a dictionary mapping each resident to a set of unique postings completed.
 
     Output:
       {
@@ -18,12 +18,15 @@ def get_completed_postings(
       }
     """
     history_map = parse_resident_history(resident_history)
-    completed_postings_map = {}
 
+    completed_postings_map = {}
     for mcr, posting_counts in history_map.items():
+
         completed_postings_map[mcr] = set()
         for posting_code, blocks_completed in posting_counts.items():
-            if is_posting_completed(posting_code, blocks_completed, posting_info):
+            if is_unique_posting_completed(
+                posting_code, blocks_completed, posting_info
+            ):
                 completed_postings_map[mcr].add(posting_code)
 
     return completed_postings_map
@@ -33,7 +36,7 @@ def get_posting_progress(
     resident_history: List[Dict], posting_info: Dict[str, Dict]
 ) -> Dict[str, Dict[str, Dict[str, int]]]:
     """
-    Get detailed progress for each posting for each resident
+    Get detailed progress of each resident's postings.
 
     Output:
       {
@@ -49,25 +52,24 @@ def get_posting_progress(
       }
     """
     history_map = parse_resident_history(resident_history)
-    progress_map = {}
 
+    progress_map = {}
     for mcr, posting_counts in history_map.items():
+
         progress_map[mcr] = {}
         for posting_code, blocks_completed in posting_counts.items():
-            base_posting = posting_code.split(" (")[0]
-            posting_data = posting_info.get(posting_code, {})
-            posting_type = posting_data.get("posting_type", "elective")
-
-            if posting_type == "core":
-                required_blocks = CORE_REQUIREMENTS.get(base_posting, 0)
-            else:
-                # Electives require at least 1 block to be considered completed
-                required_blocks = 1
+            required_blocks = posting_info.get(posting_code, {}).get(
+                "required_block_duration"
+            )
 
             progress_map[mcr][posting_code] = {
                 "blocks_completed": blocks_completed,
                 "blocks_required": required_blocks,
-                "is_completed": blocks_completed >= required_blocks,
+                "is_completed": (
+                    blocks_completed >= required_blocks
+                    if required_blocks is not None
+                    else False
+                ),
             }
 
     return progress_map
@@ -90,11 +92,14 @@ def get_core_blocks_completed(
     core_blocks = {}
     for base_posting in CORE_REQUIREMENTS:
         core_blocks[base_posting] = 0
+
     for posting_code, details in resident_progress.items():
         posting_data = posting_info.get(posting_code, {})
+
         if posting_data.get("posting_type") == "core":
             base_posting = posting_code.split(" (")[0]
             core_blocks[base_posting] += details.get("blocks_completed", 0)
+
     return core_blocks
 
 
@@ -115,10 +120,14 @@ def get_unique_electives_completed(
     unique_electives = set()
     for posting_code, details in resident_progress.items():
         posting_data = posting_info.get(posting_code, {})
+
         if posting_data.get("posting_type") == "elective":
             blocks_completed = details.get("blocks_completed", 0)
-            if is_posting_completed(posting_code, blocks_completed, posting_info):
+            if is_unique_posting_completed(
+                posting_code, blocks_completed, posting_info
+            ):
                 unique_electives.add(posting_code)
+
     return unique_electives
 
 
@@ -127,17 +136,16 @@ def get_ccr_postings_completed(
     posting_info: Dict[str, Dict],
 ) -> List[str]:
     """
-    Return all CCR posting codes completed (blocks_completed == required_block_duration),
-    or None if none fully completed.
+    Returns a list of all CCR posting codes completed.
     """
     completed_postings = []
     for p in CCR_POSTINGS:
         blocks_completed = resident_progress.get(p, {}).get("blocks_completed", 0)
-        required_block_duration = posting_info.get(p, {}).get(
-            "required_block_duration", 0
-        )
+        required_block_duration = posting_info.get(p, {}).get("required_block_duration")
+
         if blocks_completed == required_block_duration:
             completed_postings.append(p)
+
     return completed_postings
 
 
@@ -154,7 +162,7 @@ def to_snake_case(posting_code: str) -> str:
 # helpers
 def parse_resident_history(resident_history: List[Dict]) -> Dict[str, Dict[str, int]]:
     """
-    Parse resident history (flat array) into a dictionary of mcr to {posting_code: block_count}
+    Returns a dictionary mapping each resident to a dictionary of posting codes. This dictionary maps each posting code to the number of blocks completed.
 
     Example output:
       {
@@ -165,44 +173,32 @@ def parse_resident_history(resident_history: List[Dict]) -> Dict[str, Dict[str, 
         },
         ...
       }
-
-    This tracks how many blocks each resident has completed for each posting
     """
     history_map = {}
     for hist in resident_history:
         mcr = hist["mcr"]
         posting_code = hist["posting_code"]
+
         if mcr not in history_map:
             history_map[mcr] = {}
+
         if posting_code not in history_map[mcr]:
             history_map[mcr][posting_code] = 0
+
         history_map[mcr][posting_code] += 1
+
     return history_map
 
 
-def is_posting_completed(
+def is_unique_posting_completed(
     posting_code: str, blocks_completed: int, posting_info: Dict
 ) -> bool:
     """
-    Determine if a posting is completed based on its type and requirements
-
-    Output:
-      bool
+    Determine if a unique posting is completed based on blocks completed == required blocks.
     """
-    # Extract the base posting name (e.g., GM from "GM (TTSH)")
-    base_posting = posting_code.split(" (")[0]
-    # Get posting info
-    posting_data = posting_info.get(posting_code, {})
-    posting_type = posting_data.get("posting_type", "elective")
+    required_blocks = posting_info.get(posting_code, {}).get("required_block_duration")
 
-    if posting_type == "core":
-        # For core postings, check against CORE_REQUIREMENTS
-        required_blocks = CORE_REQUIREMENTS.get(base_posting, 0)
-        return blocks_completed >= required_blocks
-    else:
-        # For elective postings, consider completed if they've done at least 1 block
-        # This prevents repeating electives they've already experienced
-        return blocks_completed >= 1
+    return blocks_completed >= required_blocks if required_blocks is not None else False
 
 
 # constants
