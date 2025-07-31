@@ -65,13 +65,12 @@ const ResidentTimetable: React.FC<{
   }, {} as Record<number, Record<number, (typeof pastYearPostings)[0]>>);
 
   // create preference map
-  const preferenceMap = apiResponse.resident_preferences.reduce(
-    (map, preference) => {
+  const preferenceMap = apiResponse.resident_preferences
+    .filter((p) => p.mcr === resident.mcr)
+    .reduce((map, preference) => {
       map[preference.preference_rank] = preference.posting_code;
       return map;
-    },
-    {} as Record<number, string>
-  );
+    }, {} as Record<number, string>);
 
   // get optimisation score
   const residentIndex = apiResponse.residents.findIndex(

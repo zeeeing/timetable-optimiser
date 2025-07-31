@@ -34,7 +34,7 @@ const ResidentDropdown: React.FC<{
         <SelectTrigger className="w-full">
           <SelectValue placeholder="Select Resident to View Timetable">
             {selectedResident
-              ? `${selectedResident.name} (Year ${selectedResident.resident_year})`
+              ? `${selectedResident.name} (${selectedResident.mcr})`
               : null}
           </SelectValue>
         </SelectTrigger>
@@ -46,7 +46,7 @@ const ResidentDropdown: React.FC<{
                 <SelectLabel>{`Year ${year}`}</SelectLabel>
                 {grouped[Number(year)].map((resident) => (
                   <SelectItem key={resident.mcr} value={resident.mcr}>
-                    {resident.name} (Year {resident.resident_year})
+                    {resident.name} ({resident.mcr})
                   </SelectItem>
                 ))}
               </SelectGroup>

@@ -22,14 +22,14 @@ const CohortStatistics: React.FC<Props> = ({ statistics, residents }) => {
   const { optimisation_scores } = cohort;
 
   // mock data
-  const mockResidentScores = Array.from(
-    { length: 50 },
-    () => Math.floor(Math.random() * 51) + 50
-  );
+  // const mockResidentScores = Array.from(
+  //   { length: 50 },
+  //   () => Math.floor(Math.random() * 51) + 50
+  // );
 
   // change as when needed to use mock data
   let optimisationScores = optimisation_scores;
-  optimisationScores = mockResidentScores;
+  // optimisationScores = mockResidentScores;
 
   // Map optimisation scores to resident scores with actual names
   const mappedScores = optimisationScores.map((score, index) => {
