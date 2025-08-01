@@ -105,7 +105,7 @@ app.post(
       // spawn python process
       // array argument contains the path to the Python script and the input file
       const process = spawn("python3", [
-        path.join(__dirname, "posting_allocator.py"),
+        path.join(__dirname, "main.py"),
         inputPath,
       ]);
 

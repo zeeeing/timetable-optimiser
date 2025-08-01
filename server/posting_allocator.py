@@ -1,4 +1,3 @@
-import json
 import sys
 from typing import List, Dict
 from ortools.sat.python import cp_model
@@ -81,6 +80,11 @@ def allocate_timetable(
     # 6. get posting progress for each resident
     posting_progress = get_posting_progress(resident_history, posting_info)
 
+    # 7.
+    ED_codes = [p for p in posting_codes if p.startswith("ED")]
+    GRM_codes = [p for p in posting_codes if p.startswith("GRM")]
+    GM_codes = [p for p in posting_codes if p.startswith("GM")]
+
     ###########################################################################
     # CREATE DECISION VARIABLES
     ###########################################################################
@@ -130,17 +134,17 @@ def allocate_timetable(
             model.Add(count == 0).OnlyEnforceIf(flag.Not())
 
     ###########################################################################
-    # DEFINE CONSTRAINTS
+    # DEFINE HARD CONSTRAINTS
     ###########################################################################
 
-    # General Constraint 1: Each resident must be assigned to at most one posting per block
+    # Hard Constraint 1: Each resident must be assigned to at most one posting per block
     for resident in residents:
         mcr = resident["mcr"]
 
         for b in blocks:
             model.AddAtMostOne(x[mcr][p][b] for p in posting_codes)
 
-    # General Constraint 2: Each posting cannot exceed max residents per block
+    # Hard Constraint 2: Each posting cannot exceed max residents per block
     for p in posting_codes:
         max_residents = posting_info[p]["max_residents"]
 
@@ -156,7 +160,7 @@ def allocate_timetable(
     #             for block in blocks:
     #                 model.Add(x[mcr][posting_code][block] == 0)
 
-    # General Constraint 4: Enforce required_block_duration happens in consecutive blocks
+    # Hard Constraint 4: Enforce required_block_duration happens in consecutive blocks
     for resident in residents:
         mcr = resident["mcr"]
         for p in posting_codes:
@@ -189,7 +193,7 @@ def allocate_timetable(
                 # Add automaton constraint
                 model.AddAutomaton(vars, INIT, final_states, transitions)
 
-    # General Constraint 5 (CCR): CCR postings
+    # Hard Constraint 5 (CCR): CCR postings
     for resident in residents:
         mcr = resident["mcr"]
         year = resident["resident_year"]
@@ -211,7 +215,7 @@ def allocate_timetable(
             # exactly one run of any CCR posting
             model.Add(sum(posting_asgm_count[mcr][p] for p in offered) == 1)
 
-    # General Constraint 6: Ensure core postings are not over-assigned to each resident
+    # Hard Constraint 6: Ensure core postings are not over-assigned to each resident
     for resident in residents:
         mcr = resident["mcr"]
         resident_progress = posting_progress.get(mcr, {})
@@ -236,7 +240,7 @@ def allocate_timetable(
             else:
                 model.Add(blocks_completed + assigned_blocks <= required_blocks)
 
-    # General Constraint 7: Prevent residents from repeating the same elective regardless of hospital
+    # Hard Constraint 7: Prevent residents from repeating the same elective regardless of hospital
     for resident in residents:
         mcr = resident["mcr"]
         resident_progress = posting_progress.get(mcr, {})
@@ -265,7 +269,7 @@ def allocate_timetable(
                 # allow at most one run across all variants
                 model.Add(sum(posting_asgm_count[mcr][p] for p in all_variants) <= 1)
 
-    # General Constraint 8a: if both MICU and RCCM are assigned, they must be from the same institution
+    # Hard Constraint 8a: if both MICU and RCCM are assigned, they must be from the same institution
     for resident in residents:
         mcr = resident["mcr"]
 
@@ -285,7 +289,7 @@ def allocate_timetable(
                     # selection_flags[mcr][p] == 1  ⇔ posting p is chosen
                     model.Add(selection_flags[mcr][p1] + selection_flags[mcr][p2] <= 1)
 
-    # General Constraint 8b: if MICU and RCCM are assigned, they must form one contiguous block
+    # Hard Constraint 8b: if MICU and RCCM are assigned, they must form one contiguous block
     for resident in residents:
         mcr = resident["mcr"]
 
@@ -298,7 +302,7 @@ def allocate_timetable(
         for b in blocks:
             Mb = model.NewBoolVar(f"{mcr}_MICU_RCCM_at_block_{b}")
 
-            # sum all MICU/RCCM postings at block b (will equate to 1 since we only allow one posting per block)
+            # sum all MICU/RCCM postings at block b
             model.Add(sum(x[mcr][p][b] for p in micu_rccm) == Mb)
             M.append(Mb)
 
@@ -319,7 +323,7 @@ def allocate_timetable(
             transitions,
         )
 
-    # General Constraint 9: Cannot crossover Dec - Jan
+    # Hard Constraint 9: cannot cross over Dec - Jan
     DEC, JAN = 6, 7
     for resident in residents:
         mcr = resident["mcr"]
@@ -332,7 +336,7 @@ def allocate_timetable(
                 ]
             )
 
-    # General Constraint 10: GRM must start on odd block numbers
+    # Hard Constraint 10: GRM must start on odd block numbers
     for resident in residents:
         mcr = resident["mcr"]
         for p in posting_codes:
@@ -351,7 +355,7 @@ def allocate_timetable(
                             ]
                         )
 
-    # Y1 Constraint 1: GM capped at 3 blocks in Year 1
+    # Hard Constraint 11: GM capped at 3 blocks in Year 1
     gm_ktph_bonus = []
     gm_ktph_weight = weightages.get("gm_ktph_bonus", 2)
 
@@ -375,83 +379,69 @@ def allocate_timetable(
             )
             gm_ktph_bonus.append(gm_ktph_weight * ktph_bonus)
 
+    # Hard Constraint 12: if ED and GRM present, enforce contiguity
+    for resident in residents:
+        mcr = resident["mcr"]
+
+        # build one BoolVar per block: 1 if block b is ED or GRM, else 0
+        M = []
+        for b in blocks:
+            Mb = model.NewBoolVar(f"{mcr}_ED_GRM_at_block_{b}")
+            # exactly one posting per block, so sum(x for ED+GRM) == Mb
+            model.Add(sum(x[mcr][p][b] for p in ED_codes + GRM_codes) == Mb)
+            M.append(Mb)
+
+        # states: 0 = before, 1 = in-run, 2 = after
+        transitions = [
+            (0, 0, 0),
+            (0, 1, 1),
+            (1, 1, 1),
+            (1, 0, 2),
+            (2, 0, 2),
+            # no (2,1,…) so no re-entry
+        ]
+        model.AddAutomaton(M, 0, [0, 1, 2], transitions)
+
+    # Hard Constraint 13: if ED + GRM + GM present, enforce contiguity
+    for resident in residents:
+        mcr = resident["mcr"]
+
+        # build one BoolVar per block: 1 if block b is ED, GRM or GM, else 0
+        B = []
+        for b in blocks:
+            Bb = model.NewBoolVar(f"{mcr}_bundle_at_{b}")
+            model.Add(sum(x[mcr][p][b] for p in ED_codes + GRM_codes + GM_codes) == Bb)
+            B.append(Bb)
+
+        # states: 0 = before, 1 = in-run, 2 = after
+        transitions = [
+            (0, 0, 0),
+            (0, 1, 1),
+            (1, 1, 1),
+            (1, 0, 2),
+            (2, 0, 2),
+        ]
+        model.AddAutomaton(B, 0, [0, 1, 2], transitions)
+
+    # Hard Constraint 14: enforce 1 ED and 1 GRM SELECTION if both not done before
+    for resident in residents:
+        mcr = resident["mcr"]
+        progress = get_core_blocks_completed(
+            posting_progress.get(mcr, {}), posting_info
+        )
+        # have they already finished _either_ ED or GRM?
+        done_ED = progress.get("ED", 0) >= CORE_REQUIREMENTS.get("ED", 0)
+        done_GRM = progress.get("GRM", 0) >= CORE_REQUIREMENTS.get("GRM", 0)
+
+        if not (done_ED or done_GRM):
+            model.Add(sum(selection_flags[mcr][p] for p in ED_codes) == 1)
+            model.Add(sum(selection_flags[mcr][p] for p in GRM_codes) == 1)
+
     ###########################################################################
     # DEFINE SOFT CONSTRAINTS WITH PENALTIES
     ###########################################################################
 
-    # General Soft Constraint 1: 6-block window with 1 ED + 2 GRM + 3 GM and ED/GRM adjacent
-    # for resident in residents:
-    #     mcr = resident["mcr"]
-    #     history = get_core_blocks_completed(posting_progress.get(mcr, {}), posting_info)
-
-    #     # if they've done any ED, GRM or GM before, skip penalty
-    #     if any(history.get(base, 0) > 0 for base in ("ED", "GRM", "GM")):
-    #         # define a zero-penalty IntVar so it still appears in the penalty dict
-    #         zero_pen = model.NewIntVar(0, 0, f"ed_grm_gm_penalty_{mcr}")
-    #         curr_deviation_penalties.append(curr_deviation_penalty_weight * zero_pen)
-    #         curr_deviation_penalty_vars[f"ed_grm_gm_penalty_{mcr}"] = zero_pen
-    #         continue
-
-    #     # otherwise, build the sliding-window deviation vars
-    #     # slide a length-6 window from block 1 to block len(blocks)−5
-    #     window_dev_vars = []
-    #     for start in range(1, len(blocks) - 6 + 2):
-    #         win = range(start, start + 6)
-    #         # count how many blocks in this window are ED, GRM, GM
-    #         ed_cnt = sum(
-    #             x[mcr][p][b]
-    #             for p in posting_codes
-    #             if posting_info[p].get("posting_type") == "core"
-    #             and p.split(" (")[0] == "ED"
-    #             for b in win
-    #         )
-    #         grm_cnt = sum(
-    #             x[mcr][p][b]
-    #             for p in posting_codes
-    #             if posting_info[p].get("posting_type") == "core"
-    #             and p.split(" (")[0] == "GRM"
-    #             for b in win
-    #         )
-    #         gm_cnt = sum(
-    #             x[mcr][p][b]
-    #             for p in posting_codes
-    #             if posting_info[p].get("posting_type") == "core"
-    #             and p.split(" (")[0] == "GM"
-    #             for b in win
-    #         )
-
-    #         # deviation from the ideal (1,2,3)
-    #         ed_dev = model.NewIntVar(0, 6, f"ed_dev_{mcr}_{start}")
-    #         model.Add(ed_dev >= ed_cnt - 1)
-    #         model.Add(ed_dev >= 1 - ed_cnt)
-
-    #         grm_dev = model.NewIntVar(0, 6, f"grm_dev_{mcr}_{start}")
-    #         model.Add(grm_dev >= grm_cnt - 2)
-    #         model.Add(grm_dev >= 2 - grm_cnt)
-
-    #         gm_dev = model.NewIntVar(0, 6, f"gm_dev_{mcr}_{start}")
-    #         model.Add(gm_dev >= gm_cnt - 3)
-    #         model.Add(gm_dev >= 3 - gm_cnt)
-
-    #         # total deviation for this window
-    #         window_dev = model.NewIntVar(0, 12, f"window_dev_{mcr}_{start}")
-    #         model.Add(window_dev == ed_dev + grm_dev + gm_dev)
-
-    #         window_dev_vars.append(window_dev)
-
-    #     # pick minimum deviation across all windows
-    #     overall_dev = model.NewIntVar(0, 12, f"ed_grm_gm_penalty_{mcr}")
-    #     if window_dev_vars:
-    #         model.AddMinEquality(overall_dev, window_dev_vars)
-    #     else:
-    #         # no possible window → maximum deviation
-    #         model.Add(overall_dev == 6)  # or len(blocks)
-
-    #     # add to your penalty list (weighted)
-    #     curr_deviation_penalties.append(curr_deviation_penalty_weight * overall_dev)
-    #     curr_deviation_penalty_vars[f"ed_grm_gm_penalty_{mcr}"] = overall_dev
-
-    # General Soft Constraint 2: RCCM and MICU requirements
+    # Soft Constraint 2: RCCM and MICU requirements
 
     # build micu and rccm assignment flags
     enc_yr1_micu = {}
@@ -540,7 +530,7 @@ def allocate_timetable(
             model.Add(enc_yr1_micu[mcr] == 0)
             model.Add(enc_yr1_rccm[mcr] == 0)
 
-    # General Soft Constraint 3: Penalty if minimum electives not completed by end of each year
+    # Soft Constraint 3: Penalty if minimum electives not completed by end of each year
 
     # filter for elective postings
     elective_postings = [
@@ -548,7 +538,7 @@ def allocate_timetable(
     ]
 
     # define elective penalty flag per Y2/Y3 resident
-    penalty_flags = {}
+    elective_penalty_flags = {}
     for resident in residents:
         mcr = resident["mcr"]
         year = resident["resident_year"]
@@ -556,14 +546,14 @@ def allocate_timetable(
         if year not in (2, 3):
             continue
 
-        penalty_flags[mcr] = model.NewBoolVar(f"{mcr}_penalty_elective_min")
+        elective_penalty_flags[mcr] = model.NewBoolVar(f"{mcr}_penalty_elective_min")
 
     # bind each penalty‐flag
     for resident in residents:
         mcr = resident["mcr"]
         year = resident["resident_year"]
 
-        if mcr not in penalty_flags:
+        if mcr not in elective_penalty_flags:
             continue
 
         # get historical elective count
@@ -578,20 +568,20 @@ def allocate_timetable(
         # enforce elective count
         if year == 2:
             model.Add(hist_count + selection_count >= 2).OnlyEnforceIf(
-                penalty_flags[mcr].Not()
+                elective_penalty_flags[mcr].Not()
             )
             model.Add(hist_count + selection_count < 2).OnlyEnforceIf(
-                penalty_flags[mcr]
+                elective_penalty_flags[mcr]
             )
         elif year == 3:
             model.Add(hist_count + selection_count == 5).OnlyEnforceIf(
-                penalty_flags[mcr].Not()
+                elective_penalty_flags[mcr].Not()
             )
             model.Add(hist_count + selection_count != 5).OnlyEnforceIf(
-                penalty_flags[mcr]
+                elective_penalty_flags[mcr]
             )
 
-    # General Soft Constraint 4: Penalty if core posting requirements are under-assigned by end of Year 3
+    # Soft Constraint 4: Penalty if core posting requirements are under-assigned by end of Year 3
 
     # get all y3 residents
     y3_residents = [r for r in residents if r["resident_year"] == 3]
@@ -631,7 +621,7 @@ def allocate_timetable(
             model.Add(hist_done + assigned + slack == req)
 
     ###########################################################################
-    # DEFINE BONUSES AND OBJECTIVE
+    # DEFINE BONUSES, PENALTIES AND OBJECTIVE
     ###########################################################################
 
     # micu and rccm bonus
@@ -670,14 +660,15 @@ def allocate_timetable(
             for b in blocks:
                 seniority_bonus.append(resident_year * x[mcr][p][b] * seniority_weight)
 
-    # elective penalty terms
+    # elective penalty
     elective_penalty_weight = weightages.get("elective_penalty", 10)
 
     elective_penalty_terms = [
-        elective_penalty_weight * penalty_flags[mcr] for mcr in penalty_flags
+        elective_penalty_weight * elective_penalty_flags[mcr]
+        for mcr in elective_penalty_flags
     ]
 
-    # core penalty terms
+    # core penalty
     core_penalty_terms = []
     core_penalty_weight = weightages.get("core_penalty", 10)
 
@@ -951,62 +942,3 @@ def allocate_timetable(
     else:
         logger.error("Posting allocation service failed")
         return {"success": False, "error": "Posting allocation service failed"}
-
-
-def main():
-    if len(sys.argv) != 2:
-        print(
-            json.dumps(
-                {
-                    "success": False,
-                    "error": f"Usage: python posting_allocator.py <input_json_file>",
-                }
-            )
-        )
-        sys.exit(1)
-    try:
-        with open(sys.argv[1], "r") as f:
-            input_data = json.load(f)
-        result = allocate_timetable(
-            residents=input_data["residents"],
-            resident_history=input_data["resident_history"],
-            resident_preferences=input_data["resident_preferences"],
-            postings=input_data["postings"],
-            weightages=input_data["weightages"],
-        )
-        # needs to be printed to stdout for server.js to read
-        print(json.dumps(result, indent=2))
-    except FileNotFoundError:
-        print(
-            json.dumps(
-                {"success": False, "error": f"Input file '{sys.argv[1]}' not found"}
-            )
-        )
-        sys.exit(1)
-    except json.JSONDecodeError:
-        print(
-            json.dumps(
-                {
-                    "success": False,
-                    "error": f"Invalid JSON in input file '{sys.argv[1]}'",
-                }
-            )
-        )
-        sys.exit(1)
-    except KeyError as e:
-        print(
-            json.dumps(
-                {
-                    "success": False,
-                    "error": f"Missing required field in input data: {e}",
-                }
-            )
-        )
-        sys.exit(1)
-    except Exception as e:
-        print(json.dumps({"success": False, "error": str(e)}))
-        sys.exit(1)
-
-
-if __name__ == "__main__":
-    main()
