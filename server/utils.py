@@ -204,7 +204,7 @@ def is_unique_posting_completed(
 # constants
 CORE_REQUIREMENTS = {
     # total blocks required for each core posting
-    "GM": 9,
+    "GM": 6,
     "GRM": 2,
     "CVM": 3,
     "RCCM": 3,
