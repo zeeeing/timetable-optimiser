@@ -30,11 +30,11 @@ const App: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [selectedResident, setSelectedResident] = useState<string>("");
   const [weightages, setWeightages] = useState({
-    micu_rccm_weight: 5,
+    micu_rccm_bonus: 5,
     preference: 1,
     seniority: 2,
-    elective_penalty: 10,
-    core_penalty: 10,
+    elective_shortfall_penalty: 10,
+    core_shortfall_penalty: 10,
   });
 
   const handleFileUpload =

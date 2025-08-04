@@ -365,8 +365,8 @@ def allocate_timetable(
                         )
 
     # Hard Constraint 11: GM capped at 3 blocks in Year 1
-    gm_ktph_bonus = []
-    gm_ktph_weight = weightages.get("gm_ktph_bonus", 2)
+    gm_ktph_bonus_terms = []
+    gm_ktph_bonus_weight = weightages.get("gm_ktph_bonus", 2)
 
     for resident in residents:
         mcr = resident["mcr"]
@@ -386,7 +386,7 @@ def allocate_timetable(
             ktph_bonus = sum(
                 x[mcr][p][b] for p in posting_codes if p == "GM (KTPH)" for b in blocks
             )
-            gm_ktph_bonus.append(gm_ktph_weight * ktph_bonus)
+            gm_ktph_bonus_terms.append(gm_ktph_bonus_weight * ktph_bonus)
 
     # Hard Constraint 12: if ED and GRM present, enforce contiguity
     for resident in residents:
@@ -432,7 +432,7 @@ def allocate_timetable(
         ]
         model.AddAutomaton(B, 0, [0, 1, 2], transitions)
 
-    # Hard Constraint 14: enforce 1 ED and 1 GRM SELECTION if both not done before
+    # Hard Constraint 14: enforce 1 ED and 1 GRM SELECTION if BOTH not done before
     for resident in residents:
         mcr = resident["mcr"]
         progress = get_core_blocks_completed(
@@ -547,7 +547,7 @@ def allocate_timetable(
     ]
 
     # define elective penalty flag per Y2/Y3 resident
-    elective_penalty_flags = {}
+    elective_shortfall_penalty_flags = {}
     for resident in residents:
         mcr = resident["mcr"]
         year = resident["resident_year"]
@@ -555,14 +555,16 @@ def allocate_timetable(
         if year not in (2, 3):
             continue
 
-        elective_penalty_flags[mcr] = model.NewBoolVar(f"{mcr}_penalty_elective_min")
+        elective_shortfall_penalty_flags[mcr] = model.NewBoolVar(
+            f"{mcr}_penalty_elective_min"
+        )
 
     # bind each penalty‐flag
     for resident in residents:
         mcr = resident["mcr"]
         year = resident["resident_year"]
 
-        if mcr not in elective_penalty_flags:
+        if mcr not in elective_shortfall_penalty_flags:
             continue
 
         # get historical elective count
@@ -574,20 +576,25 @@ def allocate_timetable(
         # get current year assignments
         selection_count = sum(selection_flags[mcr][p] for p in elective_postings)
 
+        # look up their preferences
+        resident_prefs = pref_map.get(mcr, {})
+
         # enforce elective count
         if year == 2:
-            model.Add(hist_count + selection_count >= 2).OnlyEnforceIf(
-                elective_penalty_flags[mcr].Not()
+            required = 1 if not resident_prefs else 2
+
+            model.Add(hist_count + selection_count >= required).OnlyEnforceIf(
+                elective_shortfall_penalty_flags[mcr].Not()
             )
-            model.Add(hist_count + selection_count < 2).OnlyEnforceIf(
-                elective_penalty_flags[mcr]
+            model.Add(hist_count + selection_count < required).OnlyEnforceIf(
+                elective_shortfall_penalty_flags[mcr]
             )
         elif year == 3:
             model.Add(hist_count + selection_count == 5).OnlyEnforceIf(
-                elective_penalty_flags[mcr].Not()
+                elective_shortfall_penalty_flags[mcr].Not()
             )
             model.Add(hist_count + selection_count != 5).OnlyEnforceIf(
-                elective_penalty_flags[mcr]
+                elective_shortfall_penalty_flags[mcr]
             )
 
     # Soft Constraint 3: Penalty if core posting requirements are under-assigned by end of Year 3
@@ -634,76 +641,122 @@ def allocate_timetable(
     ###########################################################################
 
     # micu and rccm bonus
-    micu_rccm_bonus = []
-    micu_rccm_weight = weightages.get("micu_rccm_weight", 5)
+    micu_rccm_bonus_terms = []
+    micu_rccm_bonus_weight = weightages.get("micu_rccm_bonus", 5)
 
     for resident in residents:
         mcr = resident["mcr"]
-        micu_rccm_bonus += [
-            micu_rccm_weight * enc_yr1_micu[mcr],
-            micu_rccm_weight * enc_yr1_rccm[mcr],
-            micu_rccm_weight * enc_other_micu[mcr],
-            micu_rccm_weight * enc_other_rccm[mcr],
+        micu_rccm_bonus_terms += [
+            micu_rccm_bonus_weight * enc_yr1_micu[mcr],
+            micu_rccm_bonus_weight * enc_yr1_rccm[mcr],
+            micu_rccm_bonus_weight * enc_other_micu[mcr],
+            micu_rccm_bonus_weight * enc_other_rccm[mcr],
         ]
 
+    # 3 GMs bonus if ED + GRM present
+    ED_codes = [p for p in posting_codes if p.startswith("ED")]
+    GRM_codes = [p for p in posting_codes if p.startswith("GRM")]
+    GM_codes = [p for p in posting_codes if p.startswith("GM")]
+
+    three_gm_bonus_terms = []
+    three_gm_bonus_weight = weightages.get("three_gm_bonus", 5)
+
+    for resident in residents:
+        mcr = resident["mcr"]
+        flag = model.NewBoolVar(f"{mcr}_three_gm_bonus")
+
+        # detect ED presence
+        hasED = model.NewBoolVar(f"{mcr}_hasED")
+        model.Add(sum(selection_flags[mcr][p] for p in ED_codes) >= 1).OnlyEnforceIf(
+            hasED
+        )
+        model.Add(sum(selection_flags[mcr][p] for p in ED_codes) == 0).OnlyEnforceIf(
+            hasED.Not()
+        )
+
+        # detect GRM presence
+        hasGRM = model.NewBoolVar(f"{mcr}_hasGRM")
+        model.Add(sum(selection_flags[mcr][p] for p in GRM_codes) >= 1).OnlyEnforceIf(
+            hasGRM
+        )
+        model.Add(sum(selection_flags[mcr][p] for p in GRM_codes) == 0).OnlyEnforceIf(
+            hasGRM.Not()
+        )
+
+        # count total GM blocks
+        total_gm = sum(x[mcr][p][b] for p in GM_codes for b in blocks)
+
+        # If they lack ED or GRM, they can never get the bonus
+        model.Add(flag == 0).OnlyEnforceIf(hasED.Not())
+        model.Add(flag == 0).OnlyEnforceIf(hasGRM.Not())
+
+        model.Add(total_gm == 3).OnlyEnforceIf(flag)
+        model.Add(total_gm != 3).OnlyEnforceIf(hasED, hasGRM, flag.Not())
+
+        three_gm_bonus_terms.append(three_gm_bonus_weight * flag)
+
     # preference bonus
-    preference_bonus = []
-    pref_weight = weightages.get("preference", 1)
+    preference_bonus_terms = []
+    preference_bonus_weight = weightages.get("preference", 1)
 
     for resident in residents:
         mcr = resident["mcr"]
         resident_prefs = pref_map.get(mcr, {})
         for rank, p in resident_prefs.items():
-            w = pref_weight * (6 - rank)
+            w = preference_bonus_weight * (6 - rank)
             if p:
-                preference_bonus.append(w * selection_flags[mcr][p])
+                preference_bonus_terms.append(w * selection_flags[mcr][p])
 
     # seniority bonus
-    seniority_bonus = []
-    seniority_weight = weightages.get("seniority", 2)
+    seniority_bonus_terms = []
+    seniority_bonus_weight = weightages.get("seniority", 2)
 
     for resident in residents:
         mcr = resident["mcr"]
         resident_year = resident.get("resident_year", 1)
         for p in posting_codes:
             for b in blocks:
-                seniority_bonus.append(resident_year * x[mcr][p][b] * seniority_weight)
+                seniority_bonus_terms.append(
+                    resident_year * x[mcr][p][b] * seniority_bonus_weight
+                )
 
     # elective shortfall penalty
-    elective_penalty_weight = weightages.get("elective_penalty", 10)
+    elective_shortfall_penalty_terms = []
+    elective_shortfall_penalty_weight = weightages.get("elective_shortfall_penalty", 10)
 
-    elective_penalty_terms = [
-        elective_penalty_weight * elective_penalty_flags[mcr]
-        for mcr in elective_penalty_flags
-    ]
+    for mcr in elective_shortfall_penalty_flags:
+        elective_shortfall_penalty_terms.append(
+            elective_shortfall_penalty_weight * elective_shortfall_penalty_flags[mcr]
+        )
 
     # core shortfall penalty
-    core_penalty_terms = []
-    core_penalty_weight = weightages.get("core_penalty", 10)
+    core_shortfall_penalty_terms = []
+    core_shortfall_penalty_weight = weightages.get("core_shortfall_penalty", 10)
 
     for mcr, base_map in core_shortfall.items():
         for base, slack in base_map.items():
-            core_penalty_terms.append(core_penalty_weight * slack)
+            core_shortfall_penalty_terms.append(core_shortfall_penalty_weight * slack)
 
-    # prioritise core postings
+    # core prioritisation bonus
     CORE_CODES = [p for p in posting_codes if posting_info[p]["posting_type"] == "core"]
 
     core_bonus_terms = []
-    core_weight = 5
+    core_bonus_weight = 5
 
     for resident in residents:
         mcr = resident["mcr"]
         for p in CORE_CODES:
-            core_bonus_terms.append(core_weight * selection_flags[mcr][p])
+            core_bonus_terms.append(core_bonus_weight * selection_flags[mcr][p])
 
     # Objective
     model.Maximize(
-        sum(gm_ktph_bonus)
-        + sum(micu_rccm_bonus)
-        + sum(preference_bonus)
-        + sum(seniority_bonus)
-        - sum(elective_penalty_terms)
-        - sum(core_penalty_terms)
+        sum(gm_ktph_bonus_terms)
+        + sum(micu_rccm_bonus_terms)
+        + sum(three_gm_bonus_terms)
+        + sum(preference_bonus_terms)
+        + sum(seniority_bonus_terms)
+        - sum(elective_shortfall_penalty_terms)
+        - sum(core_shortfall_penalty_terms)
         + sum(core_bonus_terms)
     )
 
@@ -776,7 +829,7 @@ def allocate_timetable(
 
         #     # gaps in electives
         #     for year in [2, 3]:
-        #         penalty_key = f"elective_penalty_{mcr}_y{year}"
+        #         penalty_key = f"elective_shortfall_penalty_{mcr}_y{year}"
         #         penalty_var = curr_deviation_penalty_vars.get(penalty_key)
         #         if penalty_var is not None and solver.Value(penalty_var) > 0:
         #             summary[f"Elective shortfall (Y{year})"] = solver.Value(penalty_var)
@@ -883,11 +936,13 @@ def allocate_timetable(
                 assigned_posting = h["posting_code"]
                 for rank in range(1, 6):
                     if resident_prefs.get(rank) == assigned_posting:
-                        preference_score += (6 - rank) * pref_weight
+                        preference_score += (6 - rank) * preference_bonus_weight
                         break
 
             # b. seniority bonus
-            seniority_bonus = len(assigned_postings) * resident_year * seniority_weight
+            seniority_bonus = (
+                len(assigned_postings) * resident_year * seniority_bonus_weight
+            )
 
             # tabulate scores
             actual_score = preference_score + seniority_bonus

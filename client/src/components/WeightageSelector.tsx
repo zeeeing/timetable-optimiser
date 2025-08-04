@@ -6,18 +6,18 @@ import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
 
 interface WeightageSelectorProps {
   value: {
-    micu_rccm_weight: number;
+    micu_rccm_bonus: number;
     preference: number;
     seniority: number;
-    elective_penalty: number;
-    core_penalty: number;
+    elective_shortfall_penalty: number;
+    core_shortfall_penalty: number;
   };
   setValue: (val: {
-    micu_rccm_weight: number;
+    micu_rccm_bonus: number;
     preference: number;
     seniority: number;
-    elective_penalty: number;
-    core_penalty: number;
+    elective_shortfall_penalty: number;
+    core_shortfall_penalty: number;
   }) => void;
 }
 
@@ -28,11 +28,11 @@ const WeightageSelector: React.FC<WeightageSelectorProps> = ({
   const handleChange =
     (
       field:
-        | "micu_rccm_weight"
+        | "micu_rccm_bonus"
         | "preference"
         | "seniority"
-        | "elective_penalty"
-        | "core_penalty"
+        | "elective_shortfall_penalty"
+        | "core_shortfall_penalty"
     ) =>
     (e: React.ChangeEvent<HTMLInputElement>) => {
       setValue({ ...value, [field]: Number(e.target.value) });
@@ -47,7 +47,7 @@ const WeightageSelector: React.FC<WeightageSelectorProps> = ({
       </p>
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         <div className="flex flex-col gap-2">
-          <Label htmlFor="micu_rccm_weight">
+          <Label htmlFor="micu_rccm_bonus">
             MICU/RCCM Weight
             <Tooltip>
               <TooltipTrigger asChild>
@@ -62,10 +62,10 @@ const WeightageSelector: React.FC<WeightageSelectorProps> = ({
             </Tooltip>
           </Label>
           <Input
-            id="micu_rccm_weight"
+            id="micu_rccm_bonus"
             type="number"
-            value={value.micu_rccm_weight}
-            onChange={handleChange("micu_rccm_weight")}
+            value={value.micu_rccm_bonus}
+            onChange={handleChange("micu_rccm_bonus")}
           />
         </div>
         <div className="flex flex-col gap-2">
@@ -113,7 +113,7 @@ const WeightageSelector: React.FC<WeightageSelectorProps> = ({
           />
         </div>
         <div className="flex flex-col gap-2">
-          <Label htmlFor="elective_penalty">
+          <Label htmlFor="elective_shortfall_penalty">
             Elective Penalty
             <Tooltip>
               <TooltipTrigger asChild>
@@ -127,14 +127,14 @@ const WeightageSelector: React.FC<WeightageSelectorProps> = ({
             </Tooltip>
           </Label>
           <Input
-            id="elective_penalty"
+            id="elective_shortfall_penalty"
             type="number"
-            value={value.elective_penalty}
-            onChange={handleChange("elective_penalty")}
+            value={value.elective_shortfall_penalty}
+            onChange={handleChange("elective_shortfall_penalty")}
           />
         </div>
         <div className="flex flex-col gap-2">
-          <Label htmlFor="core_penalty">
+          <Label htmlFor="core_shortfall_penalty">
             Core Penalty
             <Tooltip>
               <TooltipTrigger asChild>
@@ -148,10 +148,10 @@ const WeightageSelector: React.FC<WeightageSelectorProps> = ({
             </Tooltip>
           </Label>
           <Input
-            id="core_penalty"
+            id="core_shortfall_penalty"
             type="number"
-            value={value.core_penalty}
-            onChange={handleChange("core_penalty")}
+            value={value.core_shortfall_penalty}
+            onChange={handleChange("core_shortfall_penalty")}
           />
         </div>
       </div>
