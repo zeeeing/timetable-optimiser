@@ -290,6 +290,7 @@ def allocate_timetable(
                     model.Add(selection_flags[mcr][p1] + selection_flags[mcr][p2] <= 1)
 
     # Hard Constraint 8b: if MICU and RCCM are assigned, they must form one contiguous block
+    DEC, JAN = 6 - 1, 7 - 1  # M is 0-indexed
     for resident in residents:
         mcr = resident["mcr"]
 
@@ -305,6 +306,14 @@ def allocate_timetable(
             # sum all MICU/RCCM postings at block b
             model.Add(sum(x[mcr][p][b] for p in micu_rccm) == Mb)
             M.append(Mb)
+
+        # do not cross dec - jan
+        model.AddBoolOr(
+            [
+                M[DEC].Not(),
+                M[JAN].Not(),
+            ]
+        )
 
         # states: 0 = before the run, 1 = inside the run, 2 = after the run
         transitions = [
@@ -429,7 +438,7 @@ def allocate_timetable(
         progress = get_core_blocks_completed(
             posting_progress.get(mcr, {}), posting_info
         )
-        # have they already finished _either_ ED or GRM?
+        # have they already finished either ED or GRM?
         done_ED = progress.get("ED", 0) >= CORE_REQUIREMENTS.get("ED", 0)
         done_GRM = progress.get("GRM", 0) >= CORE_REQUIREMENTS.get("GRM", 0)
 
@@ -441,7 +450,7 @@ def allocate_timetable(
     # DEFINE SOFT CONSTRAINTS WITH PENALTIES
     ###########################################################################
 
-    # Soft Constraint 2: RCCM and MICU requirements
+    # Soft Constraint 1: RCCM and MICU requirements
 
     # build micu and rccm assignment flags
     enc_yr1_micu = {}
@@ -530,7 +539,7 @@ def allocate_timetable(
             model.Add(enc_yr1_micu[mcr] == 0)
             model.Add(enc_yr1_rccm[mcr] == 0)
 
-    # Soft Constraint 3: Penalty if minimum electives not completed by end of each year
+    # Soft Constraint 2: Penalty if minimum electives not completed by end of each year
 
     # filter for elective postings
     elective_postings = [
@@ -581,7 +590,7 @@ def allocate_timetable(
                 elective_penalty_flags[mcr]
             )
 
-    # Soft Constraint 4: Penalty if core posting requirements are under-assigned by end of Year 3
+    # Soft Constraint 3: Penalty if core posting requirements are under-assigned by end of Year 3
 
     # get all y3 residents
     y3_residents = [r for r in residents if r["resident_year"] == 3]
@@ -660,7 +669,7 @@ def allocate_timetable(
             for b in blocks:
                 seniority_bonus.append(resident_year * x[mcr][p][b] * seniority_weight)
 
-    # elective penalty
+    # elective shortfall penalty
     elective_penalty_weight = weightages.get("elective_penalty", 10)
 
     elective_penalty_terms = [
@@ -668,13 +677,24 @@ def allocate_timetable(
         for mcr in elective_penalty_flags
     ]
 
-    # core penalty
+    # core shortfall penalty
     core_penalty_terms = []
     core_penalty_weight = weightages.get("core_penalty", 10)
 
     for mcr, base_map in core_shortfall.items():
         for base, slack in base_map.items():
             core_penalty_terms.append(core_penalty_weight * slack)
+
+    # prioritise core postings
+    CORE_CODES = [p for p in posting_codes if posting_info[p]["posting_type"] == "core"]
+
+    core_bonus_terms = []
+    core_weight = 5
+
+    for resident in residents:
+        mcr = resident["mcr"]
+        for p in CORE_CODES:
+            core_bonus_terms.append(core_weight * selection_flags[mcr][p])
 
     # Objective
     model.Maximize(
@@ -684,6 +704,7 @@ def allocate_timetable(
         + sum(seniority_bonus)
         - sum(elective_penalty_terms)
         - sum(core_penalty_terms)
+        + sum(core_bonus_terms)
     )
 
     ###########################################################################

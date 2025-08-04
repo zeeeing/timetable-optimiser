@@ -1,4 +1,4 @@
-export const monthLabels = [
+[
   "Jul",
   "Aug",
   "Sep",
@@ -10,5 +10,5 @@ export const monthLabels = [
   "Mar",
   "Apr",
   "May",
-  "Jun",
-];
+  "Jun"
+]

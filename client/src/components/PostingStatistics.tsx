@@ -16,7 +16,7 @@ import {
   CardTitle,
   CardDescription,
 } from "./ui/card";
-import { monthLabels } from "../lib/constants";
+import monthLabels from "../../../shared/monthLabels.json";
 import { Badge } from "./ui/badge";
 
 const PostingStatistics: React.FC<{

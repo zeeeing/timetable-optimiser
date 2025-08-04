@@ -26,11 +26,19 @@ export const uploadCsv = async (formData: FormData): Promise<ApiResponse> => {
 
 export const downloadCsv = async (apiResponse: ApiResponse): Promise<Blob> => {
   try {
-    const response = await axios.post<Blob>(
-      `${url}/download-csv`,
-      apiResponse,
-      { responseType: "blob", headers: { "Content-Type": "application/json" } }
-    );
+    const { success, residents, resident_history, statistics } = apiResponse;
+    const optimisation_scores = statistics.cohort.optimisation_scores;
+    const payload = {
+      success,
+      residents,
+      resident_history,
+      optimisation_scores,
+    };
+
+    const response = await axios.post<Blob>(`${url}/download-csv`, payload, {
+      responseType: "blob",
+      headers: { "Content-Type": "application/json" },
+    });
     return response.data;
   } catch (error: unknown) {
     if (axios.isAxiosError(error) && error.response && error.response.data) {

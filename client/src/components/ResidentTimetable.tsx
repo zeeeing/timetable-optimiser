@@ -1,6 +1,6 @@
 import React from "react";
 import type { Resident, ApiResponse } from "../types";
-import { monthLabels } from "../lib/constants";
+import monthLabels from "../../../shared/monthLabels.json";
 import {
   Table,
   TableBody,

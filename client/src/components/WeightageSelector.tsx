@@ -6,14 +6,18 @@ import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
 
 interface WeightageSelectorProps {
   value: {
+    micu_rccm_weight: number;
     preference: number;
     seniority: number;
-    curr_deviation_penalty: number;
+    elective_penalty: number;
+    core_penalty: number;
   };
   setValue: (val: {
+    micu_rccm_weight: number;
     preference: number;
     seniority: number;
-    curr_deviation_penalty: number;
+    elective_penalty: number;
+    core_penalty: number;
   }) => void;
 }
 
@@ -22,7 +26,14 @@ const WeightageSelector: React.FC<WeightageSelectorProps> = ({
   setValue,
 }) => {
   const handleChange =
-    (field: "preference" | "seniority" | "curr_deviation_penalty") =>
+    (
+      field:
+        | "micu_rccm_weight"
+        | "preference"
+        | "seniority"
+        | "elective_penalty"
+        | "core_penalty"
+    ) =>
     (e: React.ChangeEvent<HTMLInputElement>) => {
       setValue({ ...value, [field]: Number(e.target.value) });
     };
@@ -34,7 +45,29 @@ const WeightageSelector: React.FC<WeightageSelectorProps> = ({
         Adjust the weightages to prioritise different factors in the
         optimisation.
       </p>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="micu_rccm_weight">
+            MICU/RCCM Weight
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="cursor-pointer">
+                  <Info size={16} />
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="top">
+                How much the model should emphasise on encouraging MICU/RCCM
+                pairings.
+              </TooltipContent>
+            </Tooltip>
+          </Label>
+          <Input
+            id="micu_rccm_weight"
+            type="number"
+            value={value.micu_rccm_weight}
+            onChange={handleChange("micu_rccm_weight")}
+          />
+        </div>
         <div className="flex flex-col gap-2">
           <Label htmlFor="preference">
             Preference Weight
@@ -45,7 +78,8 @@ const WeightageSelector: React.FC<WeightageSelectorProps> = ({
                 </span>
               </TooltipTrigger>
               <TooltipContent side="top">
-                How much weightage to give each preference level.
+                Higher weightage correlates to higher chances of residents
+                getting their top choices.
               </TooltipContent>
             </Tooltip>
           </Label>
@@ -58,7 +92,7 @@ const WeightageSelector: React.FC<WeightageSelectorProps> = ({
         </div>
         <div className="flex flex-col gap-2">
           <Label htmlFor="seniority">
-            Seniority Bonus
+            Seniority Weight
             <Tooltip>
               <TooltipTrigger asChild>
                 <span className="cursor-pointer">
@@ -66,7 +100,8 @@ const WeightageSelector: React.FC<WeightageSelectorProps> = ({
                 </span>
               </TooltipTrigger>
               <TooltipContent side="top">
-                Prioritise more senior residents (e.g. R3 {">"} R2 {">"} R1).
+                Higher weightage correlates to higher chances of seniors getting
+                more optimal timetables compared to juniors.
               </TooltipContent>
             </Tooltip>
           </Label>
@@ -77,30 +112,9 @@ const WeightageSelector: React.FC<WeightageSelectorProps> = ({
             onChange={handleChange("seniority")}
           />
         </div>
-        {/* <div className="flex flex-col gap-2">
-          <Label htmlFor="core">
-            Core Completion Bonus
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="cursor-pointer">
-                  <Info size={16} />
-                </span>
-              </TooltipTrigger>
-              <TooltipContent side="top">
-                Bonus for completing all required core postings earlier.
-              </TooltipContent>
-            </Tooltip>
-          </Label>
-          <Input
-            id="core"
-            type="number"
-            value={value.core}
-            onChange={handleChange("core")}
-          />
-        </div> */}
         <div className="flex flex-col gap-2">
-          <Label htmlFor="curr_deviation_penalty">
-            Curriculum Deviation Penalty
+          <Label htmlFor="elective_penalty">
+            Elective Penalty
             <Tooltip>
               <TooltipTrigger asChild>
                 <span className="cursor-pointer">
@@ -108,16 +122,36 @@ const WeightageSelector: React.FC<WeightageSelectorProps> = ({
                 </span>
               </TooltipTrigger>
               <TooltipContent side="top">
-                Penalty for deviating from set curriculum timeline (e.g.
-                completing at least 2 electives by year 2).
+                Penalty for not completing elective requirements on time.
               </TooltipContent>
             </Tooltip>
           </Label>
           <Input
-            id="curr_deviation_penalty"
+            id="elective_penalty"
             type="number"
-            value={value.curr_deviation_penalty}
-            onChange={handleChange("curr_deviation_penalty")}
+            value={value.elective_penalty}
+            onChange={handleChange("elective_penalty")}
+          />
+        </div>
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="core_penalty">
+            Core Penalty
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="cursor-pointer">
+                  <Info size={16} />
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="top">
+                Penalty for not completing core requirements on time.
+              </TooltipContent>
+            </Tooltip>
+          </Label>
+          <Input
+            id="core_penalty"
+            type="number"
+            value={value.core_penalty}
+            onChange={handleChange("core_penalty")}
           />
         </div>
       </div>
