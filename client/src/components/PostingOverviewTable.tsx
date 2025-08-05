@@ -45,7 +45,7 @@ const PostingOverviewTable: React.FC<PostingOverviewTableProps> = ({
   });
 
   return (
-    <Card>
+    <Card className="bg-gray-50">
       <CardHeader>
         <CardTitle>Planning Overview</CardTitle>
         <CardAction>

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useApiResponseContext } from "@/context/ApiResponseContext";
 import type { Resident, ApiResponse, CsvFilesState } from "../types";
-import { uploadCsv, downloadCsv } from "../api/api";
+import { uploadCsv } from "../api/api";
 
 import FileUpload from "../components/FileUpload";
 import WeightageSelector from "../components/WeightageSelector";
@@ -13,7 +13,6 @@ import CohortStatistics from "../components/CohortStatistics";
 import PostingStatistics from "../components/PostingStatistics";
 import { Button } from "../components/ui/button";
 import { Separator } from "../components/ui/separator";
-
 import { Loader2Icon } from "lucide-react";
 
 const HomePage: React.FC = () => {
@@ -83,36 +82,6 @@ const HomePage: React.FC = () => {
       } else {
         throw new Error("Failed to retrieve api response");
       }
-    } catch (err: unknown) {
-      if (err instanceof Error) {
-        setError(err.message);
-      } else {
-        setError("An unknown error occurred");
-      }
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  const handleDownloadCSV = async () => {
-    if (!apiResponse) {
-      setError("No timetable data available to download");
-      return;
-    }
-
-    setIsProcessing(true);
-    setError(null);
-
-    try {
-      const blob = await downloadCsv(apiResponse);
-      const downloadUrl = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = downloadUrl;
-      a.download = "timetable_assignments.csv";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(downloadUrl);
     } catch (err: unknown) {
       if (err instanceof Error) {
         setError(err.message);
@@ -197,7 +166,7 @@ const HomePage: React.FC = () => {
       {error && <ErrorAlert message={error} />}
 
       {/* Timetable Results */}
-      {apiResponse?.residents && (
+      {apiResponse && (
         <div className="space-y-6">
           <Separator />
           <ResidentDropdown
@@ -205,43 +174,19 @@ const HomePage: React.FC = () => {
             selectedResidentMcr={selectedResident}
             onChange={setSelectedResident}
           />
-          {apiResponse && (
-            <>
-              {selectedResidentData && (
-                <ResidentTimetable
-                  resident={selectedResidentData}
-                  apiResponse={apiResponse}
-                />
-              )}
-              <CohortStatistics
-                statistics={apiResponse.statistics}
-                residents={apiResponse.residents}
-              />
-              <PostingStatistics
-                postingUtil={apiResponse.statistics.cohort.posting_util}
-              />
-            </>
+          {selectedResidentData && (
+            <ResidentTimetable
+              resident={selectedResidentData}
+              apiResponse={apiResponse}
+            />
           )}
-        </div>
-      )}
-
-      {/* Download Button */}
-      {apiResponse?.residents && (
-        <div className="mt-6 flex justify-end">
-          <Button
-            className="bg-green-600 text-white hover:bg-green-700"
-            onClick={handleDownloadCSV}
-            disabled={isProcessing}
-          >
-            {isProcessing ? (
-              <>
-                <Loader2Icon className="animate-spin" />
-                Downloading...
-              </>
-            ) : (
-              "Download Final Timetable CSV"
-            )}
-          </Button>
+          <CohortStatistics
+            statistics={apiResponse.statistics}
+            residents={apiResponse.residents}
+          />
+          <PostingStatistics
+            postingUtil={apiResponse.statistics.cohort.posting_util}
+          />
         </div>
       )}
     </div>
