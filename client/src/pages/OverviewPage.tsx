@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { useApiResponseContext } from "@/context/ApiResponseContext";
 import { downloadCsv } from "@/api/api";
 
-import PostingOverviewTable from "../components/PostingOverviewTable";
+import PostingOverviewTable from "../components/PlanningOverviewTable";
 import ErrorAlert from "../components/ErrorAlert";
 import { Button } from "@/components/ui/button";
 import { Loader2Icon } from "lucide-react";

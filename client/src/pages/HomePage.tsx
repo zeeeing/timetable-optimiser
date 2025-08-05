@@ -10,7 +10,7 @@ import ErrorAlert from "../components/ErrorAlert";
 import ResidentDropdown from "../components/ResidentDropdown";
 import ResidentTimetable from "../components/ResidentTimetable";
 import CohortStatistics from "../components/CohortStatistics";
-import PostingStatistics from "../components/PostingStatistics";
+import PostingStatistics from "../components/PostingUtilTable";
 import { Button } from "../components/ui/button";
 import { Separator } from "../components/ui/separator";
 import { Loader2Icon } from "lucide-react";
@@ -167,7 +167,7 @@ const HomePage: React.FC = () => {
 
       {/* Timetable Results */}
       {apiResponse && (
-        <div className="space-y-6">
+        <div className="flex flex-col gap-6">
           <Separator />
           <ResidentDropdown
             residents={apiResponse.residents}

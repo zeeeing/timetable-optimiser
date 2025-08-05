@@ -133,7 +133,7 @@ const ResidentTimetable: React.FC<{
 
       {/* resident timetable */}
       <CardContent>
-        <div className="bg-white rounded-md overflow-hidden p-2">
+        <div className="bg-white rounded-md overflow-auto p-2">
           <Table>
             <TableHeader>
               <TableRow>
@@ -245,7 +245,7 @@ const ResidentTimetable: React.FC<{
 
       {/* resident statistics */}
       <CardContent className="flex justify-between gap-6">
-        <div className="flex gap-12">
+        <div className="flex gap-8">
           {/* core postings completed */}
           <div className="flex flex-col gap-2">
             {Object.entries(resident.core_blocks_completed)
