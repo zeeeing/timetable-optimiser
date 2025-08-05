@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useEffect } from "react";
 import type { Resident } from "../types";
 import {
   Select,
@@ -12,9 +12,9 @@ import {
 
 const ResidentDropdown: React.FC<{
   residents: Resident[] | null;
-  value: string;
+  selectedResidentMcr: string;
   onChange: (mcr: string) => void;
-}> = ({ residents, value, onChange }) => {
+}> = ({ residents, selectedResidentMcr, onChange }) => {
   // memoize grouped residents by year
   const grouped = useMemo(() => {
     if (!residents) return {};
@@ -26,11 +26,19 @@ const ResidentDropdown: React.FC<{
     }, {} as Record<number, Resident[]>);
   }, [residents]);
 
-  const selectedResident = residents?.find((r) => r.mcr === value);
+  useEffect(() => {
+    if (residents?.length && !selectedResidentMcr) {
+      onChange(residents[0].mcr);
+    }
+  }, [residents, selectedResidentMcr, onChange]);
+
+  const selectedResident = residents?.find(
+    (r) => r.mcr === selectedResidentMcr
+  );
 
   return (
     <div className="mb-4 w-full max-w-md">
-      <Select onValueChange={onChange}>
+      <Select value={selectedResidentMcr || ""} onValueChange={onChange}>
         <SelectTrigger className="w-full">
           <SelectValue placeholder="Select Resident to View Timetable">
             {selectedResident
