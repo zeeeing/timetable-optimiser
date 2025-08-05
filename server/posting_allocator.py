@@ -634,7 +634,11 @@ def allocate_timetable(
             # get shortfall
             slack = core_shortfall[mcr][base]
 
-            model.Add(hist_done + assigned + slack == req)
+            if hist_done >= req:
+                # done more than or equal to requirements, so force slack = 0
+                model.Add(slack == 0)
+            else:
+                model.Add(hist_done + assigned + slack == req)
 
     ###########################################################################
     # DEFINE BONUSES, PENALTIES AND OBJECTIVE
