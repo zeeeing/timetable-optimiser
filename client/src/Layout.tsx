@@ -10,7 +10,7 @@ const Layout: React.FC = () => {
   ];
 
   return (
-    <div className="min-h-screen bg-linear-to-br from-blue-50 to-indigo-200">
+    <div className="min-h-screen bg-linear-to-br from-blue-100 to-indigo-300">
       <div className="max-w-7xl mx-auto flex justify-center gap-8 py-6">
         {navigationItems.map((item) => (
           <div
