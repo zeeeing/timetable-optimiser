@@ -1,6 +1,6 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Layout from "./Layout";
-import HomePage from "./pages/HomePage";
+import HomePage from "./pages/DashboardPage";
 import OverviewPage from "./pages/OverviewPage";
 
 const App = () => {

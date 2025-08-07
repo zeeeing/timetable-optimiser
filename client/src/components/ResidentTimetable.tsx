@@ -21,6 +21,7 @@ import {
 import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
 import { Info } from "lucide-react";
 import ErrorAlert from "./ErrorAlert";
+import ConstraintsAccordion from "./ConstraintsAccordion";
 
 const ResidentTimetable: React.FC<{
   resident: Resident;
@@ -83,7 +84,7 @@ const ResidentTimetable: React.FC<{
     apiResponse.statistics.cohort.optimisation_scores[residentIndex];
 
   return (
-    <Card className="bg-gray-50 overflow-scroll">
+    <Card className="bg-gray-50">
       {/* resident information */}
       <CardHeader>
         <CardTitle>Resident Information</CardTitle>
@@ -245,28 +246,33 @@ const ResidentTimetable: React.FC<{
       </CardContent>
 
       {/* constraints (violations and penalties) */}
-      <CardContent className="flex flex-col gap-2">
-        {resident.constraints.filter((c) => c.type === "violation").length >
-          0 && (
-          <ErrorAlert
-            message="Violations"
-            description={resident.constraints
-              .filter((c) => c.type === "violation")
-              .map((c) => c.description)}
-          />
-        )}
-        {resident.constraints.filter((c) => c.type === "penalty").length >
-          0 && (
-          <ErrorAlert
-            message="Penalties"
-            description={resident.constraints
-              .filter((c) => c.type === "penalty")
-              .map((c) => c.description)}
-          />
-        )}
-        {resident.constraints.length == 0 && (
-          <ErrorAlert message="No penalties or violations incurred." />
-        )}
+      <CardContent className="flex gap-6">
+        <div className="flex flex-col gap-2 w-1/2">
+          {resident.constraints.filter((c) => c.type === "violation").length >
+            0 && (
+            <ErrorAlert
+              message="Violations"
+              description={resident.constraints
+                .filter((c) => c.type === "violation")
+                .map((c) => c.description)}
+            />
+          )}
+          {resident.constraints.filter((c) => c.type === "penalty").length >
+            0 && (
+            <ErrorAlert
+              message="Penalties"
+              description={resident.constraints
+                .filter((c) => c.type === "penalty")
+                .map((c) => c.description)}
+            />
+          )}
+          {resident.constraints.length == 0 && (
+            <ErrorAlert message="No violations or penalties incurred." />
+          )}
+        </div>
+        <div className="w-1/2">
+          <ConstraintsAccordion />
+        </div>
       </CardContent>
 
       {/* resident statistics */}
