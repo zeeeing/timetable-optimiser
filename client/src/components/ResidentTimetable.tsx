@@ -245,25 +245,25 @@ const ResidentTimetable: React.FC<{
       </CardContent>
 
       {/* constraints (violations and penalties) */}
-      <CardContent className="flex flex-col gap-4">
-        {/* {resident.constraints.filter((c) => c.type === "violation").length >
-          0 && ( */}
+      <CardContent className="flex flex-col gap-2">
+        {resident.constraints.filter((c) => c.type === "violation").length >
+          0 && (
           <ErrorAlert
             message="Violations"
             description={resident.constraints
               .filter((c) => c.type === "violation")
               .map((c) => c.description)}
           />
-        {/* )} */}
-        {/* {resident.constraints.filter((c) => c.type === "penalty").length >
-          0 && ( */}
+        )}
+        {resident.constraints.filter((c) => c.type === "penalty").length >
+          0 && (
           <ErrorAlert
             message="Penalties"
             description={resident.constraints
               .filter((c) => c.type === "penalty")
               .map((c) => c.description)}
           />
-        {/* )} */}
+        )}
       </CardContent>
 
       {/* resident statistics */}
