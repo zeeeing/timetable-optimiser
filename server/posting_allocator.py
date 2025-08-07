@@ -1,5 +1,5 @@
 import sys
-from typing import List, Dict
+from typing import List, Dict, TypedDict
 from ortools.sat.python import cp_model
 from utils import (
     get_completed_postings,
@@ -42,10 +42,35 @@ def allocate_timetable(
     # DEFINE HELPERS
     ###########################################################################
 
-    # helper to create and register an assumption literal (for debugging infeasibility)
-    def new_assumption_literal(name):
+    # initialise constraint tracker
+    constraints_by_resident = {}
+    for resident in residents:
+        constraints_by_resident[resident["mcr"]] = []
+
+    # helper function to record constraint
+    def record_constraint(
+        mcr: str,
+        constraint_type: str,
+        category: str,
+        description: str,
+        penalty_value: float = None,
+    ):
+        constraints_by_resident[mcr].append(
+            {
+                "type": constraint_type,
+                "category": category,
+                "description": description,
+                "penalty_value": penalty_value,
+            }
+        )
+
+    # create and register assumption literals (for infeasible outcomes)
+    assumption_literals = {}
+
+    def new_assumption_literal(name: str, description: str) -> cp_model.IntVar:
         flag = model.NewBoolVar(name)
         model.AddAssumption(flag)
+        assumption_literals[name] = description
         return flag
 
     # define list of all unique elective base codes
@@ -789,7 +814,6 @@ def allocate_timetable(
 
     # INFEASIBLE
     if status == cp_model.INFEASIBLE:
-
         logger.info("Model is infeasible. Checking assumptions...")
 
         core_names = [
@@ -804,49 +828,77 @@ def allocate_timetable(
         # log penalties incurred
         logger.info("Logging penalties...")
 
-        # for name, var in curr_deviation_penalty_vars.items():
-        #     value = solver.Value(var)
-        #     if value > 0:
-        #         logger.info(f"⚠️ Penalty triggered: {name} → {value}")
+        # MICU/RCCM penalties
+        for resident in residents:
+            mcr = resident["mcr"]
+            year = resident["resident_year"]
 
-        # # print summary of soft constraints violated
-        # resident_summary = {}
-        # for resident in residents:
-        #     mcr = resident["mcr"]
-        #     summary = {}
+            if year == 1:
+                if solver.Value(enc_yr1_micu[mcr].Not()):
+                    record_constraint(
+                        mcr=mcr,
+                        constraint_type="penalty",
+                        category="micu_requirement",
+                        description="Missing minimum MICU block requirement (Y1)",
+                        penalty_value=weightages["micu_rccm_bonus"],
+                    )
+                if solver.Value(enc_yr1_rccm[mcr].Not()):
+                    record_constraint(
+                        mcr=mcr,
+                        constraint_type="penalty",
+                        category="rccm_requirement",
+                        description="Missing minimum RCCM block requirement (Y1)",
+                        penalty_value=weightages["micu_rccm_bonus"],
+                    )
+            else:
+                if solver.Value(enc_other_micu[mcr].Not()):
+                    record_constraint(
+                        mcr=mcr,
+                        constraint_type="penalty",
+                        category="micu_requirement",
+                        description=f"Missing minimum MICU block requirement (Y{year})",
+                        penalty_value=weightages["micu_rccm_bonus"],
+                    )
+                if solver.Value(enc_other_rccm[mcr].Not()):
+                    record_constraint(
+                        mcr=mcr,
+                        constraint_type="penalty",
+                        category="rccm_requirement",
+                        description=f"Missing minimum RCCM block requirement (Y{year})",
+                        penalty_value=weightages["micu_rccm_bonus"],
+                    )
 
-        #     # core under-assignments
-        #     for base in CORE_REQUIREMENTS:
-        #         penalty_key = f"core_under_{mcr}_{base}"
-        #         penalty_var = curr_deviation_penalty_vars.get(penalty_key)
-        #         if penalty_var is not None and solver.Value(penalty_var) > 0:
-        #             summary[f"Missing Core: {base}"] = solver.Value(penalty_var)
+        # elective shortfall penalties
+        for mcr in elective_shortfall_penalty_flags:
+            if solver.Value(elective_shortfall_penalty_flags[mcr]):
+                year = next(r["resident_year"] for r in residents if r["mcr"] == mcr)
+                record_constraint(
+                    mcr=mcr,
+                    constraint_type="penalty",
+                    category="elective_shortfall",
+                    description=f"Did not meet minimum elective requirements for Y{year}",
+                    penalty_value=weightages["elective_shortfall_penalty"],
+                )
 
-        #     # RCCM & MICU
-        #     if resident["resident_year"] == 1:
-        #         for key in ["rccm_penalty", "micu_penalty"]:
-        #             penalty_key = f"{key}_{mcr}"
-        #             penalty_var = curr_deviation_penalty_vars.get(penalty_key)
-        #             if penalty_var is not None and solver.Value(penalty_var) > 0:
-        #                 label = "Missing RCCM" if "rccm" in key else "Missing MICU"
-        #                 summary[label] = solver.Value(penalty_var)
-
-        #     # gaps in electives
-        #     for year in [2, 3]:
-        #         penalty_key = f"elective_shortfall_penalty_{mcr}_y{year}"
-        #         penalty_var = curr_deviation_penalty_vars.get(penalty_key)
-        #         if penalty_var is not None and solver.Value(penalty_var) > 0:
-        #             summary[f"Elective shortfall (Y{year})"] = solver.Value(penalty_var)
-
-        #     if summary:
-        #         resident_summary[mcr] = summary
-
-        # for mcr, summary in resident_summary.items():
-        #     logger.info(f"🔍 {mcr} Soft Constraint Summary:")
-        #     for label, value in summary.items():
-        #         logger.info(f"  - {label}: {value}")
+        # core shortfall penalties
+        for mcr, base_map in core_shortfall.items():
+            for base, slack in base_map.items():
+                shortfall = solver.Value(slack)
+                if shortfall > 0:
+                    record_constraint(
+                        mcr=mcr,
+                        constraint_type="penalty",
+                        category="core_shortfall",
+                        description=f"Missing {shortfall} blocks of {base}",
+                        penalty_value=shortfall * weightages["core_shortfall_penalty"],
+                    )
 
         logger.info("All penalties logged.")
+
+        # log for debugging
+        for resident in residents:
+            mcr = resident["mcr"]
+            logger.info(f"{mcr} : {constraints_by_resident[mcr]}")
 
         logger.info("Processing output results...")
 
@@ -919,6 +971,7 @@ def allocate_timetable(
                     "core_blocks_completed": core_blocks_completed,
                     "unique_electives_completed": list(unique_electives_completed),
                     "ccr_status": ccr_completion_status,
+                    "constraints": constraints_by_resident[mcr],
                 }
             )
 

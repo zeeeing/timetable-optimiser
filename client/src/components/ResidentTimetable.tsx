@@ -20,6 +20,7 @@ import {
 } from "./ui/card";
 import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
 import { Info } from "lucide-react";
+import ErrorAlert from "./ErrorAlert";
 
 const ResidentTimetable: React.FC<{
   resident: Resident;
@@ -82,7 +83,7 @@ const ResidentTimetable: React.FC<{
     apiResponse.statistics.cohort.optimisation_scores[residentIndex];
 
   return (
-    <Card className="bg-gray-50">
+    <Card className="bg-gray-50 overflow-scroll">
       {/* resident information */}
       <CardHeader>
         <CardTitle>Resident Information</CardTitle>
@@ -112,7 +113,7 @@ const ResidentTimetable: React.FC<{
                   <Info size={16} />
                 </span>
               </TooltipTrigger>
-              <TooltipContent side="top" className="max-w-xs w-[250px]">
+              <TooltipContent side="top" className="max-w-3xs">
                 <div className="flex flex-col justify-center items-center text-center">
                   <p>
                     This score reflects how well this resident's timetable
@@ -139,7 +140,7 @@ const ResidentTimetable: React.FC<{
               <TableRow>
                 <TableHead className="text-left">Year</TableHead>
                 {monthLabels.map((month) => (
-                  <TableHead key={month} className="text-center">
+                  <TableHead key={month} className="text-center w-3xs">
                     {month}
                   </TableHead>
                 ))}
@@ -243,9 +244,31 @@ const ResidentTimetable: React.FC<{
         </div>
       </CardContent>
 
+      {/* constraints (violations and penalties) */}
+      <CardContent className="flex flex-col gap-4">
+        {/* {resident.constraints.filter((c) => c.type === "violation").length >
+          0 && ( */}
+          <ErrorAlert
+            message="Violations"
+            description={resident.constraints
+              .filter((c) => c.type === "violation")
+              .map((c) => c.description)}
+          />
+        {/* )} */}
+        {/* {resident.constraints.filter((c) => c.type === "penalty").length >
+          0 && ( */}
+          <ErrorAlert
+            message="Penalties"
+            description={resident.constraints
+              .filter((c) => c.type === "penalty")
+              .map((c) => c.description)}
+          />
+        {/* )} */}
+      </CardContent>
+
       {/* resident statistics */}
-      <CardContent className="flex justify-between gap-6">
-        <div className="flex gap-8">
+      <CardContent className="flex flex-col md:flex-row justify-between gap-6">
+        <div className="flex gap-6">
           {/* core postings completed */}
           <div className="flex flex-col gap-2">
             {Object.entries(resident.core_blocks_completed)
@@ -277,83 +300,85 @@ const ResidentTimetable: React.FC<{
           </div>
         </div>
 
-        {/* resident preferences */}
-        <Card className="w-full md:w-1/3 overflow-x-auto">
-          <CardContent>
-            <div className="flex justify-center mb-2">
-              <Badge variant="secondary" className="text-sm">
-                Total Preferences:{" "}
-                {
-                  Object.values(preferenceMap).filter(
-                    (code) => code.trim() !== ""
-                  ).length
-                }
-              </Badge>
-            </div>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="text-center">Preference</TableHead>
-                  <TableHead className="text-center">Elective Code</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {Object.entries(preferenceMap).map(([rank, postingCode]) => (
-                  <TableRow key={rank}>
-                    <TableCell className="text-center">{rank}</TableCell>
-                    <TableCell className="text-center">
-                      {postingCode.length > 0 ? postingCode : "-"}
-                    </TableCell>
+        <div className="flex flex-col md:flex-row gap-6">
+          {/* resident preferences */}
+          <Card>
+            <CardContent>
+              <div className="flex justify-center mb-2">
+                <Badge variant="secondary" className="text-sm">
+                  Total Preferences:{" "}
+                  {
+                    Object.values(preferenceMap).filter(
+                      (code) => code.trim() !== ""
+                    ).length
+                  }
+                </Badge>
+              </div>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="text-center">Preference</TableHead>
+                    <TableHead className="text-center">Elective Code</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+                </TableHeader>
+                <TableBody>
+                  {Object.entries(preferenceMap).map(([rank, postingCode]) => (
+                    <TableRow key={rank}>
+                      <TableCell className="text-center">{rank}</TableCell>
+                      <TableCell className="text-center">
+                        {postingCode.length > 0 ? postingCode : "-"}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
 
-        {/* electives completed */}
-        <Card className="w-full md:w-1/3 overflow-x-auto">
-          <CardContent>
-            <div className="flex justify-center mb-2">
-              <Badge variant="secondary" className="text-sm">
-                Total Electives Completed:{" "}
-                {resident.unique_electives_completed.length}
-              </Badge>
-            </div>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="text-center">Elective Name</TableHead>
-                  <TableHead className="text-center">Month(s)</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {Object.entries(
-                  allResidentHistory
-                    .filter(
-                      (h) =>
-                        postingMap[h.posting_code]?.posting_type ===
-                          "elective" &&
-                        resident.unique_electives_completed.includes(
-                          h.posting_code
-                        )
-                    )
-                    .reduce((acc, h) => {
-                      acc[h.posting_code] = (acc[h.posting_code] || 0) + 1;
-                      return acc;
-                    }, {} as Record<string, number>)
-                ).map(([code, count]) => (
-                  <TableRow key={code}>
-                    <TableCell className="text-center">
-                      {postingMap[code]?.posting_name || code}
-                    </TableCell>
-                    <TableCell className="text-center">{count}</TableCell>
+          {/* electives completed */}
+          <Card>
+            <CardContent>
+              <div className="flex justify-center mb-2">
+                <Badge variant="secondary" className="text-sm">
+                  Total Electives Completed:{" "}
+                  {resident.unique_electives_completed.length}
+                </Badge>
+              </div>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="text-center">Elective Name</TableHead>
+                    <TableHead className="text-center">Month(s)</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+                </TableHeader>
+                <TableBody>
+                  {Object.entries(
+                    allResidentHistory
+                      .filter(
+                        (h) =>
+                          postingMap[h.posting_code]?.posting_type ===
+                            "elective" &&
+                          resident.unique_electives_completed.includes(
+                            h.posting_code
+                          )
+                      )
+                      .reduce((acc, h) => {
+                        acc[h.posting_code] = (acc[h.posting_code] || 0) + 1;
+                        return acc;
+                      }, {} as Record<string, number>)
+                  ).map(([code, count]) => (
+                    <TableRow key={code}>
+                      <TableCell className="text-center">
+                        {postingMap[code]?.posting_name || code}
+                      </TableCell>
+                      <TableCell className="text-center">{count}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </div>
       </CardContent>
     </Card>
   );

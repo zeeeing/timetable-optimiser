@@ -55,7 +55,7 @@ const WeightageSelector: React.FC<WeightageSelectorProps> = ({
                   <Info size={16} />
                 </span>
               </TooltipTrigger>
-              <TooltipContent side="top">
+              <TooltipContent side="top" className="max-w-3xs">
                 Incentive on meeting the following requirements for each
                 resident:
                 <br />

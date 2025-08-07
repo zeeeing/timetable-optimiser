@@ -8,11 +8,21 @@ interface ErrorAlertProps {
 }
 
 const ErrorAlert: React.FC<ErrorAlertProps> = ({ message, description }) => (
-  <div className="flex items-center my-6">
-    <Alert variant="destructive">
+  <div className="flex items-center">
+    <Alert variant={"destructive"}>
       <AlertCircleIcon />
       <AlertTitle>{message}</AlertTitle>
-      {description && <AlertDescription>{description}</AlertDescription>}
+      {Array.isArray(description) ? (
+        <AlertDescription>
+          <ul className="list-disc pl-5">
+            {description.map((desc, idx) => (
+              <li key={idx}>{desc}</li>
+            ))}
+          </ul>
+        </AlertDescription>
+      ) : (
+        description && <AlertDescription>{description}</AlertDescription>
+      )}
     </Alert>
   </div>
 );

@@ -12,7 +12,7 @@ import {
 
 const ResidentDropdown: React.FC<{
   residents: Resident[] | null;
-  selectedResidentMcr: string;
+  selectedResidentMcr: string | null;
   onChange: (mcr: string) => void;
 }> = ({ residents, selectedResidentMcr, onChange }) => {
   // memoize grouped residents by year

@@ -20,6 +20,15 @@ export interface Resident {
     completed: boolean;
     posting_code: string;
   };
+  constraints: Constraint[];
+}
+
+export interface Constraint {
+  resident_mcr: string;
+  type: string; // "violation" | "penalty"
+  category: string;
+  description: string;
+  penalty: number;
 }
 
 export interface ResidentHistory {

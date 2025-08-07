@@ -25,8 +25,8 @@ const HomePage: React.FC = () => {
   });
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [selectedResident, setSelectedResident] = useState<string>(
-    () => localStorage.getItem("selectedResident") || ""
+  const [selectedResident, setSelectedResident] = useState<string | null>(() =>
+    localStorage.getItem("selectedResident")
   );
   const [weightages, setWeightages] = useState({
     micu_rccm_bonus: 5,
@@ -75,8 +75,7 @@ const HomePage: React.FC = () => {
       const json: ApiResponse = await uploadCsv(formData);
       if (json.success && json.residents) {
         setApiResponse(json);
-        const storedResident = localStorage.getItem("selectedResident");
-        if (!storedResident && json.residents.length > 0) {
+        if (!selectedResident) {
           setSelectedResident(json.residents[0].mcr);
         }
       } else {
@@ -101,6 +100,10 @@ const HomePage: React.FC = () => {
     if (selectedResident)
       localStorage.setItem("selectedResident", selectedResident);
   }, [selectedResident]);
+
+  useEffect(() => {
+    localStorage.removeItem("selectedResident");
+  }, []);
 
   return (
     <div className="max-w-7xl mx-auto bg-white rounded-xl shadow-md p-8 flex flex-col gap-6">
