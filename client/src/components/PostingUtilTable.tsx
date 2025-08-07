@@ -56,8 +56,8 @@ const PostingUtilTable: React.FC<{
           </Badge>
         </CardAction>
       </CardHeader>
-      <CardContent className="overflow-x-auto">
-        <div className="bg-white rounded-md overflow-auto border max-h-screen">
+      <CardContent>
+        <div className="bg-white rounded-md border">
           <Table>
             <TableHeader>
               <TableRow>

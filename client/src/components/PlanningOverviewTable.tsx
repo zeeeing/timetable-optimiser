@@ -55,7 +55,7 @@ const PlanningOverviewTable: React.FC<PostingOverviewTableProps> = ({
         </CardAction>
       </CardHeader>
       <CardContent>
-        <div className="bg-white rounded-md overflow-auto border max-h-screen">
+        <div className="bg-white rounded-md border">
           <Table>
             <TableHeader>
               <TableRow>

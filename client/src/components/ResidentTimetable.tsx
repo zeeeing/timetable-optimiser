@@ -134,7 +134,7 @@ const ResidentTimetable: React.FC<{
 
       {/* resident timetable */}
       <CardContent>
-        <div className="bg-white rounded-md overflow-auto p-2">
+        <div className="bg-white rounded-md border p-2">
           <Table>
             <TableHeader>
               <TableRow>
@@ -263,6 +263,9 @@ const ResidentTimetable: React.FC<{
               .filter((c) => c.type === "penalty")
               .map((c) => c.description)}
           />
+        )}
+        {resident.constraints.length == 0 && (
+          <ErrorAlert message="No penalties or violations incurred." />
         )}
       </CardContent>
 

@@ -10,7 +10,7 @@ import ErrorAlert from "../components/ErrorAlert";
 import ResidentDropdown from "../components/ResidentDropdown";
 import ResidentTimetable from "../components/ResidentTimetable";
 import CohortStatistics from "../components/CohortStatistics";
-import PostingStatistics from "../components/PostingUtilTable";
+import PostingUtilTable from "../components/PostingUtilTable";
 import { Button } from "../components/ui/button";
 import { Separator } from "../components/ui/separator";
 import { Loader2Icon } from "lucide-react";
@@ -187,7 +187,7 @@ const HomePage: React.FC = () => {
             statistics={apiResponse.statistics}
             residents={apiResponse.residents}
           />
-          <PostingStatistics
+          <PostingUtilTable
             postingUtil={apiResponse.statistics.cohort.posting_util}
           />
         </div>

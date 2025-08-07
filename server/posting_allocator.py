@@ -514,16 +514,18 @@ def allocate_timetable(
         # count completed MICU/RCCM postings
         micu_count = sum(
             [
-                resident_progress.get(p, {}).get("is_completed", False)
+                resident_progress.get(p, {}).get("blocks_completed")
                 for p in posting_codes
                 if p.startswith("MICU (")
+                and resident_progress.get(p, {}).get("is_completed", False)
             ]
         )
         rccm_count = sum(
             [
-                resident_progress.get(p, {}).get("is_completed", False)
+                resident_progress.get(p, {}).get("blocks_completed")
                 for p in posting_codes
                 if p.startswith("RCCM (")
+                and resident_progress.get(p, {}).get("is_completed", False)
             ]
         )
 
@@ -552,13 +554,13 @@ def allocate_timetable(
                 model.Add(micu_blocks >= 2).OnlyEnforceIf(enc_other_micu[mcr])
                 model.Add(micu_blocks <= 1).OnlyEnforceIf(enc_other_micu[mcr].Not())
             else:
-                model.Add(enc_other_micu[mcr] == 0)
+                model.Add(enc_other_micu[mcr] == 1)
 
             if rccm_count < CORE_REQUIREMENTS.get("RCCM", 3):
                 model.Add(rccm_blocks >= 1).OnlyEnforceIf(enc_other_rccm[mcr])
                 model.Add(rccm_blocks == 0).OnlyEnforceIf(enc_other_rccm[mcr].Not())
             else:
-                model.Add(enc_other_rccm[mcr] == 0)
+                model.Add(enc_other_rccm[mcr] == 1)
 
             # turn off “yr1” flags
             model.Add(enc_yr1_micu[mcr] == 0)
@@ -824,73 +826,128 @@ def allocate_timetable(
 
     # FEASIBLE
     if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
-
-        # log penalties incurred
         logger.info("Logging penalties...")
 
-        # MICU/RCCM penalties
+        # 1) MICU / RCCM penalties (Y1 vs others)
         for resident in residents:
             mcr = resident["mcr"]
             year = resident["resident_year"]
+            prog = posting_progress.get(mcr, {})
+
+            # compute historical blocks done
+            hist_micu = sum(
+                rec.get("blocks_completed", 0)
+                for p, rec in prog.items()
+                if p.startswith("MICU (") and rec.get("is_completed", False)
+            )
+            hist_rccm = sum(
+                rec.get("blocks_completed", 0)
+                for p, rec in prog.items()
+                if p.startswith("RCCM (") and rec.get("is_completed", False)
+            )
+
+            # compute assigned this year
+            micu_blocks = sum(
+                x[mcr][p][b]
+                for p in posting_codes
+                if p.startswith("MICU (")
+                for b in blocks
+            )
+            rccm_blocks = sum(
+                x[mcr][p][b]
+                for p in posting_codes
+                if p.startswith("RCCM (")
+                for b in blocks
+            )
 
             if year == 1:
-                if solver.Value(enc_yr1_micu[mcr].Not()):
-                    record_constraint(
-                        mcr=mcr,
-                        constraint_type="penalty",
-                        category="micu_requirement",
-                        description="Missing minimum MICU block requirement (Y1)",
-                        penalty_value=weightages["micu_rccm_bonus"],
-                    )
-                if solver.Value(enc_yr1_rccm[mcr].Not()):
-                    record_constraint(
-                        mcr=mcr,
-                        constraint_type="penalty",
-                        category="rccm_requirement",
-                        description="Missing minimum RCCM block requirement (Y1)",
-                        penalty_value=weightages["micu_rccm_bonus"],
-                    )
+                req_micu = 1
+                req_rccm = 2
+                flag_micu = enc_yr1_micu[mcr]
+                flag_rccm = enc_yr1_rccm[mcr]
             else:
-                if solver.Value(enc_other_micu[mcr].Not()):
-                    record_constraint(
-                        mcr=mcr,
-                        constraint_type="penalty",
-                        category="micu_requirement",
-                        description=f"Missing minimum MICU block requirement (Y{year})",
-                        penalty_value=weightages["micu_rccm_bonus"],
-                    )
-                if solver.Value(enc_other_rccm[mcr].Not()):
-                    record_constraint(
-                        mcr=mcr,
-                        constraint_type="penalty",
-                        category="rccm_requirement",
-                        description=f"Missing minimum RCCM block requirement (Y{year})",
-                        penalty_value=weightages["micu_rccm_bonus"],
-                    )
+                req_micu = CORE_REQUIREMENTS.get("MICU", 3)
+                req_rccm = CORE_REQUIREMENTS.get("RCCM", 3)
+                flag_micu = enc_other_micu[mcr]
+                flag_rccm = enc_other_rccm[mcr]
 
-        # elective shortfall penalties
-        for mcr in elective_shortfall_penalty_flags:
-            if solver.Value(elective_shortfall_penalty_flags[mcr]):
-                year = next(r["resident_year"] for r in residents if r["mcr"] == mcr)
+            # MICU
+            if solver.Value(flag_micu) == 0:
+                missing_micu = max(
+                    0, req_micu - (hist_micu + solver.Value(micu_blocks))
+                )
+                record_constraint(
+                    mcr=mcr,
+                    constraint_type="penalty",
+                    category="micu_requirement",
+                    description=f"Missing {missing_micu} MICU block(s) (Required for Y{year}: {req_micu})",
+                    penalty_value=missing_micu * weightages["micu_rccm_bonus"],
+                )
+
+            # RCCM
+            if solver.Value(flag_rccm) == 0:
+                missing_rccm = max(
+                    0, req_rccm - (hist_rccm + solver.Value(rccm_blocks))
+                )
+                record_constraint(
+                    mcr=mcr,
+                    constraint_type="penalty",
+                    category="rccm_requirement",
+                    description=f"Missing {missing_rccm} RCCM block(s) (Required for Y{year}: {req_rccm})",
+                    penalty_value=missing_rccm * weightages["micu_rccm_bonus"],
+                )
+
+        # 2) Elective shortfall penalties
+        for resident in residents:
+            mcr = resident["mcr"]
+            year = resident["resident_year"]
+            if year not in (2, 3):
+                continue
+
+            flag = elective_shortfall_penalty_flags.get(mcr)
+            if solver.Value(flag):
+                # compute missing
+                hist_electives = len(
+                    get_unique_electives_completed(
+                        posting_progress.get(mcr, {}), posting_info
+                    )
+                )
+                selection_count = sum(
+                    solver.Value(selection_flags[mcr][p])
+                    for p in posting_codes
+                    if posting_info[p]["posting_type"] == "elective"
+                )
+
+                # factor in different elective requirements for residents with no prefs
+                resident_prefs = pref_map.get(mcr, {})
+                required = 5  # year 3
+                if year == 2:
+                    if not resident_prefs:
+                        required = 1
+                    else:
+                        required = 2
+
+                missing_elec = max(0, required - (hist_electives + selection_count))
                 record_constraint(
                     mcr=mcr,
                     constraint_type="penalty",
                     category="elective_shortfall",
-                    description=f"Did not meet minimum elective requirements for Y{year}",
-                    penalty_value=weightages["elective_shortfall_penalty"],
+                    description=f"Missing {missing_elec} elective(s) (Required for Y{year}: {required})",
+                    penalty_value=missing_elec * elective_shortfall_penalty_weight,
                 )
 
-        # core shortfall penalties
+        # 3) Core shortfall penalties (Y3)
         for mcr, base_map in core_shortfall.items():
-            for base, slack in base_map.items():
-                shortfall = solver.Value(slack)
+            for base, slack_var in base_map.items():
+                shortfall = solver.Value(slack_var)
+                required = CORE_REQUIREMENTS.get(base)
                 if shortfall > 0:
                     record_constraint(
                         mcr=mcr,
                         constraint_type="penalty",
                         category="core_shortfall",
-                        description=f"Missing {shortfall} blocks of {base}",
-                        penalty_value=shortfall * weightages["core_shortfall_penalty"],
+                        description=f"Missing {shortfall} months(s) of {base} (Required: {required})",
+                        penalty_value=shortfall * core_shortfall_penalty_weight,
                     )
 
         logger.info("All penalties logged.")
