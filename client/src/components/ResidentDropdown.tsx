@@ -1,4 +1,4 @@
-import React, { useMemo, useEffect } from "react";
+import React, { useMemo } from "react";
 import type { Resident } from "../types";
 import {
   Select,
@@ -10,11 +10,22 @@ import {
   SelectItem,
 } from "./ui/select";
 
-const ResidentDropdown: React.FC<{
+interface Props {
   residents: Resident[] | null;
   selectedResidentMcr: string | null;
-  onChange: (mcr: string) => void;
-}> = ({ residents, selectedResidentMcr, onChange }) => {
+  setSelectedResidentMcr: (mcr: string) => void;
+}
+
+const ResidentDropdown: React.FC<Props> = ({
+  residents,
+  selectedResidentMcr,
+  setSelectedResidentMcr,
+}) => {
+  // get selected resident data
+  const selectedResident = residents?.find(
+    (r) => r.mcr === selectedResidentMcr
+  );
+
   // memoize grouped residents by year
   const grouped = useMemo(() => {
     if (!residents) return {};
@@ -26,19 +37,12 @@ const ResidentDropdown: React.FC<{
     }, {} as Record<number, Resident[]>);
   }, [residents]);
 
-  useEffect(() => {
-    if (residents?.length && !selectedResidentMcr) {
-      onChange(residents[0].mcr);
-    }
-  }, [residents, selectedResidentMcr, onChange]);
-
-  const selectedResident = residents?.find(
-    (r) => r.mcr === selectedResidentMcr
-  );
-
   return (
     <div className="mb-4 w-full max-w-md">
-      <Select value={selectedResidentMcr || ""} onValueChange={onChange}>
+      <Select
+        value={selectedResidentMcr || ""}
+        onValueChange={setSelectedResidentMcr}
+      >
         <SelectTrigger className="w-full">
           <SelectValue placeholder="Select Resident to View Timetable">
             {selectedResident

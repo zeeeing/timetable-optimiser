@@ -17,22 +17,12 @@ type Props = {
   }>;
 };
 
-const CohortStatistics: React.FC<Props> = ({ statistics, residents }) => {
+const CohortStatistics: React.FC<Props> = ({ residents, statistics }) => {
   const { total_residents, cohort } = statistics;
   const { optimisation_scores } = cohort;
 
-  // mock data
-  // const mockResidentScores = Array.from(
-  //   { length: 50 },
-  //   () => Math.floor(Math.random() * 51) + 50
-  // );
-
-  // change as when needed to use mock data
-  let optimisationScores = optimisation_scores;
-  // optimisationScores = mockResidentScores;
-
   // Map optimisation scores to resident scores with actual names
-  const mappedScores = optimisationScores.map((score, index) => {
+  const mappedScores = optimisation_scores.map((score, index) => {
     const resident = residents[index];
     return {
       residentName: resident ? resident.name : `Resident ${index + 1}`,

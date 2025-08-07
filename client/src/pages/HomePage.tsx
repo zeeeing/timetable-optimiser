@@ -25,8 +25,8 @@ const HomePage: React.FC = () => {
   });
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [selectedResident, setSelectedResident] = useState<string | null>(() =>
-    localStorage.getItem("selectedResident")
+  const [selectedResidentMcr, setSelectedResidentMcr] = useState<string | null>(
+    () => localStorage.getItem("selectedResidentMcr")
   );
   const [weightages, setWeightages] = useState({
     micu_rccm_bonus: 5,
@@ -75,8 +75,8 @@ const HomePage: React.FC = () => {
       const json: ApiResponse = await uploadCsv(formData);
       if (json.success && json.residents) {
         setApiResponse(json);
-        if (!selectedResident) {
-          setSelectedResident(json.residents[0].mcr);
+        if (!selectedResidentMcr) {
+          setSelectedResidentMcr(json.residents[0].mcr);
         }
       } else {
         throw new Error("Failed to retrieve api response");
@@ -93,16 +93,16 @@ const HomePage: React.FC = () => {
   };
 
   const selectedResidentData = apiResponse?.residents?.find(
-    (r: Resident) => r.mcr === selectedResident
+    (r: Resident) => r.mcr === selectedResidentMcr
   );
 
   useEffect(() => {
-    if (selectedResident)
-      localStorage.setItem("selectedResident", selectedResident);
-  }, [selectedResident]);
+    if (selectedResidentMcr)
+      localStorage.setItem("selectedResidentMcr", selectedResidentMcr);
+  }, [selectedResidentMcr]);
 
   useEffect(() => {
-    localStorage.removeItem("selectedResident");
+    localStorage.removeItem("selectedResidentMcr");
   }, []);
 
   return (
@@ -174,8 +174,8 @@ const HomePage: React.FC = () => {
           <Separator />
           <ResidentDropdown
             residents={apiResponse.residents}
-            selectedResidentMcr={selectedResident}
-            onChange={setSelectedResident}
+            selectedResidentMcr={selectedResidentMcr}
+            setSelectedResidentMcr={setSelectedResidentMcr}
           />
           {selectedResidentData && (
             <ResidentTimetable
