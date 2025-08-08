@@ -1,15 +1,12 @@
 import React from "react";
 import type { Resident, ApiResponse } from "../types";
 import monthLabels from "../../../shared/monthLabels.json";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "./ui/table";
+
+import ErrorAlert from "./ErrorAlert";
+import ConstraintsAccordion from "./ConstraintsAccordion";
+
 import { Badge } from "./ui/badge";
+import { Button } from "./ui/button";
 import {
   Card,
   CardAction,
@@ -18,15 +15,34 @@ import {
   CardHeader,
   CardTitle,
 } from "./ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "./ui/table";
 import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
-import { Info } from "lucide-react";
-import ErrorAlert from "./ErrorAlert";
-import ConstraintsAccordion from "./ConstraintsAccordion";
+import { Info, ChevronLeft, ChevronRight } from "lucide-react";
 
-const ResidentTimetable: React.FC<{
+interface Props {
   resident: Resident;
   apiResponse: ApiResponse;
-}> = ({ resident, apiResponse }) => {
+  onPrev: () => void;
+  onNext: () => void;
+  disablePrev: boolean;
+  disableNext: boolean;
+}
+
+const ResidentTimetable: React.FC<Props> = ({
+  resident,
+  apiResponse,
+  onPrev,
+  onNext,
+  disablePrev,
+  disableNext,
+}) => {
   // all postings
   const allResidentHistory = apiResponse.resident_history.filter(
     (h) => h.mcr === resident.mcr
@@ -102,7 +118,7 @@ const ResidentTimetable: React.FC<{
             </Badge>
           </p>
         </CardDescription>
-        <CardAction>
+        <CardAction className="flex items-center gap-2">
           <Badge
             variant="outline"
             className="text-md bg-yellow-100 text-yellow-800 flex items-center gap-1"
@@ -130,6 +146,22 @@ const ResidentTimetable: React.FC<{
               </TooltipContent>
             </Tooltip>
           </Badge>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onPrev}
+            disabled={disablePrev}
+          >
+            <ChevronLeft />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onNext}
+            disabled={disableNext}
+          >
+            <ChevronRight />
+          </Button>
         </CardAction>
       </CardHeader>
 

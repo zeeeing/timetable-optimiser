@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useApiResponseContext } from "@/context/ApiResponseContext";
 import type { Resident, ApiResponse, CsvFilesState } from "../types";
 import { uploadCsv } from "../api/api";
+import { groupResidentsByYear } from "@/lib/residentOrdering";
 
 import FileUpload from "../components/FileUpload";
 import WeightageSelector from "../components/WeightageSelector";
@@ -11,6 +12,7 @@ import ResidentDropdown from "../components/ResidentDropdown";
 import ResidentTimetable from "../components/ResidentTimetable";
 import CohortStatistics from "../components/CohortStatistics";
 import PostingUtilTable from "../components/PostingUtilTable";
+
 import { Button } from "../components/ui/button";
 import { Separator } from "../components/ui/separator";
 import { Loader2Icon } from "lucide-react";
@@ -75,9 +77,6 @@ const HomePage: React.FC = () => {
       const json: ApiResponse = await uploadCsv(formData);
       if (json.success && json.residents) {
         setApiResponse(json);
-        if (!selectedResidentMcr) {
-          setSelectedResidentMcr(json.residents[0].mcr);
-        }
       } else {
         throw new Error("Failed to retrieve api response");
       }
@@ -96,6 +95,52 @@ const HomePage: React.FC = () => {
     (r: Resident) => r.mcr === selectedResidentMcr
   );
 
+  // order residents by their resident year
+  const groupedResidents = useMemo(
+    () =>
+      apiResponse?.residents ? groupResidentsByYear(apiResponse.residents) : {},
+    [apiResponse?.residents]
+  );
+
+  // then flatmap and order by year
+  const orderedResidentMcrs = useMemo(
+    () =>
+      Object.keys(groupedResidents)
+        .sort((a, b) => Number(a) - Number(b))
+        .flatMap((year) =>
+          groupedResidents[Number(year)].map((resident) => resident.mcr)
+        ),
+    [groupedResidents]
+  );
+
+  const currentIndex = orderedResidentMcrs.findIndex(
+    (mcr) => mcr === selectedResidentMcr
+  );
+
+  const goPrev = () => {
+    if (currentIndex > 0) {
+      setSelectedResidentMcr(orderedResidentMcrs[currentIndex - 1]);
+    }
+  };
+
+  const goNext = () => {
+    if (currentIndex < orderedResidentMcrs.length - 1) {
+      setSelectedResidentMcr(orderedResidentMcrs[currentIndex + 1]);
+    }
+  };
+
+  const disablePrev = currentIndex <= 0;
+  const disableNext =
+    currentIndex === -1 || currentIndex >= orderedResidentMcrs.length - 1;
+
+  // select first resident if there is no currently selected resident
+  useEffect(() => {
+    if (!selectedResidentMcr && orderedResidentMcrs.length > 0) {
+      setSelectedResidentMcr(orderedResidentMcrs[0]);
+    }
+  }, [orderedResidentMcrs, selectedResidentMcr]);
+
+  // update selected resident to persist in local storage
   useEffect(() => {
     if (selectedResidentMcr)
       localStorage.setItem("selectedResidentMcr", selectedResidentMcr);
@@ -173,7 +218,7 @@ const HomePage: React.FC = () => {
         <div className="flex flex-col gap-6">
           <Separator />
           <ResidentDropdown
-            residents={apiResponse.residents}
+            groupedResidents={groupedResidents}
             selectedResidentMcr={selectedResidentMcr}
             setSelectedResidentMcr={setSelectedResidentMcr}
           />
@@ -181,6 +226,10 @@ const HomePage: React.FC = () => {
             <ResidentTimetable
               resident={selectedResidentData}
               apiResponse={apiResponse}
+              onPrev={goPrev}
+              onNext={goNext}
+              disablePrev={disablePrev}
+              disableNext={disableNext}
             />
           )}
           <CohortStatistics

@@ -11,31 +11,24 @@ import {
 } from "./ui/select";
 
 interface Props {
-  residents: Resident[] | null;
+  groupedResidents: Record<number, Resident[]>;
   selectedResidentMcr: string | null;
   setSelectedResidentMcr: (mcr: string) => void;
 }
 
 const ResidentDropdown: React.FC<Props> = ({
-  residents,
+  groupedResidents,
   selectedResidentMcr,
   setSelectedResidentMcr,
 }) => {
-  // get selected resident data
-  const selectedResident = residents?.find(
-    (r) => r.mcr === selectedResidentMcr
+  // memoize sorted years for consistent rendering
+  const years = useMemo(
+    () =>
+      Object.keys(groupedResidents)
+        .map(Number)
+        .sort((a, b) => a - b),
+    [groupedResidents]
   );
-
-  // memoize grouped residents by year
-  const grouped = useMemo(() => {
-    if (!residents) return {};
-    return residents.reduce((acc, resident) => {
-      const year = resident.resident_year;
-      if (!acc[year]) acc[year] = [];
-      acc[year].push(resident);
-      return acc;
-    }, {} as Record<number, Resident[]>);
-  }, [residents]);
 
   return (
     <div className="mb-4 w-full max-w-md">
@@ -44,25 +37,25 @@ const ResidentDropdown: React.FC<Props> = ({
         onValueChange={setSelectedResidentMcr}
       >
         <SelectTrigger className="w-full">
-          <SelectValue placeholder="Select Resident to View Timetable">
-            {selectedResident
-              ? `${selectedResident.name} (${selectedResident.mcr})`
-              : null}
-          </SelectValue>
+          <SelectValue placeholder="Select Resident to View Timetable"></SelectValue>
         </SelectTrigger>
         <SelectContent>
-          {Object.keys(grouped)
-            .sort((a, b) => Number(a) - Number(b))
-            .map((year) => (
+          {years.map((year) => {
+            const list = groupedResidents[year] ?? [];
+            return (
               <SelectGroup key={year}>
                 <SelectLabel>{`Year ${year}`}</SelectLabel>
-                {grouped[Number(year)].map((resident) => (
+                {list.map((resident) => (
                   <SelectItem key={resident.mcr} value={resident.mcr}>
-                    {resident.name} ({resident.mcr})
+                    {resident.name}{" "}
+                    <span className="text-muted-foreground">
+                      ({resident.mcr})
+                    </span>
                   </SelectItem>
                 ))}
               </SelectGroup>
-            ))}
+            );
+          })}
         </SelectContent>
       </Select>
     </div>
