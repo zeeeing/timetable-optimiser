@@ -1,5 +1,5 @@
 import type { Statistics } from "../types";
-import OptimisationScoreHistogram from "./OptimisationScoreHistogram";
+// import OptimisationScoreHistogram from "./OptimisationScoreHistogram";
 import OptimisationScoreTable from "./OptimisationScoreTable";
 import {
   Card,
@@ -39,9 +39,9 @@ const CohortStatistics: React.FC<Props> = ({ residents, statistics }) => {
 
       {/* histogram of optimisation scores */}
       <CardContent className="flex flex-col md:flex-row justify-center items-center gap-6">
-        <OptimisationScoreHistogram
+        {/* <OptimisationScoreHistogram
           optimisationScores={mappedScores.map((r) => r.score)}
-        />
+        /> */}
         <OptimisationScoreTable scores={mappedScores} />
       </CardContent>
     </Card>
