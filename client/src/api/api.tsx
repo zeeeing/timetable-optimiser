@@ -50,3 +50,17 @@ export const downloadCsv = async (apiResponse: ApiResponse): Promise<Blob> => {
     throw new Error("Failed to download CSV");
   }
 };
+
+export const validateSchedule = async (
+  mcr: string,
+  blockAssignments: Record<number, string>
+) => {
+  return { valid: true };
+};
+
+export const saveSchedule = async (
+  mcr: string,
+  schedule: Array<{ block: number; posting_code: string }>
+) => {
+  return null;
+};

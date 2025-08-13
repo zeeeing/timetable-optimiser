@@ -225,7 +225,6 @@ const HomePage: React.FC = () => {
           {selectedResidentData && (
             <ResidentTimetable
               resident={selectedResidentData}
-              apiResponse={apiResponse}
               onPrev={goPrev}
               onNext={goNext}
               disablePrev={disablePrev}

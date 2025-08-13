@@ -1,6 +1,22 @@
-import React from "react";
-import type { Resident, ApiResponse } from "../types";
+import React, { useState, useEffect, useMemo, useRef } from "react";
+import { DndContext, type DragEndEvent } from "@dnd-kit/core";
+import { CSS } from "@dnd-kit/utilities";
+import {
+  SortableContext,
+  useSortable,
+  horizontalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import {
+  restrictToHorizontalAxis,
+  restrictToFirstScrollableAncestor,
+  restrictToWindowEdges,
+} from "@dnd-kit/modifiers";
+
+import type { Resident, ResidentHistory, Posting } from "../types";
 import monthLabels from "../../../shared/monthLabels.json";
+import { cn } from "@/lib/utils";
+import { areSchedulesEqual, moveByInsert } from "@/lib/utils";
+import { useApiResponseContext } from "@/context/ApiResponseContext";
 
 import ErrorAlert from "./ErrorAlert";
 import ConstraintsAccordion from "./ConstraintsAccordion";
@@ -24,11 +40,12 @@ import {
   TableRow,
 } from "./ui/table";
 import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
-import { Info, ChevronLeft, ChevronRight } from "lucide-react";
+import { Info, ChevronLeft, ChevronRight, Loader2Icon } from "lucide-react";
+
+type BlockMap = Record<number, ResidentHistory>;
 
 interface Props {
   resident: Resident;
-  apiResponse: ApiResponse;
   onPrev: () => void;
   onNext: () => void;
   disablePrev: boolean;
@@ -37,73 +54,259 @@ interface Props {
 
 const ResidentTimetable: React.FC<Props> = ({
   resident,
-  apiResponse,
   onPrev,
   onNext,
   disablePrev,
   disableNext,
 }) => {
-  // all postings
-  const allResidentHistory = apiResponse.resident_history.filter(
-    (h) => h.mcr === resident.mcr
+  const { apiResponse, setApiResponse } = useApiResponseContext();
+  const [isSaving, setIsSaving] = useState(false);
+
+  const {
+    postingMap,
+    preferenceMap,
+    pastYearBlockPostings,
+    initialCurrentYearBlockPostings,
+    electiveCounts,
+    currentYearItemIds,
+    optimisationScoreRaw,
+    optimisationScoreNormalised,
+    residentIndex,
+  } = useMemo(() => {
+    const postingMap: Record<string, Posting> = (
+      apiResponse?.postings ?? []
+    ).reduce((m, p) => {
+      m[p.posting_code] = p;
+      return m;
+    }, {} as Record<string, Posting>);
+
+    const allHistory = (apiResponse?.resident_history ?? []).filter(
+      (h) => h.mcr === resident.mcr
+    );
+
+    const currentYear = allHistory.filter((h) => h.is_current_year === true);
+    const pastYear = allHistory.filter((h) => h.is_current_year === false);
+
+    const initialCurrentYearBlockPostings = currentYear.reduce<BlockMap>(
+      (m, a) => {
+        m[a.block] = a;
+        return m;
+      },
+      {}
+    );
+
+    const pastYearBlockPostings = pastYear.reduce<
+      Record<number, Record<number, ResidentHistory>>
+    >((m, a) => {
+      (m[a.year] ??= {})[a.block] = a;
+      return m;
+    }, {});
+
+    const preferenceMap = (apiResponse?.resident_preferences ?? [])
+      .filter((p) => p.mcr === resident.mcr)
+      .reduce<Record<number, string>>((m, p) => {
+        m[p.preference_rank] = p.posting_code;
+        return m;
+      }, {});
+
+    const electiveCounts = allHistory
+      .filter((h) => postingMap[h.posting_code]?.posting_type === "elective")
+      .reduce<Record<string, number>>((acc, h) => {
+        acc[h.posting_code] = (acc[h.posting_code] ?? 0) + 1;
+        return acc;
+      }, {});
+
+    const currentYearItemIds = monthLabels.map((_, i) => String(i + 1));
+
+    const residentIndex =
+      apiResponse?.residents?.findIndex((r) => r.mcr === resident.mcr) ?? -1;
+    const optimisationScoreRaw =
+      apiResponse?.statistics?.cohort?.optimisation_scores?.[residentIndex];
+    const optimisationScoreNormalised =
+      apiResponse?.statistics?.cohort?.optimisation_scores_normalised?.[
+        residentIndex
+      ];
+
+    return {
+      postingMap,
+      preferenceMap,
+      pastYearBlockPostings,
+      initialCurrentYearBlockPostings,
+      electiveCounts,
+      currentYearItemIds,
+      optimisationScoreRaw,
+      optimisationScoreNormalised,
+      residentIndex,
+    };
+  }, [apiResponse, resident.mcr]);
+
+  // definte local states
+  const [currentYearBlockPostings, setCurrentYearBlockPostings] =
+    useState<BlockMap>(initialCurrentYearBlockPostings);
+  const originalBlockPostings = useRef<BlockMap>(
+    initialCurrentYearBlockPostings
+  );
+  const [editedBlocks, setEditedBlocks] = useState<Set<number>>(new Set());
+
+  const hasEdits = useMemo(
+    () =>
+      !areSchedulesEqual(
+        currentYearBlockPostings,
+        originalBlockPostings.current
+      ),
+    [currentYearBlockPostings]
   );
 
-  // current year assigned postings
-  const currentYearPostings = allResidentHistory.filter(
-    (h) => h.is_current_year === true
-  );
+  useEffect(() => {
+    setCurrentYearBlockPostings(initialCurrentYearBlockPostings);
+    originalBlockPostings.current = initialCurrentYearBlockPostings;
+    setEditedBlocks(new Set());
+  }, [initialCurrentYearBlockPostings]);
 
-  // past year postings
-  const pastYearPostings = allResidentHistory.filter(
-    (h) => h.is_current_year === false
-  );
+  const handleDragEnd = (event: DragEndEvent) => {
+    if (isSaving) return;
+    const { active, over } = event;
+    if (!over) return;
 
-  // create [posting_code : posting_info] map
-  const postingMap = apiResponse.postings.reduce((map, posting) => {
-    map[posting.posting_code] = posting;
-    return map;
-  }, {} as Record<string, (typeof apiResponse.postings)[0]>);
+    const from = parseInt(String(active.id), 10);
+    const to = parseInt(String(over.id), 10);
+    if (Number.isNaN(from) || Number.isNaN(to) || from === to) return;
 
-  // create [block : resident current year assignment] map
-  const currentYearBlockPostings = currentYearPostings.reduce(
-    (map, assignment) => {
-      map[assignment.block] = assignment;
-      return map;
-    },
-    {} as Record<number, (typeof currentYearPostings)[0]>
-  );
+    setCurrentYearBlockPostings((prev) => {
+      // insert and move other postings
+      const updated = moveByInsert(prev, from, to);
 
-  // create [year : [block : resident history]] nested map for past years
-  const pastYearBlockPostings = pastYearPostings.reduce((map, assignment) => {
-    if (!map[assignment.year]) {
-      map[assignment.year] = {};
+      // recompute edited blocks vs baseline snapshot
+      const newEdited = new Set<number>();
+      for (let i = 1; i <= 12; i++) {
+        const orig = originalBlockPostings.current[i]?.posting_code ?? "";
+        const curr = updated[i]?.posting_code ?? "";
+        if (orig !== curr) newEdited.add(i);
+      }
+      setEditedBlocks(newEdited);
+
+      return updated;
+    });
+  };
+
+  const handleCancel = () => {
+    setCurrentYearBlockPostings(originalBlockPostings.current);
+    setEditedBlocks(new Set());
+  };
+
+  const handleSave = async () => {
+    if (!apiResponse) return;
+
+    setIsSaving(true);
+    try {
+      // remove this resident's current year rows
+      const withoutResidentCurrent =
+        apiResponse.resident_history.filter(
+          (h) => !(h.mcr === resident.mcr && h.is_current_year)
+        ) ?? [];
+
+      // add updated current year rows
+      const newCurrentYearRows: ResidentHistory[] = [];
+      for (let block = 1; block <= 12; block++) {
+        const a = currentYearBlockPostings[block];
+        if (a) {
+          newCurrentYearRows.push({ ...a, block, is_current_year: true });
+        }
+      }
+
+      const nextApi = {
+        ...apiResponse,
+        resident_history: [...withoutResidentCurrent, ...newCurrentYearRows],
+      };
+
+      setApiResponse(nextApi); // update apiResponse context
+      originalBlockPostings.current = currentYearBlockPostings; // lock in the new baseline
+      setEditedBlocks(new Set());
+    } finally {
+      setIsSaving(false);
     }
-    map[assignment.year][assignment.block] = assignment;
-    return map;
-  }, {} as Record<number, Record<number, (typeof pastYearPostings)[0]>>);
+  };
 
-  // create preference map
-  const preferenceMap = apiResponse.resident_preferences
-    .filter((p) => p.mcr === resident.mcr)
-    .reduce((map, preference) => {
-      map[preference.preference_rank] = preference.posting_code;
-      return map;
-    }, {} as Record<number, string>);
+  interface SortableBlockCellProps {
+    blockNumber: number;
+    postingAssignment?: ResidentHistory;
+    edited: boolean;
+  }
 
-  // get optimisation score
-  const residentIndex = apiResponse.residents.findIndex(
-    (r) => r.mcr === resident.mcr
-  );
-  const optimisationScoreNormalised =
-    apiResponse.statistics.cohort.optimisation_scores_normalised[residentIndex];
-  const optimisationScoreRaw =
-    apiResponse.statistics.cohort.optimisation_scores[residentIndex];
+  const SortableBlockCell: React.FC<SortableBlockCellProps> = ({
+    blockNumber,
+    postingAssignment,
+    edited,
+  }) => {
+    // posting info
+    const posting: Posting | null = postingAssignment
+      ? postingMap[postingAssignment.posting_code]
+      : null;
+
+    const {
+      attributes,
+      listeners,
+      setNodeRef,
+      transform,
+      transition,
+      isDragging,
+      isOver,
+    } = useSortable({ id: blockNumber.toString() });
+
+    const style: React.CSSProperties = {
+      transform: transform ? CSS.Transform.toString(transform) : undefined,
+      transition,
+    };
+
+    const badgeClass =
+      posting?.posting_code === resident.ccr_status.posting_code
+        ? "bg-purple-100 text-purple-800"
+        : posting?.posting_type === "core"
+        ? "bg-orange-100 text-orange-800"
+        : "bg-green-100 text-green-800";
+
+    return (
+      <TableCell
+        className={cn(
+          "text-center hover:bg-blue-200",
+          edited && "bg-yellow-100 hover:bg-yellow-200",
+          isOver && "bg-blue-200"
+        )}
+      >
+        <div
+          ref={setNodeRef}
+          style={style}
+          {...listeners}
+          {...attributes}
+          className={cn(
+            "space-y-1 cursor-grab",
+            isDragging && "cursor-grabbing"
+          )}
+        >
+          {postingAssignment ? (
+            <>
+              <div className="font-medium text-sm text-blue-800">
+                {postingAssignment.posting_code}
+              </div>
+              <Badge className={badgeClass} variant="outline">
+                {posting?.posting_code === resident.ccr_status.posting_code
+                  ? "CCR"
+                  : posting?.posting_type.toUpperCase() || ""}
+              </Badge>
+            </>
+          ) : (
+            <span className="text-gray-400 text-sm">-</span>
+          )}
+        </div>
+      </TableCell>
+    );
+  };
 
   return (
     <Card className="bg-gray-50">
       {/* resident information */}
       <CardHeader>
-        <CardTitle>Resident Information</CardTitle>
+        <CardTitle>Resident Information & Timetable</CardTitle>
         <CardDescription className="flex gap-8 items-center">
           <p>
             Name: {resident.name} ({resident.mcr})
@@ -123,7 +326,8 @@ const ResidentTimetable: React.FC<Props> = ({
             variant="outline"
             className="text-md bg-yellow-100 text-yellow-800 flex items-center gap-1"
           >
-            Optimisation Score: {optimisationScoreNormalised}
+            Optimisation Score:{" "}
+            {residentIndex >= 0 ? optimisationScoreNormalised : "-"}
             <Tooltip>
               <TooltipTrigger asChild>
                 <span className="cursor-pointer">
@@ -139,9 +343,10 @@ const ResidentTimetable: React.FC<Props> = ({
                     achieved).
                   </p>
                   <br />
-                  {optimisationScoreRaw !== undefined && (
-                    <span>(Raw Score: {optimisationScoreRaw})</span>
-                  )}
+                  <span>
+                    (Raw Score:{" "}
+                    {residentIndex >= 0 ? optimisationScoreRaw : "-"})
+                  </span>
                 </div>
               </TooltipContent>
             </Tooltip>
@@ -173,7 +378,7 @@ const ResidentTimetable: React.FC<Props> = ({
               <TableRow>
                 <TableHead className="text-left">Year</TableHead>
                 {monthLabels.map((month) => (
-                  <TableHead key={month} className="text-center w-3xs">
+                  <TableHead key={month} className="text-center">
                     {month}
                   </TableHead>
                 ))}
@@ -232,48 +437,62 @@ const ResidentTimetable: React.FC<Props> = ({
                 })}
 
               {/* Current year */}
-              <TableRow className="bg-blue-100 hover:bg-blue-200">
-                <TableCell className="font-semibold">Current Year</TableCell>
-                {monthLabels.map((month, index) => {
-                  const blockNumber = index + 1;
-                  const assignment = currentYearBlockPostings[blockNumber];
-                  const posting = assignment
-                    ? postingMap[assignment.posting_code]
-                    : null;
-
-                  return (
-                    <TableCell key={month} className="text-center">
-                      {assignment ? (
-                        <div className="space-y-1">
-                          <div className="font-medium text-sm text-blue-800">
-                            {assignment.posting_code}
-                          </div>
-                          <Badge
-                            className={`${
-                              posting?.posting_code ===
-                              resident.ccr_status.posting_code
-                                ? "bg-purple-100 text-purple-800"
-                                : posting?.posting_type === "core"
-                                ? "bg-orange-100 text-orange-800"
-                                : "bg-green-100 text-green-800"
-                            }`}
-                            variant="outline"
-                          >
-                            {posting?.posting_code ===
-                            resident.ccr_status.posting_code
-                              ? "CCR"
-                              : posting?.posting_type.toUpperCase() || ""}
-                          </Badge>
-                        </div>
-                      ) : (
-                        <span className="text-gray-400 text-sm">-</span>
-                      )}
+              <DndContext
+                modifiers={[
+                  restrictToHorizontalAxis, // lock movement to X only
+                  restrictToFirstScrollableAncestor, // prevent pulling the page/container vertically
+                  restrictToWindowEdges, // keep overlay within viewport
+                ]}
+                onDragEnd={isSaving ? undefined : handleDragEnd}
+              >
+                <SortableContext
+                  items={currentYearItemIds}
+                  strategy={horizontalListSortingStrategy}
+                >
+                  <TableRow className="bg-blue-100 hover:bg-blue-100">
+                    <TableCell className="font-semibold">
+                      Current Year
                     </TableCell>
-                  );
-                })}
-              </TableRow>
+                    {monthLabels.map((month, index) => {
+                      const blockNumber = index + 1;
+                      const postingAssignment =
+                        currentYearBlockPostings[blockNumber];
+
+                      return (
+                        <SortableBlockCell
+                          key={month}
+                          blockNumber={blockNumber}
+                          postingAssignment={postingAssignment}
+                          edited={editedBlocks.has(blockNumber)}
+                        />
+                      );
+                    })}
+                  </TableRow>
+                </SortableContext>
+              </DndContext>
             </TableBody>
           </Table>
+        </div>
+        <div className="flex justify-end gap-2 mt-4">
+          <Button
+            variant="ghost"
+            className="cursor-pointer"
+            onClick={handleCancel}
+            disabled={!hasEdits || isSaving}
+          >
+            Cancel
+          </Button>
+          <Button
+            className="bg-green-600 text-white hover:bg-green-700 cursor-pointer"
+            onClick={handleSave}
+            disabled={!hasEdits || isSaving}
+          >
+            {isSaving ? (
+              <Loader2Icon>Validating & Saving...</Loader2Icon>
+            ) : (
+              "Save"
+            )}
+          </Button>
         </div>
       </CardContent>
 
@@ -393,21 +612,7 @@ const ResidentTimetable: React.FC<Props> = ({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {Object.entries(
-                    allResidentHistory
-                      .filter(
-                        (h) =>
-                          postingMap[h.posting_code]?.posting_type ===
-                            "elective" &&
-                          resident.unique_electives_completed.includes(
-                            h.posting_code
-                          )
-                      )
-                      .reduce((acc, h) => {
-                        acc[h.posting_code] = (acc[h.posting_code] || 0) + 1;
-                        return acc;
-                      }, {} as Record<string, number>)
-                  ).map(([code, count]) => (
+                  {Object.entries(electiveCounts).map(([code, count]) => (
                     <TableRow key={code}>
                       <TableCell className="text-center">
                         {postingMap[code]?.posting_name || code}
