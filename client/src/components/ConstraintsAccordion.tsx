@@ -10,7 +10,7 @@ const ConstraintsAccordion = () => {
   return (
     <Accordion type="single" collapsible>
       {SECTIONS.map(({ title, items }) => (
-        <AccordionItem value={title}>
+        <AccordionItem key={title} value={title}>
           <AccordionTrigger>{title}</AccordionTrigger>
           <AccordionContent>
             <ul className="space-y-2 list-disc pl-5">

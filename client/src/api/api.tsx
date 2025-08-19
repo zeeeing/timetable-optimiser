@@ -1,33 +1,69 @@
 import axios from "axios";
 import type { ApiResponse } from "../types";
+import { toMessage } from "./utils";
 
-const url = import.meta.env.VITE_API_BASE_URL || "http://localhost:3001/api";
+const baseURL =
+  import.meta.env.VITE_API_BASE_URL || "http://localhost:3001/api";
 
+export const api = axios.create({
+  baseURL,
+});
+
+// types
+export type ValidateSchedulePayload = {
+  resident_mcr: string;
+  current_year: { block: number; posting_code: string }[];
+};
+
+export type ValidateOnlyResponse = {
+  success: boolean;
+  errors?: string[];
+  warnings?: string[];
+};
+
+// routes
 export const uploadCsv = async (formData: FormData): Promise<ApiResponse> => {
   try {
-    const response = await axios.post<ApiResponse>(
-      `${url}/upload-csv`,
-      formData,
-      {
-        headers: { "Content-Type": "multipart/form-data" },
-      }
-    );
-    return response.data;
-  } catch (error: unknown) {
-    if (axios.isAxiosError(error) && error.response && error.response.data) {
-      throw new Error(error.response.data.error || "Processing failed");
+    const { data } = await api.post<ApiResponse>("/upload-csv", formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+    return data;
+  } catch (err) {
+    throw new Error(toMessage(err));
+  }
+};
+
+export const validateSchedule = async (
+  payload: ValidateSchedulePayload
+): Promise<ValidateOnlyResponse> => {
+  try {
+    const { data } = await api.post<ValidateOnlyResponse>("/validate", payload);
+    return data;
+  } catch (err) {
+    throw new Error(toMessage(err));
+  }
+};
+
+export const saveSchedule = async (
+  payload: ValidateSchedulePayload
+): Promise<ApiResponse> => {
+  try {
+    const { data } = await api.post<ApiResponse>("/save", payload);
+    if (!data?.success) {
+      throw new Error("Save failed");
     }
-    if (error instanceof Error) {
-      throw new Error(error.message || "Processing failed");
-    }
-    throw new Error("Processing failed");
+    return data;
+  } catch (err) {
+    throw new Error(toMessage(err));
   }
 };
 
 export const downloadCsv = async (apiResponse: ApiResponse): Promise<Blob> => {
   try {
-    const { success, residents, resident_history, statistics } = apiResponse;
-    const optimisation_scores = statistics.cohort.optimisation_scores;
+    const { success, residents, resident_history, statistics } =
+      apiResponse ?? {};
+    const optimisation_scores = statistics?.cohort?.optimisation_scores ?? [];
+
     const payload = {
       success,
       residents,
@@ -35,32 +71,12 @@ export const downloadCsv = async (apiResponse: ApiResponse): Promise<Blob> => {
       optimisation_scores,
     };
 
-    const response = await axios.post<Blob>(`${url}/download-csv`, payload, {
+    const { data } = await api.post("/download-csv", payload, {
       responseType: "blob",
       headers: { "Content-Type": "application/json" },
     });
-    return response.data;
-  } catch (error: unknown) {
-    if (axios.isAxiosError(error) && error.response && error.response.data) {
-      throw new Error(error.response.data.error || "Failed to download CSV");
-    }
-    if (error instanceof Error) {
-      throw new Error(error.message || "Failed to download CSV");
-    }
-    throw new Error("Failed to download CSV");
+    return data as Blob;
+  } catch (err) {
+    throw new Error(toMessage(err));
   }
-};
-
-export const validateSchedule = async (
-  mcr: string,
-  blockAssignments: Record<number, string>
-) => {
-  return { valid: true };
-};
-
-export const saveSchedule = async (
-  mcr: string,
-  schedule: Array<{ block: number; posting_code: string }>
-) => {
-  return null;
 };

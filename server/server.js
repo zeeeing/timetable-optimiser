@@ -9,11 +9,18 @@ const monthLabels = require("../shared/monthLabels.json");
 
 const app = express();
 PORT = process.env.PORT || 3001;
+const { version, name } = require("./package.json");
 
 // middleware
 app.use(cors());
 app.use(express.json());
 const upload = multer({ storage: multer.memoryStorage() });
+
+// in-memory store (per-process) for latest dataset and response
+app.locals.store = {
+  latestInputs: null, // dataset uploaded via /api/upload-csv
+  latestApiResponse: null, // most recent optimiser/postprocess result
+};
 
 // routes
 app.post(
@@ -30,7 +37,7 @@ app.post(
       // client did not upload any files
       return res
         .status(400)
-        .json({ success: false, message: "No files were uploaded" });
+        .json({ success: false, error: "No files were uploaded" });
     }
 
     try {
@@ -99,6 +106,9 @@ app.post(
         weightages: weightages,
       };
 
+      // cache the latest uploaded inputs for subsequent operations
+      app.locals.store.latestInputs = JSON.parse(JSON.stringify(inputData));
+
       // create temp JSON file with input data
       const inputPath = path.join(__dirname, "input.json");
       fs.writeFileSync(inputPath, JSON.stringify(inputData));
@@ -123,23 +133,33 @@ app.post(
         console.log("[PYTHON LOG]\n", err.toString());
       });
 
-      process.on("close", () => {
-        fs.unlinkSync(inputPath); // deletes temporary input file
+      process.on("close", (code) => {
+        try {
+          fs.unlinkSync(inputPath);
+        } catch (_) {}
 
         try {
-          const result = JSON.parse(output);
-          if (result.success === false) {
-            // python script reported an error
-            res.status(400).json(result);
-            console.log("[PYTHON LOG]", result.error);
-          } else {
-            res.json(result);
+          const result = JSON.parse(output || "{}");
+          if (result && result.success) {
+            // cache full API output for subsequent operations
+            app.locals.store.latestApiResponse = result;
+            return res.json(result);
           }
+          // optimiser completed but reported failure
+          console.error("[UPLOAD] Optimiser run failed", {
+            code,
+            stderr: errOutput,
+          });
+          return res.status(500).json({
+            success: false,
+            error: result?.error || "Optimiser run failed",
+          });
         } catch (err) {
           // could not parse output as JSON
-          res.status(500).json({
+          console.error("[UPLOAD] Failed to parse optimiser output", err);
+          return res.status(500).json({
             success: false,
-            message: "Internal server error: " + (output || err.message),
+            error: "Failed to parse optimiser output",
           });
         }
       });
@@ -148,10 +168,179 @@ app.post(
       console.error("Error processing files: ", e);
       res
         .status(500)
-        .json({ success: false, message: "Failed to process files" });
+        .json({ success: false, error: "Failed to process files" });
     }
   }
 );
+
+app.post("/api/validate", async (req, res) => {
+  try {
+    const payload = req.body || {};
+    const residentMcr = payload.resident_mcr;
+    const currentYear = Array.isArray(payload.current_year)
+      ? payload.current_year
+      : [];
+
+    if (!residentMcr) {
+      return res
+        .status(400)
+        .json({ success: false, error: "missing resident_mcr" });
+    }
+
+    // spawn python process
+    const process = spawn("python3", [path.join(__dirname, "validate.py")]);
+
+    // handle output and errors
+    let output = "";
+    let errOutput = "";
+
+    process.stdout.on("data", (data) => (output += data.toString()));
+    process.stderr.on("data", (err) => {
+      errOutput += err.toString();
+      console.log("[PYTHON LOG]\\n", err.toString());
+    });
+
+    // error handling
+    process.on("error", (err) => {
+      console.error("Failed to start validate.py", err);
+    });
+
+    // this time we write to stdin and read from there
+    process.stdin.write(
+      JSON.stringify({ resident_mcr: residentMcr, current_year: currentYear })
+    );
+    process.stdin.end();
+
+    process.on("close", () => {
+      try {
+        const parsed = JSON.parse(output || "{}");
+        return res.json(parsed);
+      } catch (err) {
+        return res.status(500).json({
+          success: false,
+          errors: [
+            "Internal server error during validation",
+            output || errOutput || err.message || "",
+          ].filter(Boolean),
+        });
+      }
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, errors: ["Server error"] });
+  }
+});
+
+app.post("/api/save", async (req, res) => {
+  try {
+    const payload = req.body || {};
+    const residentMcr = payload.resident_mcr;
+    const currentYear = Array.isArray(payload.current_year)
+      ? payload.current_year
+      : [];
+
+    if (!residentMcr) {
+      return res
+        .status(400)
+        .json({ success: false, errors: ["missing resident_mcr"] });
+    }
+
+    // access latest data from in-memory store
+    const base =
+      app.locals.store.latestApiResponse || app.locals.store.latestInputs;
+
+    if (!base) {
+      return res.status(400).json({
+        success: false,
+        error: "No dataset loaded. Upload CSV and run optimiser first.",
+      });
+    }
+
+    // convert base data to JSON format
+    const residents = Array.isArray(base.residents)
+      ? JSON.parse(JSON.stringify(base.residents))
+      : [];
+    const resident_history = Array.isArray(base.resident_history)
+      ? JSON.parse(JSON.stringify(base.resident_history))
+      : [];
+
+    // filter out existing entries for this resident in the current year
+    const filteredHistory = resident_history.filter(
+      (h) => !(h.mcr === residentMcr && h.is_current_year)
+    );
+    const resident = residents.find((r) => r.mcr === residentMcr);
+    const year = resident ? resident.resident_year : undefined;
+
+    // generate new entries for the current year
+    const newEntries = currentYear.map((r) => ({
+      mcr: residentMcr,
+      year: year,
+      block: parseInt(r.block),
+      posting_code: r.posting_code,
+      is_current_year: true,
+    }));
+
+    // update existing resident's history
+    const updatedPayload = {
+      residents,
+      resident_history: [...filteredHistory, ...newEntries],
+      resident_preferences: base.resident_preferences || [],
+      postings: base.postings || [],
+      weightages: base.weightages || {},
+    };
+
+    // create temp JSON file (similar to /api/upload-csv)
+    const inputPath = path.join(__dirname, "postprocess_input.json");
+    fs.writeFileSync(inputPath, JSON.stringify(updatedPayload));
+
+    const process = spawn("python3", [
+      path.join(__dirname, "postprocess.py"),
+      inputPath,
+    ]);
+
+    // handle output and errors
+    let output = "";
+    let errOutput = "";
+
+    process.stdout.on("data", (data) => {
+      output += data.toString();
+    });
+    process.stderr.on("data", (err) => {
+      // log python logs for debugging (not exactly 'error' logs)
+      errOutput += err.toString();
+      console.log("[PYTHON LOG]\n", err.toString());
+    });
+
+    process.on("close", (code) => {
+      try {
+        fs.unlinkSync(inputPath);
+      } catch (_) {}
+
+      try {
+        const result = JSON.parse(output || "{}");
+        if (result && result.success) {
+          // cache full API output for subsequent operations
+          app.locals.store.latestApiResponse = result;
+          return res.json(result);
+        }
+        console.error("[SAVE] Postprocess failed", { code, stderr: errOutput });
+        return res.status(500).json({
+          success: false,
+          error: result?.error || "Postprocess failed",
+        });
+      } catch (e) {
+        console.error("[SAVE] Failed to parse postprocess output", e);
+        return res.status(500).json({
+          success: false,
+          error: "Failed to parse postprocess output",
+        });
+      }
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, error: "Server error" });
+  }
+});
 
 app.post("/api/download-csv", (req, res) => {
   try {
@@ -168,7 +357,7 @@ app.post("/api/download-csv", (req, res) => {
     ) {
       return res.status(400).json({
         success: false,
-        message: "Invalid API response shape",
+        error: "Invalid API response shape",
       });
     }
 
@@ -234,7 +423,29 @@ app.post("/api/download-csv", (req, res) => {
   } catch (err) {
     // unexpected server error while generating the CSV
     console.error(err);
-    res.status(500).json({ success: false, message: "Server error" });
+    res.status(500).json({ success: false, error: "Server error" });
+  }
+});
+
+app.get("/api/health", (req, res) => {
+  try {
+    const { latestInputs, latestApiResponse } = app.locals.store || {};
+    const hasInputs = !!latestInputs;
+    const hasApiResponse = !!latestApiResponse;
+    res.json({
+      success: true,
+      service: name || "server",
+      version: version || "0.0.0",
+      status: "ok",
+      pid: process.pid,
+      uptime_s: Math.round(process.uptime()),
+      has_inputs: hasInputs,
+      has_api_response: hasApiResponse,
+      port: PORT,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, status: "degraded" });
   }
 });
 

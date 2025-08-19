@@ -1,9 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { DndContext, type DragEndEvent } from "@dnd-kit/core";
-import { CSS } from "@dnd-kit/utilities";
 import {
   SortableContext,
-  useSortable,
   horizontalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import {
@@ -14,12 +12,13 @@ import {
 
 import type { Resident, ResidentHistory, Posting } from "../types";
 import monthLabels from "../../../shared/monthLabels.json";
-import { cn } from "@/lib/utils";
 import { areSchedulesEqual, moveByInsert } from "@/lib/utils";
 import { useApiResponseContext } from "@/context/ApiResponseContext";
+import { validateSchedule, saveSchedule } from "@/api/api";
 
 import ErrorAlert from "./ErrorAlert";
 import ConstraintsAccordion from "./ConstraintsAccordion";
+import SortableBlockCell from "./SortableBlockCell";
 
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
@@ -195,111 +194,42 @@ const ResidentTimetable: React.FC<Props> = ({
   };
 
   const handleSave = async () => {
-    if (!apiResponse) return;
+    if (isSaving || !resident) return;
+    if (!hasEdits) return;
 
     setIsSaving(true);
     try {
-      // remove this resident's current year rows
-      const withoutResidentCurrent =
-        apiResponse.resident_history.filter(
-          (h) => !(h.mcr === resident.mcr && h.is_current_year)
-        ) ?? [];
-
-      // add updated current year rows
-      const newCurrentYearRows: ResidentHistory[] = [];
-      for (let block = 1; block <= 12; block++) {
+      const current_year = Array.from({ length: 12 }, (_, i) => {
+        const block = i + 1;
         const a = currentYearBlockPostings[block];
-        if (a) {
-          newCurrentYearRows.push({ ...a, block, is_current_year: true });
-        }
+        return a?.posting_code ? { block, posting_code: a.posting_code } : null;
+      }).filter(Boolean) as { block: number; posting_code: string }[];
+
+      // 1. validate
+      const validated = await validateSchedule({
+        resident_mcr: resident.mcr,
+        current_year,
+      });
+      if (!validated.success) {
+        throw new Error(validated.errors?.join(", ") || "Validation failed");
       }
 
-      const nextApi = {
-        ...apiResponse,
-        resident_history: [...withoutResidentCurrent, ...newCurrentYearRows],
-      };
-
-      setApiResponse(nextApi); // update apiResponse context
-      originalBlockPostings.current = currentYearBlockPostings; // lock in the new baseline
-      setEditedBlocks(new Set());
+      // 2. save response if validated
+      const updatedApi = await saveSchedule({
+        resident_mcr: resident.mcr,
+        current_year,
+      });
+      setApiResponse(updatedApi);
+    } catch (err: any) {
+      const msg =
+        err?.response?.data?.errors?.join(", ") ||
+        err?.response?.data?.error ||
+        err?.message ||
+        "Validation failed";
+      console.error(msg);
     } finally {
       setIsSaving(false);
     }
-  };
-
-  interface SortableBlockCellProps {
-    blockNumber: number;
-    postingAssignment?: ResidentHistory;
-    edited: boolean;
-  }
-
-  const SortableBlockCell: React.FC<SortableBlockCellProps> = ({
-    blockNumber,
-    postingAssignment,
-    edited,
-  }) => {
-    // posting info
-    const posting: Posting | null = postingAssignment
-      ? postingMap[postingAssignment.posting_code]
-      : null;
-
-    const {
-      attributes,
-      listeners,
-      setNodeRef,
-      transform,
-      transition,
-      isDragging,
-      isOver,
-    } = useSortable({ id: blockNumber.toString() });
-
-    const style: React.CSSProperties = {
-      transform: transform ? CSS.Transform.toString(transform) : undefined,
-      transition,
-    };
-
-    const badgeClass =
-      posting?.posting_code === resident.ccr_status.posting_code
-        ? "bg-purple-100 text-purple-800"
-        : posting?.posting_type === "core"
-        ? "bg-orange-100 text-orange-800"
-        : "bg-green-100 text-green-800";
-
-    return (
-      <TableCell
-        className={cn(
-          "text-center hover:bg-blue-200",
-          edited && "bg-yellow-100 hover:bg-yellow-200",
-          isOver && "bg-blue-200"
-        )}
-      >
-        <div
-          ref={setNodeRef}
-          style={style}
-          {...listeners}
-          {...attributes}
-          className={cn(
-            "space-y-1 cursor-grab",
-            isDragging && "cursor-grabbing"
-          )}
-        >
-          {postingAssignment ? (
-            <>
-              <div className="font-medium text-sm text-blue-800">
-                {postingAssignment.posting_code}
-              </div>
-              <Badge className={badgeClass} variant="outline">
-                {posting?.posting_code === resident.ccr_status.posting_code
-                  ? "CCR"
-                  : posting?.posting_type.toUpperCase() || ""}
-              </Badge>
-            </>
-          ) : (
-            <span className="text-gray-400 text-sm">-</span>
-          )}
-        </div>
-      </TableCell>
-    );
   };
 
   return (
@@ -373,78 +303,79 @@ const ResidentTimetable: React.FC<Props> = ({
       {/* resident timetable */}
       <CardContent>
         <div className="bg-white rounded-md border p-2">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="text-left">Year</TableHead>
-                {monthLabels.map((month) => (
-                  <TableHead key={month} className="text-center">
-                    {month}
-                  </TableHead>
-                ))}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {/* Past years */}
-              {Object.keys(pastYearBlockPostings)
-                .sort((a, b) => parseInt(a) - parseInt(b))
-                .map((year) => {
-                  const yearPostings = pastYearBlockPostings[parseInt(year)];
-                  return (
-                    <TableRow key={`year-${year}`}>
-                      <TableCell className="font-medium text-gray-600">
-                        Year {year}
-                      </TableCell>
-                      {monthLabels.map((month, index) => {
-                        const blockNumber = index + 1;
-                        const assignment = yearPostings[blockNumber];
-                        const posting = assignment
-                          ? postingMap[assignment.posting_code]
-                          : null;
+          <DndContext
+            modifiers={[
+              restrictToHorizontalAxis, // lock movement to X only
+              restrictToFirstScrollableAncestor, // prevent pulling the page/container vertically
+              restrictToWindowEdges, // keep overlay within viewport
+            ]}
+            onDragEnd={isSaving ? undefined : handleDragEnd}
+          >
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="text-left">Year</TableHead>
+                  {monthLabels.map((month) => (
+                    <TableHead key={month} className="text-center">
+                      {month}
+                    </TableHead>
+                  ))}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {/* Past years */}
+                {Object.keys(pastYearBlockPostings)
+                  .sort((a, b) => parseInt(a) - parseInt(b))
+                  .map((year) => {
+                    const yearPostings = pastYearBlockPostings[parseInt(year)];
+                    return (
+                      <TableRow key={`year-${year}`}>
+                        <TableCell className="font-medium text-gray-600">
+                          Year {year}
+                        </TableCell>
+                        {monthLabels.map((month, index) => {
+                          const blockNumber = index + 1;
+                          const assignment = yearPostings[blockNumber];
+                          const posting = assignment
+                            ? postingMap[assignment.posting_code]
+                            : null;
 
-                        return (
-                          <TableCell key={month} className="text-center">
-                            {assignment ? (
-                              <div className="space-y-1">
-                                <div className="font-medium text-sm text-gray-600">
-                                  {assignment.posting_code}
-                                </div>
-                                <Badge
-                                  className={`${
-                                    posting?.posting_code ===
+                          return (
+                            <TableCell key={month} className="text-center">
+                              {assignment ? (
+                                <div className="space-y-1">
+                                  <div className="font-medium text-sm text-gray-600">
+                                    {assignment.posting_code}
+                                  </div>
+                                  <Badge
+                                    className={`${
+                                      posting?.posting_code ===
+                                      resident.ccr_status.posting_code
+                                        ? "bg-purple-100 text-purple-800"
+                                        : posting?.posting_type === "core"
+                                        ? "bg-orange-100 text-orange-800"
+                                        : "bg-green-100 text-green-800"
+                                    }`}
+                                    variant="outline"
+                                  >
+                                    {posting?.posting_code ===
                                     resident.ccr_status.posting_code
-                                      ? "bg-purple-100 text-purple-800"
-                                      : posting?.posting_type === "core"
-                                      ? "bg-orange-100 text-orange-800"
-                                      : "bg-green-100 text-green-800"
-                                  }`}
-                                  variant="outline"
-                                >
-                                  {posting?.posting_code ===
-                                  resident.ccr_status.posting_code
-                                    ? "CCR"
-                                    : posting?.posting_type.toUpperCase() || ""}
-                                </Badge>
-                              </div>
-                            ) : (
-                              <span className="text-gray-300 text-sm">-</span>
-                            )}
-                          </TableCell>
-                        );
-                      })}
-                    </TableRow>
-                  );
-                })}
+                                      ? "CCR"
+                                      : posting?.posting_type.toUpperCase() ||
+                                        ""}
+                                  </Badge>
+                                </div>
+                              ) : (
+                                <span className="text-gray-300 text-sm">-</span>
+                              )}
+                            </TableCell>
+                          );
+                        })}
+                      </TableRow>
+                    );
+                  })}
 
-              {/* Current year */}
-              <DndContext
-                modifiers={[
-                  restrictToHorizontalAxis, // lock movement to X only
-                  restrictToFirstScrollableAncestor, // prevent pulling the page/container vertically
-                  restrictToWindowEdges, // keep overlay within viewport
-                ]}
-                onDragEnd={isSaving ? undefined : handleDragEnd}
-              >
+                {/* Current year */}
                 <SortableContext
                   items={currentYearItemIds}
                   strategy={horizontalListSortingStrategy}
@@ -464,14 +395,16 @@ const ResidentTimetable: React.FC<Props> = ({
                           blockNumber={blockNumber}
                           postingAssignment={postingAssignment}
                           edited={editedBlocks.has(blockNumber)}
+                          postingMap={postingMap}
+                          ccrPostingCode={resident.ccr_status.posting_code}
                         />
                       );
                     })}
                   </TableRow>
                 </SortableContext>
-              </DndContext>
-            </TableBody>
-          </Table>
+              </TableBody>
+            </Table>
+          </DndContext>
         </div>
         <div className="flex justify-end gap-2 mt-4">
           <Button

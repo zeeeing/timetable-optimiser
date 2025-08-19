@@ -1,17 +1,17 @@
 import sys
-from typing import List, Dict, TypedDict
+from typing import List, Dict
 from ortools.sat.python import cp_model
 from utils import (
     get_completed_postings,
     get_posting_progress,
     get_core_blocks_completed,
     get_unique_electives_completed,
-    get_ccr_postings_completed,
     to_snake_case,
     CORE_REQUIREMENTS,
     CCR_POSTINGS,
 )
 import logging
+from postprocess import compute_postprocess
 
 
 def allocate_timetable(
@@ -826,157 +826,21 @@ def allocate_timetable(
 
     # FEASIBLE
     if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
-        logger.info("Logging penalties...")
+        logger.info("Model is feasible. Preparing output for post-processing...")
 
-        # 1) MICU / RCCM penalties (Y1 vs others)
-        for resident in residents:
-            mcr = resident["mcr"]
-            year = resident["resident_year"]
-            prog = posting_progress.get(mcr, {})
-
-            # compute historical blocks done
-            hist_micu = sum(
-                rec.get("blocks_completed", 0)
-                for p, rec in prog.items()
-                if p.startswith("MICU (") and rec.get("is_completed", False)
-            )
-            hist_rccm = sum(
-                rec.get("blocks_completed", 0)
-                for p, rec in prog.items()
-                if p.startswith("RCCM (") and rec.get("is_completed", False)
-            )
-
-            # compute assigned this year
-            micu_blocks = sum(
-                x[mcr][p][b]
-                for p in posting_codes
-                if p.startswith("MICU (")
-                for b in blocks
-            )
-            rccm_blocks = sum(
-                x[mcr][p][b]
-                for p in posting_codes
-                if p.startswith("RCCM (")
-                for b in blocks
-            )
-
-            if year == 1:
-                req_micu = 1
-                req_rccm = 2
-                flag_micu = enc_yr1_micu[mcr]
-                flag_rccm = enc_yr1_rccm[mcr]
-            else:
-                req_micu = CORE_REQUIREMENTS.get("MICU", 3)
-                req_rccm = CORE_REQUIREMENTS.get("RCCM", 3)
-                flag_micu = enc_other_micu[mcr]
-                flag_rccm = enc_other_rccm[mcr]
-
-            # MICU
-            if solver.Value(flag_micu) == 0:
-                missing_micu = max(
-                    0, req_micu - (hist_micu + solver.Value(micu_blocks))
-                )
-                record_constraint(
-                    mcr=mcr,
-                    constraint_type="penalty",
-                    category="micu_requirement",
-                    description=f"Missing {missing_micu} MICU block(s) (Required for Y{year}: {req_micu})",
-                    penalty_value=missing_micu * weightages["micu_rccm_bonus"],
-                )
-
-            # RCCM
-            if solver.Value(flag_rccm) == 0:
-                missing_rccm = max(
-                    0, req_rccm - (hist_rccm + solver.Value(rccm_blocks))
-                )
-                record_constraint(
-                    mcr=mcr,
-                    constraint_type="penalty",
-                    category="rccm_requirement",
-                    description=f"Missing {missing_rccm} RCCM block(s) (Required for Y{year}: {req_rccm})",
-                    penalty_value=missing_rccm * weightages["micu_rccm_bonus"],
-                )
-
-        # 2) Elective shortfall penalties
-        for resident in residents:
-            mcr = resident["mcr"]
-            year = resident["resident_year"]
-            if year not in (2, 3):
-                continue
-
-            flag = elective_shortfall_penalty_flags.get(mcr)
-            if solver.Value(flag):
-                # compute missing
-                hist_electives = len(
-                    get_unique_electives_completed(
-                        posting_progress.get(mcr, {}), posting_info
-                    )
-                )
-                selection_count = sum(
-                    solver.Value(selection_flags[mcr][p])
-                    for p in posting_codes
-                    if posting_info[p]["posting_type"] == "elective"
-                )
-
-                # factor in different elective requirements for residents with no prefs
-                resident_prefs = pref_map.get(mcr, {})
-                required = 5  # year 3
-                if year == 2:
-                    if not resident_prefs:
-                        required = 1
-                    else:
-                        required = 2
-
-                missing_elec = max(0, required - (hist_electives + selection_count))
-                record_constraint(
-                    mcr=mcr,
-                    constraint_type="penalty",
-                    category="elective_shortfall",
-                    description=f"Missing {missing_elec} elective(s) (Required for Y{year}: {required})",
-                    penalty_value=missing_elec * elective_shortfall_penalty_weight,
-                )
-
-        # 3) Core shortfall penalties (Y3)
-        for mcr, base_map in core_shortfall.items():
-            for base, slack_var in base_map.items():
-                shortfall = solver.Value(slack_var)
-                required = CORE_REQUIREMENTS.get(base)
-                if shortfall > 0:
-                    record_constraint(
-                        mcr=mcr,
-                        constraint_type="penalty",
-                        category="core_shortfall",
-                        description=f"Missing {shortfall} months(s) of {base} (Required: {required})",
-                        penalty_value=shortfall * core_shortfall_penalty_weight,
-                    )
-
-        logger.info("All penalties logged.")
-
-        # log for debugging
-        for resident in residents:
-            mcr = resident["mcr"]
-            logger.info(f"{mcr} : {constraints_by_resident[mcr]}")
-
-        logger.info("Processing output results...")
-
-        output_residents = []
-        # add `is_current_year` field to resident history
+        # build full resident_history including current-year assignments
         output_history = [dict(h, is_current_year=False) for h in resident_history]
-
-        # append current year data to history
         for resident in residents:
             mcr = resident["mcr"]
             current_year = resident["resident_year"]
-            new_blocks = []
             for posting_code in posting_codes:
                 assigned_blocks = [
                     block
                     for block in blocks
-                    if solver.Value(x[mcr][posting_code][block])
-                    > 0.5  # if value is 1 (or more with IntVar)
+                    if solver.Value(x[mcr][posting_code][block]) > 0.5
                 ]
                 for block in assigned_blocks:
-                    new_blocks.append(
+                    output_history.append(
                         {
                             "mcr": mcr,
                             "year": current_year,
@@ -986,149 +850,25 @@ def allocate_timetable(
                         }
                     )
 
-            # add new blocks to history
-            output_history.extend(new_blocks)
-
-            # filter by resident to get updated resident progress
-            updated_resident_history = [h for h in output_history if h["mcr"] == mcr]
-            updated_resident_progress = get_posting_progress(
-                updated_resident_history,
-                posting_info,
-            ).get(mcr, {})
-
-            # get core blocks and unique electives completed
-            core_blocks_completed = get_core_blocks_completed(
-                updated_resident_progress,
-                posting_info,
-            )
-            unique_electives_completed = get_unique_electives_completed(
-                updated_resident_progress,
-                posting_info,
-            )
-
-            # get CCR completion status
-            ccr_postings = get_ccr_postings_completed(
-                updated_resident_progress, posting_info
-            )
-
-            if ccr_postings:
-                ccr_completion_status = {
-                    "completed": True,
-                    "posting_code": ccr_postings[0],
-                }
-            else:
-                ccr_completion_status = {"completed": False, "posting_code": "-"}
-
-            # append to output
-            output_residents.append(
-                {
-                    "mcr": mcr,
-                    "name": resident["name"],
-                    "resident_year": current_year,
-                    "core_blocks_completed": core_blocks_completed,
-                    "unique_electives_completed": list(unique_electives_completed),
-                    "ccr_status": ccr_completion_status,
-                    "constraints": constraints_by_resident[mcr],
-                }
-            )
-
-        # calculate cohort statistics
-
-        # 1. optimisation scores
-        optimisation_scores = []
+        # log constraints (for debugging only)
         for resident in residents:
             mcr = resident["mcr"]
-            resident_year = resident.get("resident_year", 1)
-            assigned_postings = [
-                h for h in output_history if h["mcr"] == mcr and h["is_current_year"]
-            ]
+            logger.info(f"{mcr} : {constraints_by_resident[mcr]}")
 
-            # a. preference satisfaction
-            resident_prefs = pref_map.get(mcr, {})
-            preference_score = 0
-            for h in assigned_postings:
-                assigned_posting = h["posting_code"]
-                for rank in range(1, 6):
-                    if resident_prefs.get(rank) == assigned_posting:
-                        preference_score += (6 - rank) * preference_bonus_weight
-                        break
-
-            # b. seniority bonus
-            seniority_bonus = (
-                len(assigned_postings) * resident_year * seniority_bonus_weight
-            )
-
-            # tabulate scores
-            actual_score = preference_score + seniority_bonus
-            optimisation_scores.append(actual_score)
-
-        # normalise to highest score obtained in cohort
-        max_actual_score = max(optimisation_scores) if optimisation_scores else 1
-        optimisation_scores_percentage = [
-            round((score / max_actual_score) * 100, 2) if max_actual_score > 0 else 0
-            for score in optimisation_scores
-        ]
-
-        # 2. posting utilisation
-        posting_util = []
-        for posting_code in posting_info:
-            # get current year assignments for each posting
-            posting_assignments = [
-                h
-                for h in output_history
-                if h["posting_code"] == posting_code and h["is_current_year"]
-            ]
-
-            # increment count to specific block for each assignment
-            block_filled = {block: 0 for block in range(1, 13)}
-            for assignment in posting_assignments:
-                block = assignment["block"]
-                if 1 <= block <= 12:  # Validate block number
-                    block_filled[block] += 1
-
-            capacity = posting_info[posting_code]["max_residents"]
-
-            # collate blockwise utilisation per posting
-            util_per_block = [
-                {
-                    "block": block,
-                    "filled": count,
-                    "capacity": capacity,
-                    "is_over_capacity": count > capacity,
-                }
-                for block, count in block_filled.items()
-            ]
-
-            # append to overall utilisation list
-            posting_util.append(
-                {
-                    "posting_code": posting_code,
-                    "util_per_block": util_per_block,
-                }
-            )
-
-        # tabulate cohort statistics and append results to output
-        cohort_statistics = {
-            "optimisation_scores": optimisation_scores,
-            "optimisation_scores_normalised": optimisation_scores_percentage,
-            "posting_util": posting_util,
-        }
-
-        logger.info("Output results processed successfully.")
-
-        logger.info("Posting allocation service completed successfully.")
-
-        return {
-            "success": True,
-            "residents": output_residents,
+        payload = {
+            "residents": residents,
             "resident_history": output_history,
             "resident_preferences": resident_preferences,
             "postings": postings,
-            "statistics": {
-                "total_residents": len(residents),
-                "cohort": cohort_statistics,
-            },
+            "weightages": weightages,
         }
+
+        # post-processing
+        logger.info("Calling postprocess service...")
+        result = compute_postprocess(payload)
+
+        logger.info("Posting allocation service completed successfully.")
+        return result
     else:
         logger.error("Posting allocation service failed")
         return {"success": False, "error": "Posting allocation service failed"}
