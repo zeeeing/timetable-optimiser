@@ -27,6 +27,7 @@ import ConstraintsAccordion from "./ConstraintsAccordion";
 import SortableBlockCell from "./SortableBlockCell";
 
 import { Badge } from "./ui/badge";
+import UnfilledMonthsDiagnostics from "./UnfilledMonthsDiagnostics";
 import { Button } from "./ui/button";
 import {
   Card,
@@ -212,7 +213,6 @@ const ResidentTimetable: React.FC<Props> = ({
       const updated: BlockMap = { ...prev } as BlockMap;
 
       const existing: ResidentHistory = updated[blockNumber];
-      // get 
       const inferredYear =
         existing?.year ||
         Object.values(initialCurrentYearBlockPostings)[0]?.year ||
@@ -617,6 +617,17 @@ const ResidentTimetable: React.FC<Props> = ({
           </Card>
         </div>
       </CardContent>
+
+      {/* diagnostics for OFF (unassigned) months */}
+      {apiResponse?.diagnostics && (
+        <CardContent>
+          <UnfilledMonthsDiagnostics
+            apiResponse={apiResponse}
+            residentMcr={resident.mcr}
+            postingMap={postingMap}
+          />
+        </CardContent>
+      )}
     </Card>
   );
 };

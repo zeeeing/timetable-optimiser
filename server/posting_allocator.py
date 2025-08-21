@@ -66,7 +66,6 @@ def allocate_timetable(
 
     # create and register assumption literals (for infeasible outcomes)
     assumption_literals = {}
-
     def new_assumption_literal(name: str, description: str) -> cp_model.IntVar:
         flag = model.NewBoolVar(name)
         model.AddAssumption(flag)
@@ -134,6 +133,29 @@ def allocate_timetable(
                 f"{mcr}_{to_snake_case(p)}_selected"
             )
 
+    # define per-block slack (OFF) variables to enable ExactlyOne feasibility
+    off = {}
+    for resident in residents:
+        mcr = resident["mcr"]
+        off[mcr] = {}
+        for b in blocks:
+            off[mcr][b] = model.NewBoolVar(f"{mcr}_OFF_{b}")
+
+    # pinned residents: force exact block/posting for selected residents
+    _pins = pinned_assignments or {}
+    if _pins:
+        logger.info("Applying pinned assignments for %d residents", len(_pins))
+        for mcr, entries in _pins.items():
+            try:
+                for entry in entries or []:
+                    b = int(entry.get("block"))
+                    p = entry.get("posting_code")
+                    if p in posting_info and b in blocks:
+                        # Force that resident to take posting p at block b
+                        model.Add(x[mcr][p][b] == 1)
+            except Exception as e:
+                logger.warning("Failed to apply pins for %s: %s", mcr, e)
+
     # define posting assignment count: number of times a resident gets assigned a posting
     posting_asgm_count = {}
     for resident in residents:
@@ -162,12 +184,12 @@ def allocate_timetable(
     # DEFINE HARD CONSTRAINTS
     ###########################################################################
 
-    # Hard Constraint 1: Each resident must be assigned to at most one posting per block
+    # Hard Constraint 1: Each resident must be assigned to exactly one posting or OFF per block
     for resident in residents:
         mcr = resident["mcr"]
 
         for b in blocks:
-            model.AddAtMostOne(x[mcr][p][b] for p in posting_codes)
+            model.AddExactlyOne([x[mcr][p][b] for p in posting_codes] + [off[mcr][b]])
 
     # Hard Constraint 2: Each posting cannot exceed max residents per block
     for p in posting_codes:
@@ -176,16 +198,7 @@ def allocate_timetable(
         for b in blocks:
             model.Add(sum(x[r["mcr"]][p][b] for r in residents) <= max_residents)
 
-    # General Constraint 3: Residents can't be assigned to postings they've already completed
-    # for resident in residents:
-    #     mcr = resident["mcr"]
-    #     resident_completed_postings = completed_postings_map.get(mcr, set())
-    #     for posting_code in resident_completed_postings:
-    #         if posting_code in x[mcr]:
-    #             for block in blocks:
-    #                 model.Add(x[mcr][posting_code][block] == 0)
-
-    # Hard Constraint 4: Enforce required_block_duration happens in consecutive blocks
+    # Hard Constraint 3: Enforce required_block_duration happens in consecutive blocks
     for resident in residents:
         mcr = resident["mcr"]
         for p in posting_codes:
@@ -218,7 +231,7 @@ def allocate_timetable(
                 # Add automaton constraint
                 model.AddAutomaton(vars, INIT, final_states, transitions)
 
-    # Hard Constraint 5 (CCR): CCR postings
+    # Hard Constraint 4 (CCR): CCR postings
     for resident in residents:
         mcr = resident["mcr"]
         year = resident["resident_year"]
@@ -240,7 +253,7 @@ def allocate_timetable(
             # exactly one run of any CCR posting
             model.Add(sum(posting_asgm_count[mcr][p] for p in offered) == 1)
 
-    # Hard Constraint 6: Ensure core postings are not over-assigned to each resident
+    # Hard Constraint 5: Ensure core postings are not over-assigned to each resident
     for resident in residents:
         mcr = resident["mcr"]
         resident_progress = posting_progress.get(mcr, {})
@@ -265,7 +278,7 @@ def allocate_timetable(
             else:
                 model.Add(blocks_completed + assigned_blocks <= required_blocks)
 
-    # Hard Constraint 7: Prevent residents from repeating the same elective regardless of hospital
+    # Hard Constraint 6: Prevent residents from repeating the same elective regardless of hospital
     for resident in residents:
         mcr = resident["mcr"]
         resident_progress = posting_progress.get(mcr, {})
@@ -294,7 +307,7 @@ def allocate_timetable(
                 # allow at most one run across all variants
                 model.Add(sum(posting_asgm_count[mcr][p] for p in all_variants) <= 1)
 
-    # Hard Constraint 8a: if both MICU and RCCM are assigned, they must be from the same institution
+    # Hard Constraint 7a: if both MICU and RCCM are assigned, they must be from the same institution
     for resident in residents:
         mcr = resident["mcr"]
 
@@ -314,7 +327,7 @@ def allocate_timetable(
                     # selection_flags[mcr][p] == 1  ⇔ posting p is chosen
                     model.Add(selection_flags[mcr][p1] + selection_flags[mcr][p2] <= 1)
 
-    # Hard Constraint 8b: if MICU and RCCM are assigned, they must form one contiguous block
+    # Hard Constraint 7b: if MICU and RCCM are assigned, they must form one contiguous block
     DEC, JAN = 6 - 1, 7 - 1  # M is 0-indexed
     for resident in residents:
         mcr = resident["mcr"]
@@ -357,7 +370,7 @@ def allocate_timetable(
             transitions,
         )
 
-    # Hard Constraint 9: cannot cross over Dec - Jan
+    # Hard Constraint 8: cannot cross over Dec - Jan
     DEC, JAN = 6, 7
     for resident in residents:
         mcr = resident["mcr"]
@@ -370,7 +383,7 @@ def allocate_timetable(
                 ]
             )
 
-    # Hard Constraint 10: GRM must start on odd block numbers
+    # Hard Constraint 9: GRM must start on odd block numbers
     for resident in residents:
         mcr = resident["mcr"]
         for p in posting_codes:
@@ -779,6 +792,14 @@ def allocate_timetable(
         for p in CORE_CODES:
             core_bonus_terms.append(core_bonus_weight * selection_flags[mcr][p])
 
+    # OFF penalty (discourage empty blocks)
+    off_penalty_terms = []
+    off_penalty_weight = weightages.get("off_penalty", 10000)
+    for resident in residents:
+        mcr = resident["mcr"]
+        for b in blocks:
+            off_penalty_terms.append(off_penalty_weight * off[mcr][b])
+
     # Objective
     model.Maximize(
         sum(gm_ktph_bonus_terms)
@@ -789,6 +810,7 @@ def allocate_timetable(
         - sum(elective_shortfall_penalty_terms)
         - sum(core_shortfall_penalty_terms)
         + sum(core_bonus_terms)
+        - sum(off_penalty_terms)
     )
 
     ###########################################################################
@@ -849,6 +871,13 @@ def allocate_timetable(
                             "is_current_year": True,
                         }
                     )
+
+        # debug: log OFF usage per resident (helps pinpoint why blocks aren't filled)
+        for resident in residents:
+            mcr = resident["mcr"]
+            off_blocks = [b for b in blocks if solver.Value(off[mcr][b]) > 0.5]
+            if off_blocks:
+                logger.info("[DEBUG] OFF used for %s at blocks: %s", mcr, off_blocks)
 
         # log constraints (for debugging only)
         for resident in residents:
