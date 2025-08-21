@@ -1,6 +1,11 @@
-import sys
+import sys, os
 import json
 from typing import Dict, List, Optional
+
+# Ensure server root is on path for utils imports
+BASE_DIR = os.path.dirname(os.path.dirname(__file__))
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
 
 from utils import (
     get_posting_progress,

@@ -98,7 +98,7 @@ app.post(
         fs.writeFileSync(inputPath, JSON.stringify(inputData));
 
         const process = spawn("python3", [
-          path.join(__dirname, "main.py"),
+          path.join(__dirname, "services", "posting_allocator.py"),
           inputPath,
         ]);
 
@@ -107,7 +107,7 @@ app.post(
         process.stdout.on("data", (d) => (output += d.toString()));
         process.stderr.on("data", (err) => {
           errOutput += err.toString();
-          console.log("[PYTHON LOG]\\n", err.toString());
+          console.log("[PYTHON LOG]\n", err.toString());
         });
         process.on("close", (code) => {
           try {
@@ -215,7 +215,7 @@ app.post(
       // spawn python process
       // array argument contains the path to the Python script and the input file
       const process = spawn("python3", [
-        path.join(__dirname, "main.py"),
+        path.join(__dirname, "services", "posting_allocator.py"),
         inputPath,
       ]);
 
@@ -287,7 +287,9 @@ app.post("/api/validate", async (req, res) => {
     }
 
     // spawn python process
-    const process = spawn("python3", [path.join(__dirname, "validate.py")]);
+    const process = spawn("python3", [
+      path.join(__dirname, "services", "validate.py"),
+    ]);
 
     // handle output and errors
     let output = "";
@@ -296,7 +298,7 @@ app.post("/api/validate", async (req, res) => {
     process.stdout.on("data", (data) => (output += data.toString()));
     process.stderr.on("data", (err) => {
       errOutput += err.toString();
-      console.log("[PYTHON LOG]\\n", err.toString());
+      console.log("[PYTHON LOG]\n", err.toString());
     });
 
     // error handling
@@ -393,7 +395,7 @@ app.post("/api/save", async (req, res) => {
     fs.writeFileSync(inputPath, JSON.stringify(updatedPayload));
 
     const process = spawn("python3", [
-      path.join(__dirname, "postprocess.py"),
+      path.join(__dirname, "services", "postprocess.py"),
       inputPath,
     ]);
 
