@@ -18,29 +18,128 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 // in-memory store (per-process) for latest dataset and response
 app.locals.store = {
-  latestInputs: null, // dataset uploaded via /api/upload-csv
+  latestInputs: null, // dataset uploaded via /api/solve
   latestApiResponse: null, // most recent optimiser/postprocess result
 };
 
 // routes
 app.post(
-  "/api/upload-csv",
+  "/api/solve",
   upload.fields([
     { name: "residents", maxCount: 1 },
     { name: "resident_history", maxCount: 1 },
     { name: "resident_preferences", maxCount: 1 },
     { name: "postings", maxCount: 1 },
     { name: "weightages", maxCount: 1 },
+    { name: "pinned_mcrs", maxCount: 1 },
   ]),
   async (req, res) => {
-    if (!req.files || Object.keys(req.files).length === 0) {
-      // client did not upload any files
-      return res
-        .status(400)
-        .json({ success: false, error: "No files were uploaded" });
-    }
-
     try {
+      const hasFiles = req.files && Object.keys(req.files).length > 0;
+      const pinnedMcrs = (() => {
+        try {
+          const raw = req.body.pinned_mcrs;
+          if (!raw) return [];
+          const arr = typeof raw === "string" ? JSON.parse(raw) : raw;
+          return Array.isArray(arr) ? arr : [];
+        } catch (_) {
+          return [];
+        }
+      })();
+
+      const latest = req.app.locals.store.latestApiResponse;
+      const base = req.app.locals.store.latestInputs;
+
+      // re-generate timetable; pinned residents provided, latest data available
+      if (Array.isArray(pinnedMcrs) && pinnedMcrs.length > 0 && latest) {
+        const pinnedSet = new Set(pinnedMcrs.filter(Boolean));
+
+        // exclude current year from history
+        const resident_history = (latest.resident_history || []).filter(
+          (h) => !h.is_current_year
+        );
+
+        // build pinned assignments from last run's current year for pinned residents
+        const pinned_assignments = {};
+        for (const h of latest.resident_history || []) {
+          if (h.is_current_year && pinnedSet.has(h.mcr)) {
+            (pinned_assignments[h.mcr] ??= []).push({
+              block: h.block,
+              posting_code: h.posting_code,
+            });
+          }
+        }
+
+        const weightages = (() => {
+          try {
+            const w = req.body.weightages
+              ? JSON.parse(req.body.weightages)
+              : latest.weightages || (base && base.weightages) || {};
+            return { ...w };
+          } catch (_) {
+            const w = latest.weightages || (base && base.weightages) || {};
+            return { ...w };
+          }
+        })();
+
+        const inputData = {
+          residents: latest.residents || (base && base.residents) || [],
+          resident_history,
+          resident_preferences:
+            latest.resident_preferences ||
+            (base && base.resident_preferences) ||
+            [],
+          postings: latest.postings || (base && base.postings) || [],
+          weightages,
+          pinned_assignments,
+        };
+
+        const inputPath = path.join(__dirname, "input_rerun.json");
+        fs.writeFileSync(inputPath, JSON.stringify(inputData));
+
+        const process = spawn("python3", [
+          path.join(__dirname, "main.py"),
+          inputPath,
+        ]);
+
+        let output = "";
+        let errOutput = "";
+        process.stdout.on("data", (d) => (output += d.toString()));
+        process.stderr.on("data", (err) => {
+          errOutput += err.toString();
+          console.log("[PYTHON LOG]\\n", err.toString());
+        });
+        process.on("close", (code) => {
+          try {
+            fs.unlinkSync(inputPath);
+          } catch (_) {}
+
+          try {
+            const result = JSON.parse(output || "{}");
+            if (result && result.success) {
+              req.app.locals.store.latestApiResponse = result;
+              return res.json(result);
+            }
+            console.error("Optimiser run failed", {
+              code,
+              stderr: errOutput,
+            });
+            return res.status(500).json({
+              success: false,
+              error: result?.error || "Optimiser run failed",
+            });
+          } catch (err) {
+            console.error("Failed to parse optimiser output", err);
+            return res.status(500).json({
+              success: false,
+              error: "Failed to parse optimiser output",
+            });
+          }
+        });
+        return;
+      }
+
+      // generate timetable; initial upload of CSVs
       // parse csv files
       const residentsCsv = req.files.residents[0].buffer.toString("utf-8");
       const residents = parse(residentsCsv, {
@@ -289,7 +388,7 @@ app.post("/api/save", async (req, res) => {
       weightages: base.weightages || {},
     };
 
-    // create temp JSON file (similar to /api/upload-csv)
+    // create temp JSON file (similar to /api/solve)
     const inputPath = path.join(__dirname, "postprocess_input.json");
     fs.writeFileSync(inputPath, JSON.stringify(updatedPayload));
 

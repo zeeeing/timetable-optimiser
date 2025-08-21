@@ -24,7 +24,7 @@ export type ValidateOnlyResponse = {
 // routes
 export const uploadCsv = async (formData: FormData): Promise<ApiResponse> => {
   try {
-    const { data } = await api.post<ApiResponse>("/upload-csv", formData, {
+    const { data } = await api.post<ApiResponse>("/solve", formData, {
       headers: { "Content-Type": "multipart/form-data" },
     });
     return data;

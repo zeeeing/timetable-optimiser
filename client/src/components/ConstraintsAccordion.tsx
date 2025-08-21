@@ -4,7 +4,7 @@ import {
   AccordionTrigger,
   AccordionContent,
 } from "./ui/accordion";
-import { SECTIONS } from "@/lib/constraints";
+import { SECTIONS } from "@/lib/constants";
 
 const ConstraintsAccordion = () => {
   return (

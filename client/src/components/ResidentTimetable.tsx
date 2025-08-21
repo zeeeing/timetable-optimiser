@@ -1,5 +1,11 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { DndContext, type DragEndEvent } from "@dnd-kit/core";
+import {
+  DndContext,
+  type DragEndEvent,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
 import {
   SortableContext,
   horizontalListSortingStrategy,
@@ -40,6 +46,7 @@ import {
 } from "./ui/table";
 import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
 import { Info, ChevronLeft, ChevronRight, Loader2Icon } from "lucide-react";
+import { CCR_POSTINGS } from "@/lib/constants";
 
 type BlockMap = Record<number, ResidentHistory>;
 
@@ -60,6 +67,15 @@ const ResidentTimetable: React.FC<Props> = ({
 }) => {
   const { apiResponse, setApiResponse } = useApiResponseContext();
   const [isSaving, setIsSaving] = useState(false);
+
+  // required so that popover does not get "eaten" by the DnD overlay
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 1,
+      },
+    })
+  );
 
   const {
     postingMap,
@@ -139,14 +155,17 @@ const ResidentTimetable: React.FC<Props> = ({
     };
   }, [apiResponse, resident.mcr]);
 
-  // definte local states
+  // define current evolving state for current year block postings
   const [currentYearBlockPostings, setCurrentYearBlockPostings] =
     useState<BlockMap>(initialCurrentYearBlockPostings);
+  // reference the original postings for comparison to current state
   const originalBlockPostings = useRef<BlockMap>(
     initialCurrentYearBlockPostings
   );
+  // track which blocks have been edited
   const [editedBlocks, setEditedBlocks] = useState<Set<number>>(new Set());
 
+  // boolean value to track if edits were made
   const hasEdits = useMemo(
     () =>
       !areSchedulesEqual(
@@ -155,12 +174,6 @@ const ResidentTimetable: React.FC<Props> = ({
       ),
     [currentYearBlockPostings]
   );
-
-  useEffect(() => {
-    setCurrentYearBlockPostings(initialCurrentYearBlockPostings);
-    originalBlockPostings.current = initialCurrentYearBlockPostings;
-    setEditedBlocks(new Set());
-  }, [initialCurrentYearBlockPostings]);
 
   const handleDragEnd = (event: DragEndEvent) => {
     if (isSaving) return;
@@ -191,6 +204,40 @@ const ResidentTimetable: React.FC<Props> = ({
   const handleCancel = () => {
     setCurrentYearBlockPostings(originalBlockPostings.current);
     setEditedBlocks(new Set());
+  };
+
+  const handleSelectPosting = (blockNumber: number, newPostingCode: string) => {
+    if (isSaving) return;
+    setCurrentYearBlockPostings((prev) => {
+      const updated: BlockMap = { ...prev } as BlockMap;
+
+      const existing: ResidentHistory = updated[blockNumber];
+      // get 
+      const inferredYear =
+        existing?.year ||
+        Object.values(initialCurrentYearBlockPostings)[0]?.year ||
+        0;
+      updated[blockNumber] = existing
+        ? { ...existing, posting_code: newPostingCode }
+        : {
+            mcr: resident.mcr,
+            year: inferredYear,
+            block: blockNumber,
+            posting_code: newPostingCode,
+            is_current_year: true,
+          };
+
+      // recompute edited blocks vs baseline snapshot
+      const newEdited = new Set<number>();
+      for (let i = 1; i <= 12; i++) {
+        const orig = originalBlockPostings.current[i]?.posting_code ?? "";
+        const curr = updated[i]?.posting_code ?? "";
+        if (orig !== curr) newEdited.add(i);
+      }
+      setEditedBlocks(newEdited);
+
+      return updated;
+    });
   };
 
   const handleSave = async () => {
@@ -231,6 +278,12 @@ const ResidentTimetable: React.FC<Props> = ({
       setIsSaving(false);
     }
   };
+
+  useEffect(() => {
+    setCurrentYearBlockPostings(initialCurrentYearBlockPostings);
+    originalBlockPostings.current = initialCurrentYearBlockPostings;
+    setEditedBlocks(new Set());
+  }, [initialCurrentYearBlockPostings]);
 
   return (
     <Card className="bg-gray-50">
@@ -310,6 +363,7 @@ const ResidentTimetable: React.FC<Props> = ({
               restrictToWindowEdges, // keep overlay within viewport
             ]}
             onDragEnd={isSaving ? undefined : handleDragEnd}
+            sensors={sensors}
           >
             <Table>
               <TableHeader>
@@ -349,8 +403,10 @@ const ResidentTimetable: React.FC<Props> = ({
                                   </div>
                                   <Badge
                                     className={`${
-                                      posting?.posting_code ===
-                                      resident.ccr_status.posting_code
+                                      posting?.posting_code &&
+                                      CCR_POSTINGS.includes(
+                                        posting.posting_code
+                                      )
                                         ? "bg-purple-100 text-purple-800"
                                         : posting?.posting_type === "core"
                                         ? "bg-orange-100 text-orange-800"
@@ -358,8 +414,8 @@ const ResidentTimetable: React.FC<Props> = ({
                                     }`}
                                     variant="outline"
                                   >
-                                    {posting?.posting_code ===
-                                    resident.ccr_status.posting_code
+                                    {posting?.posting_code &&
+                                    CCR_POSTINGS.includes(posting.posting_code)
                                       ? "CCR"
                                       : posting?.posting_type.toUpperCase() ||
                                         ""}
@@ -396,7 +452,9 @@ const ResidentTimetable: React.FC<Props> = ({
                           postingAssignment={postingAssignment}
                           edited={editedBlocks.has(blockNumber)}
                           postingMap={postingMap}
-                          ccrPostingCode={resident.ccr_status.posting_code}
+                          onSelectPosting={(code) =>
+                            handleSelectPosting(blockNumber, code)
+                          }
                         />
                       );
                     })}

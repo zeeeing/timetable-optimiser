@@ -1,4 +1,12 @@
-// src/constants/bonusPenaltyAndRequirements.ts
+// CCR postings bundle
+export const CCR_POSTINGS: string[] = [
+  "GM (NUH)",
+  "GM (SGH)",
+  "GM (CGH)",
+  "GM (SKH)",
+];
+
+// for constraint accordion
 export const SECTIONS = [
   {
     title: "Bonuses & Penalties",
