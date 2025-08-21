@@ -2,7 +2,7 @@ import sys, os
 import json
 from typing import Dict, List, Optional
 
-# Ensure server root is on path for utils imports
+# prepend the base directory to sys.path
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
@@ -79,65 +79,8 @@ def compute_postprocess(
             constraints = constraints_by_resident.get(mcr, [])
         else:
             constraints = []
-
-            # 1) MICU / RCCM penalties (Y1 vs others)
-            year = r.get("resident_year")
-            # completed historical blocks for MICU/RCCM where posting is completed
-            hist_micu = sum(
-                rec.get("blocks_completed", 0)
-                for p, rec in updated_resident_progress.items()
-                if p.startswith("MICU (") and rec.get("is_completed", False)
-            )
-            hist_rccm = sum(
-                rec.get("blocks_completed", 0)
-                for p, rec in updated_resident_progress.items()
-                if p.startswith("RCCM (") and rec.get("is_completed", False)
-            )
-
-            # current-year assignments count
-            micu_blocks = sum(
-                1
-                for h in updated_resident_history
-                if h.get("is_current_year")
-                and str(h.get("posting_code", "")).startswith("MICU (")
-            )
-            rccm_blocks = sum(
-                1
-                for h in updated_resident_history
-                if h.get("is_current_year")
-                and str(h.get("posting_code", "")).startswith("RCCM (")
-            )
-
-            if year == 1:
-                req_micu = 1
-                req_rccm = 2
-            else:
-                req_micu = CORE_REQUIREMENTS.get("MICU", 3)
-                req_rccm = CORE_REQUIREMENTS.get("RCCM", 3)
-
-            micu_missing = max(0, int(req_micu) - int(hist_micu + micu_blocks))
-            rccm_missing = max(0, int(req_rccm) - int(hist_rccm + rccm_blocks))
-            micu_rccm_bonus_weight = weightages.get("micu_rccm_bonus", 5)
-            if micu_missing > 0:
-                constraints.append(
-                    {
-                        "type": "penalty",
-                        "category": "micu_requirement",
-                        "description": f"Missing {micu_missing} MICU block(s) (Required for Y{year}: {req_micu})",
-                        "penalty_value": micu_missing * micu_rccm_bonus_weight,
-                    }
-                )
-            if rccm_missing > 0:
-                constraints.append(
-                    {
-                        "type": "penalty",
-                        "category": "rccm_requirement",
-                        "description": f"Missing {rccm_missing} RCCM block(s) (Required for Y{year}: {req_rccm})",
-                        "penalty_value": rccm_missing * micu_rccm_bonus_weight,
-                    }
-                )
-
             # 2) Elective shortfall penalties (Y2/Y3)
+            year = current_year  # use resident's current year for thresholds
             if year in (2, 3):
                 hist_electives = len(
                     get_unique_electives_completed(

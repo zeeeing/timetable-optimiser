@@ -6,14 +6,12 @@ import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
 
 interface WeightageSelectorProps {
   value: {
-    micu_rccm_bonus: number;
     preference: number;
     seniority: number;
     elective_shortfall_penalty: number;
     core_shortfall_penalty: number;
   };
   setValue: (val: {
-    micu_rccm_bonus: number;
     preference: number;
     seniority: number;
     elective_shortfall_penalty: number;
@@ -28,7 +26,6 @@ const WeightageSelector: React.FC<WeightageSelectorProps> = ({
   const handleChange =
     (
       field:
-        | "micu_rccm_bonus"
         | "preference"
         | "seniority"
         | "elective_shortfall_penalty"
@@ -45,34 +42,7 @@ const WeightageSelector: React.FC<WeightageSelectorProps> = ({
         Adjust the weightages to determine how much weight the different factors
         can contribute and influence the optimal timetable solution.
       </p>
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="micu_rccm_bonus">
-            MICU/RCCM Incentive
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="cursor-pointer">
-                  <Info size={16} />
-                </span>
-              </TooltipTrigger>
-              <TooltipContent side="top" className="max-w-3xs">
-                Incentive on meeting the following requirements for each
-                resident:
-                <br />
-                <br />
-                Y1: 1 MICU, 2 RCCM
-                <br />
-                Y2/3: 2 MICU, 1 RCCM
-              </TooltipContent>
-            </Tooltip>
-          </Label>
-          <Input
-            id="micu_rccm_bonus"
-            type="number"
-            value={value.micu_rccm_bonus}
-            onChange={handleChange("micu_rccm_bonus")}
-          />
-        </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="flex flex-col gap-2">
           <Label htmlFor="preference">
             Preference Satisfaction

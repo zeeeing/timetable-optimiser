@@ -31,7 +31,6 @@ const HomePage: React.FC = () => {
     () => localStorage.getItem("selectedResidentMcr")
   );
   const [weightages, setWeightages] = useState({
-    micu_rccm_bonus: 5,
     preference: 1,
     seniority: 2,
     elective_shortfall_penalty: 10,

@@ -21,16 +21,6 @@ export const SECTIONS = [
         text: "Points per block weighted by postgraduate year (`seniority_weight × year × blocks`).",
       },
 
-      // MICU/RCCM bonuses
-      {
-        label: "MICU Bonus",
-        text: "Earn `micu_rccm_bonus` points if you have at least the required MICU blocks for your year.",
-      },
-      {
-        label: "RCCM Bonus",
-        text: "Earn `micu_rccm_bonus` points if you have at least the required RCCM blocks for your year.",
-      },
-
       // Elective shortfall
       {
         label: "Elective Shortfall Penalty",

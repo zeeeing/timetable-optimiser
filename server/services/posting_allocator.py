@@ -2,7 +2,7 @@ import sys, json, os
 from typing import List, Dict, Optional
 from ortools.sat.python import cp_model
 
-# Ensure server root is on path for utils imports
+# prepend the base directory to sys.path
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
@@ -505,27 +505,7 @@ def allocate_timetable(
             model.Add(sum(selection_flags[mcr][p] for p in ED_codes) == 1)
             model.Add(sum(selection_flags[mcr][p] for p in GRM_codes) == 1)
 
-    ###########################################################################
-    # DEFINE SOFT CONSTRAINTS WITH PENALTIES
-    ###########################################################################
-
-    # Soft Constraint 1: RCCM and MICU requirements
-
-    # build micu and rccm assignment flags
-    enc_yr1_micu = {}
-    enc_yr1_rccm = {}
-    enc_other_micu = {}
-    enc_other_rccm = {}
-    for resident in residents:
-        mcr = resident["mcr"]
-
-        enc_yr1_micu[mcr] = model.NewBoolVar(f"{mcr}_enc_yr1_micu")
-        enc_yr1_rccm[mcr] = model.NewBoolVar(f"{mcr}_enc_yr1_rccm")
-        enc_other_micu[mcr] = model.NewBoolVar(f"{mcr}_enc_other_micu")
-        enc_other_rccm[mcr] = model.NewBoolVar(f"{mcr}_enc_other_rccm")
-
-    # encourage RCCM >= 2 and MICU >= 1 for y1,
-    # RCCM >= 1 and MICU >= 2 for other years
+    # Hard Constraint 15: Enforce MICU/RCCM minimum requirements by year
     for resident in residents:
         mcr = resident["mcr"]
         year = resident["resident_year"]
@@ -545,7 +525,7 @@ def allocate_timetable(
             for b in blocks
         )
 
-        # count completed MICU/RCCM postings
+        # count completed MICU/RCCM blocks historically
         micu_count = sum(
             [
                 resident_progress.get(p, {}).get("blocks_completed")
@@ -564,43 +544,26 @@ def allocate_timetable(
         )
 
         if year == 1:
-            if micu_count < 1:
-                # award only if more than or equal to 1
-                model.Add(micu_blocks >= 1).OnlyEnforceIf(enc_yr1_micu[mcr])
-                model.Add(micu_blocks == 0).OnlyEnforceIf(enc_yr1_micu[mcr].Not())
-            else:
-                model.Add(enc_yr1_micu[mcr] == 0)
-
-            if rccm_count < 2:
-                # award only if more than or equal to 2
-                model.Add(rccm_blocks >= 2).OnlyEnforceIf(enc_yr1_rccm[mcr])
-                model.Add(rccm_blocks <= 1).OnlyEnforceIf(enc_yr1_rccm[mcr].Not())
-            else:
-                model.Add(enc_yr1_rccm[mcr] == 0)
-
-            # turn off “other‐year” flags
-            model.Add(enc_other_micu[mcr] == 0)
-            model.Add(enc_other_rccm[mcr] == 0)
-
+            # By end of Y1: MICU >= 1, RCCM >= 2 (inclusive of completed history)
+            model.Add(micu_count + micu_blocks >= 1)
+            model.Add(rccm_count + rccm_blocks >= 2)
         else:
-            # for Year-2/3
-            if micu_count < CORE_REQUIREMENTS.get("MICU", 3):
-                model.Add(micu_blocks >= 2).OnlyEnforceIf(enc_other_micu[mcr])
-                model.Add(micu_blocks <= 1).OnlyEnforceIf(enc_other_micu[mcr].Not())
+            if year == 2:
+                if micu_count == 0 and rccm_count == 0:
+                    model.Add(micu_count + micu_blocks >= 1)
+                    model.Add(rccm_count + rccm_blocks >= 2)
             else:
-                model.Add(enc_other_micu[mcr] == 1)
+                # For Y2/3: if not yet met overall core requirement, enforce year minima
+                if micu_count < CORE_REQUIREMENTS.get("MICU", 3):
+                    model.Add(micu_blocks >= 2)
+                if rccm_count < CORE_REQUIREMENTS.get("RCCM", 3):
+                    model.Add(rccm_blocks >= 1)
 
-            if rccm_count < CORE_REQUIREMENTS.get("RCCM", 3):
-                model.Add(rccm_blocks >= 1).OnlyEnforceIf(enc_other_rccm[mcr])
-                model.Add(rccm_blocks == 0).OnlyEnforceIf(enc_other_rccm[mcr].Not())
-            else:
-                model.Add(enc_other_rccm[mcr] == 1)
+    ###########################################################################
+    # DEFINE SOFT CONSTRAINTS WITH PENALTIES
+    ###########################################################################
 
-            # turn off “yr1” flags
-            model.Add(enc_yr1_micu[mcr] == 0)
-            model.Add(enc_yr1_rccm[mcr] == 0)
-
-    # Soft Constraint 2: Penalty if minimum electives not completed by end of each year
+    # Soft Constraint 1: Penalty if minimum electives not completed by end of each year
 
     # filter for elective postings
     elective_postings = [
@@ -658,7 +621,7 @@ def allocate_timetable(
                 elective_shortfall_penalty_flags[mcr]
             )
 
-    # Soft Constraint 3: Penalty if core posting requirements are under-assigned by end of Year 3
+    # Soft Constraint 2: Penalty if core posting requirements are under-assigned by end of Year 3
 
     # get all y3 residents
     y3_residents = [r for r in residents if r["resident_year"] == 3]
@@ -704,19 +667,6 @@ def allocate_timetable(
     ###########################################################################
     # DEFINE BONUSES, PENALTIES AND OBJECTIVE
     ###########################################################################
-
-    # micu and rccm bonus
-    micu_rccm_bonus_terms = []
-    micu_rccm_bonus_weight = weightages.get("micu_rccm_bonus", 5)
-
-    for resident in residents:
-        mcr = resident["mcr"]
-        micu_rccm_bonus_terms += [
-            micu_rccm_bonus_weight * enc_yr1_micu[mcr],
-            micu_rccm_bonus_weight * enc_yr1_rccm[mcr],
-            micu_rccm_bonus_weight * enc_other_micu[mcr],
-            micu_rccm_bonus_weight * enc_other_rccm[mcr],
-        ]
 
     # 3 GMs bonus if ED + GRM present
     ED_codes = [p for p in posting_codes if p.startswith("ED")]
@@ -824,14 +774,13 @@ def allocate_timetable(
     # Objective
     model.Maximize(
         sum(gm_ktph_bonus_terms)
-        + sum(micu_rccm_bonus_terms)
         + sum(three_gm_bonus_terms)
         + sum(preference_bonus_terms)
         + sum(seniority_bonus_terms)
         - sum(elective_shortfall_penalty_terms)
         - sum(core_shortfall_penalty_terms)
         + sum(core_bonus_terms)
-        - sum(off_penalty_terms)
+        - sum(off_penalty_terms)  # for debugging purposes, can be removed later
     )
 
     ###########################################################################
