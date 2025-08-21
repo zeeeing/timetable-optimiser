@@ -15,7 +15,7 @@ import PostingUtilTable from "../components/PostingUtilTable";
 
 import { Button } from "../components/ui/button";
 import { Separator } from "../components/ui/separator";
-import { Loader2Icon } from "lucide-react";
+import { Loader2Icon, PinIcon, PinOffIcon } from "lucide-react";
 
 const HomePage: React.FC = () => {
   const { apiResponse, setApiResponse } = useApiResponseContext();
@@ -37,6 +37,16 @@ const HomePage: React.FC = () => {
     elective_shortfall_penalty: 10,
     core_shortfall_penalty: 10,
   });
+  const [pinnedMcrs, setPinnedMcrs] = useState<Set<string>>(() => {
+    try {
+      const raw = localStorage.getItem("pinnedMcrs");
+      if (!raw) return new Set<string>();
+      const arr = JSON.parse(raw);
+      return new Set<string>(Array.isArray(arr) ? arr : []);
+    } catch {
+      return new Set<string>();
+    }
+  });
 
   const handleFileUpload =
     (fileType: keyof typeof csvFiles) =>
@@ -53,25 +63,25 @@ const HomePage: React.FC = () => {
     };
 
   const handleProcessFiles = async () => {
-    if (
-      !csvFiles.residents ||
-      !csvFiles.resident_history ||
-      !csvFiles.resident_preferences ||
-      !csvFiles.postings
-    ) {
-      setError("Please upload all four CSV files");
-      return;
-    }
-
     setIsProcessing(true);
     setError(null);
 
     const formData = new FormData();
-    formData.append("residents", csvFiles.residents);
-    formData.append("resident_history", csvFiles.resident_history);
-    formData.append("resident_preferences", csvFiles.resident_preferences);
-    formData.append("postings", csvFiles.postings);
+
+    // if CSVs present, always include them, else omit
+    if (csvFiles.residents) formData.append("residents", csvFiles.residents);
+    if (csvFiles.resident_history)
+      formData.append("resident_history", csvFiles.resident_history);
+    if (csvFiles.resident_preferences)
+      formData.append("resident_preferences", csvFiles.resident_preferences);
+    if (csvFiles.postings) formData.append("postings", csvFiles.postings);
+
+    // always include weightages and pinned residents
     formData.append("weightages", JSON.stringify(weightages));
+    formData.append(
+      "pinned_mcrs",
+      JSON.stringify(Array.from(pinnedMcrs.values()))
+    );
 
     try {
       const json: ApiResponse = await uploadCsv(formData);
@@ -150,10 +160,28 @@ const HomePage: React.FC = () => {
     localStorage.removeItem("selectedResidentMcr");
   }, []);
 
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        "pinnedMcrs",
+        JSON.stringify(Array.from(pinnedMcrs.values())) // convert set values to array, then stringify to be stored locally
+      );
+    } catch {}
+  }, [pinnedMcrs]);
+
+  const togglePin = (mcr: string) => {
+    setPinnedMcrs((prev) => {
+      const next = new Set(prev);
+      if (next.has(mcr)) next.delete(mcr);
+      else next.add(mcr);
+      return next;
+    });
+  };
+
   return (
     <div className="max-w-7xl mx-auto bg-white rounded-xl shadow-md p-8 flex flex-col gap-6">
       <h1 className="text-2xl font-semibold text-center mb-6 text-gray-800">
-        Upload and Generate Optimal Timetable Solution
+        IM Residency Rostering Tool
       </h1>
 
       {/* Upload Section */}
@@ -185,18 +213,21 @@ const HomePage: React.FC = () => {
           onClick={handleProcessFiles}
           disabled={
             isProcessing ||
-            !csvFiles.residents ||
-            !csvFiles.resident_preferences ||
-            !csvFiles.resident_history ||
-            !csvFiles.postings
+            (!apiResponse &&
+              (!csvFiles.residents ||
+                !csvFiles.resident_preferences ||
+                !csvFiles.resident_history ||
+                !csvFiles.postings))
           }
           className="bg-blue-600 text-white hover:bg-blue-700 cursor-pointer"
         >
           {isProcessing ? (
             <>
               <Loader2Icon className="animate-spin" />
-              Processing...
+              Generating...
             </>
+          ) : apiResponse ? (
+            "Re-Generate Timetable"
           ) : (
             "Upload & Generate Timetable"
           )}
@@ -217,11 +248,38 @@ const HomePage: React.FC = () => {
       {apiResponse && (
         <div className="flex flex-col gap-6">
           <Separator />
-          <ResidentDropdown
-            groupedResidents={groupedResidents}
-            selectedResidentMcr={selectedResidentMcr}
-            setSelectedResidentMcr={setSelectedResidentMcr}
-          />
+          <div className="flex justify-between items-center">
+            <ResidentDropdown
+              groupedResidents={groupedResidents}
+              selectedResidentMcr={selectedResidentMcr}
+              setSelectedResidentMcr={setSelectedResidentMcr}
+            />
+            {selectedResidentMcr && (
+              <div>
+                <Button
+                  variant={
+                    pinnedMcrs.has(selectedResidentMcr)
+                      ? "secondary"
+                      : "outline"
+                  }
+                  className="cursor-pointer"
+                  onClick={() => togglePin(selectedResidentMcr)}
+                >
+                  {pinnedMcrs.has(selectedResidentMcr) ? (
+                    <>
+                      <PinOffIcon fill="red" />
+                      Unpin Resident
+                    </>
+                  ) : (
+                    <>
+                      <PinIcon fill="yellowgreen" />
+                      Pin Resident
+                    </>
+                  )}
+                </Button>
+              </div>
+            )}
+          </div>
           {selectedResidentData && (
             <ResidentTimetable
               resident={selectedResidentData}

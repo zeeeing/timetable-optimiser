@@ -1,5 +1,5 @@
 import sys
-from typing import List, Dict
+from typing import List, Dict, Optional
 from ortools.sat.python import cp_model
 from utils import (
     get_completed_postings,
@@ -11,7 +11,7 @@ from utils import (
     CCR_POSTINGS,
 )
 import logging
-from postprocess import compute_postprocess
+from server.services.postprocess import compute_postprocess
 
 
 def allocate_timetable(
@@ -20,6 +20,7 @@ def allocate_timetable(
     resident_preferences: List[Dict],
     postings: List[Dict],
     weightages: Dict,
+    pinned_assignments: Optional[Dict[str, List[Dict]]] = None,
 ) -> Dict:
 
     ###########################################################################
@@ -66,6 +67,7 @@ def allocate_timetable(
 
     # create and register assumption literals (for infeasible outcomes)
     assumption_literals = {}
+
     def new_assumption_literal(name: str, description: str) -> cp_model.IntVar:
         flag = model.NewBoolVar(name)
         model.AddAssumption(flag)
@@ -133,29 +135,6 @@ def allocate_timetable(
                 f"{mcr}_{to_snake_case(p)}_selected"
             )
 
-    # define per-block slack (OFF) variables to enable ExactlyOne feasibility
-    off = {}
-    for resident in residents:
-        mcr = resident["mcr"]
-        off[mcr] = {}
-        for b in blocks:
-            off[mcr][b] = model.NewBoolVar(f"{mcr}_OFF_{b}")
-
-    # pinned residents: force exact block/posting for selected residents
-    _pins = pinned_assignments or {}
-    if _pins:
-        logger.info("Applying pinned assignments for %d residents", len(_pins))
-        for mcr, entries in _pins.items():
-            try:
-                for entry in entries or []:
-                    b = int(entry.get("block"))
-                    p = entry.get("posting_code")
-                    if p in posting_info and b in blocks:
-                        # Force that resident to take posting p at block b
-                        model.Add(x[mcr][p][b] == 1)
-            except Exception as e:
-                logger.warning("Failed to apply pins for %s: %s", mcr, e)
-
     # define posting assignment count: number of times a resident gets assigned a posting
     posting_asgm_count = {}
     for resident in residents:
@@ -179,6 +158,29 @@ def allocate_timetable(
             # if posting_asgm_count > 0, then selection_flag must be 1
             model.Add(count >= 1).OnlyEnforceIf(flag)
             model.Add(count == 0).OnlyEnforceIf(flag.Not())
+
+    # define per-block slack (OFF) variables to enable ExactlyOne feasibility
+    off = {}
+    for resident in residents:
+        mcr = resident["mcr"]
+        off[mcr] = {}
+        for b in blocks:
+            off[mcr][b] = model.NewBoolVar(f"{mcr}_OFF_{b}")
+
+    # pinned residents: force exact block/posting for selected residents
+    _pins = pinned_assignments or {}
+    if _pins:
+        logger.info("Applying pinned assignments for %d residents", len(_pins))
+        for mcr, entries in _pins.items():
+            try:
+                for entry in entries or []:
+                    b = int(entry.get("block"))
+                    p = entry.get("posting_code")
+                    if p in posting_info and b in blocks:
+                        # Force that resident to take posting p at block b
+                        model.Add(x[mcr][p][b] == 1)
+            except Exception as e:
+                logger.warning("Failed to apply pins for %s: %s", mcr, e)
 
     ###########################################################################
     # DEFINE HARD CONSTRAINTS
@@ -401,6 +403,19 @@ def allocate_timetable(
                                 x[mcr][p][b - 1],
                             ]
                         )
+
+    # Hard Constraint 10: 3-month postings must start at months 1, 4, 7, or 10
+    # i.e., for postings with required_block_duration == 3, any assignment at a
+    # disallowed start month must be a continuation from the previous month.
+    # This is enforced by: x[b] => x[b-1] for disallowed start months.
+    quarter_starts = {1, 4, 7, 10}
+    for resident in residents:
+        mcr = resident["mcr"]
+        for p in posting_codes:
+            if posting_info[p]["required_block_duration"] == 3:
+                for b in blocks:
+                    if b not in quarter_starts and b > 1:
+                        model.AddImplication(x[mcr][p][b], x[mcr][p][b - 1])
 
     # Hard Constraint 11: GM capped at 3 blocks in Year 1
     gm_ktph_bonus_terms = []

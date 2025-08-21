@@ -13,17 +13,31 @@ import {
   CardHeader,
   CardTitle,
   CardAction,
+  CardDescription,
 } from "./ui/card";
 import { Badge } from "./ui/badge";
 import type { ApiResponse } from "../types";
+import { Checkbox } from "./ui/checkbox";
+import { Button } from "./ui/button";
 import monthLabels from "../../../shared/monthLabels.json";
+import { cn } from "@/lib/utils";
 
-interface PostingOverviewTableProps {
+interface PlanningOverviewTableProps {
   apiResponse: ApiResponse;
+  pinnedMcrs?: Set<string>;
+  setPinnedMcrs: (set: Set<string>) => void;
+  onTogglePin?: (mcr: string) => void;
+  onPinAllYear?: (year: number) => void;
+  onUnpinAllYear?: (year: number) => void;
 }
 
-const PlanningOverviewTable: React.FC<PostingOverviewTableProps> = ({
+const PlanningOverviewTable: React.FC<PlanningOverviewTableProps> = ({
   apiResponse,
+  pinnedMcrs,
+  setPinnedMcrs,
+  onTogglePin,
+  onPinAllYear,
+  onUnpinAllYear,
 }) => {
   const { residents, resident_history, statistics } = apiResponse;
   const optimisationScores = statistics.cohort.optimisation_scores;
@@ -44,21 +58,68 @@ const PlanningOverviewTable: React.FC<PostingOverviewTableProps> = ({
     }
   });
 
+  // get all unique resident years
+  const years = Array.from(new Set(residents.map((r) => r.resident_year))).sort(
+    (a, b) => a - b
+  );
+
   return (
     <Card className="bg-gray-50">
       <CardHeader>
         <CardTitle>Planning Overview</CardTitle>
+        <CardDescription>
+          Pin residents to save their assignments.
+        </CardDescription>
         <CardAction>
           <Badge variant="secondary" className="text-sm">
             AY2025/2026
           </Badge>
         </CardAction>
       </CardHeader>
-      <CardContent>
+
+      <CardContent className="space-y-4">
+        {/* Pin By Year (toggle) */}
+        <div className="flex justify-between items-center">
+          <div className="flex items-center gap-2">
+            {years.map((yr) => {
+              const list = residents.filter((r) => r.resident_year === yr);
+              const allPinned =
+                list.length > 0 && list.every((r) => pinnedMcrs?.has(r.mcr));
+              return (
+                <div key={yr} className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant={allPinned ? "secondary" : "outline"}
+                    onClick={() =>
+                      allPinned ? onUnpinAllYear?.(yr) : onPinAllYear?.(yr)
+                    }
+                  >
+                    {allPinned ? "Unpin All" : "Pin All"} Year {yr}
+                  </Button>
+                </div>
+              );
+            })}
+          </div>
+          <div className="flex gap-2 items-center">
+            <span className="text-sm text-gray-600">
+              Selected: {pinnedMcrs?.size}
+            </span>
+            <Button
+              variant="ghost"
+              className="cursor-pointer"
+              onClick={() => setPinnedMcrs(new Set())}
+            >
+              Clear All Pins
+            </Button>
+          </div>
+        </div>
+
+        {/* Table Overview */}
         <div className="bg-white rounded-md border">
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead>Pin</TableHead>
                 <TableHead>MCR</TableHead>
                 <TableHead>Resident</TableHead>
                 <TableHead>RY</TableHead>
@@ -77,8 +138,19 @@ const PlanningOverviewTable: React.FC<PostingOverviewTableProps> = ({
               {residents.map((resident, index) => (
                 <TableRow
                   key={resident.mcr}
-                  className={index % 2 === 0 ? "bg-white" : "bg-gray-50"}
+                  className={cn(
+                    index % 2 === 0 ? "bg-white" : "bg-gray-50",
+                    "has-[[aria-checked=true]]:bg-blue-100"
+                  )}
                 >
+                  <TableCell>
+                    <Checkbox
+                      checked={pinnedMcrs?.has(resident.mcr) ?? false}
+                      onCheckedChange={() => onTogglePin?.(resident.mcr)}
+                      aria-label={`Pin ${resident.name}`}
+                      className="data-[state=checked]:bg-blue-600"
+                    />
+                  </TableCell>
                   <TableCell>{resident.mcr}</TableCell>
                   <TableCell className="font-medium">{resident.name}</TableCell>
                   <TableCell>{resident.resident_year}</TableCell>

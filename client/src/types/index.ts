@@ -6,6 +6,7 @@ export interface ApiResponse {
   resident_preferences: ResidentPreference[];
   postings: Posting[];
   statistics: Statistics;
+  diagnostics?: Diagnostics;
 }
 
 export interface Resident {
@@ -60,6 +61,17 @@ export interface Statistics {
     optimisation_scores_normalised: number[];
     posting_util: PostingUtil[];
   };
+}
+
+// diagnostics types (tentative implementation)
+export interface Diagnostics {
+  off_explanations_by_resident: Record<string, OffBlockExplanation[]>;
+}
+
+export interface OffBlockExplanation {
+  block: number;
+  feasible_postings: string[];
+  reasons_by_posting: Record<string, string[]>;
 }
 
 export interface PostingUtil {

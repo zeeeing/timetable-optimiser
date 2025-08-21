@@ -245,10 +245,10 @@ def compute_postprocess(
         for s in optimisation_scores
     ]
 
-    # Posting utilisation by block
+    # Posting utilisation by block, and precompute capacity fill for diagnostics
     posting_util: List[Dict] = []
+    cap_fill: Dict[str, Dict[int, int]] = {}
     for posting_code, pinfo in posting_info.items():
-        # current-year assignments only
         assignments = [
             h
             for h in output_history
@@ -272,12 +272,96 @@ def compute_postprocess(
         posting_util.append(
             {"posting_code": posting_code, "util_per_block": util_per_block}
         )
+        cap_fill[posting_code] = block_filled
 
     cohort_statistics = {
         "optimisation_scores": optimisation_scores,
         "optimisation_scores_normalised": optimisation_scores_normalised,
         "posting_util": posting_util,
     }
+
+    # Diagnostics: explain OFF (unassigned) blocks heuristically
+    quarter_starts = {1, 4, 7, 10}
+    off_explanations_by_resident: Dict[str, List[Dict]] = {}
+
+    # Build per-resident current-year map for quick lookup
+    cy_by_mcr: Dict[str, Dict[int, str]] = {}
+    for h in output_history:
+        if not h.get("is_current_year"):
+            continue
+        mcr = h.get("mcr")
+        b = int(h.get("block", 0))
+        if not mcr or b <= 0:
+            continue
+        cy_by_mcr.setdefault(mcr, {})[b] = h.get("posting_code")
+
+    for r in residents:
+        mcr = r.get("mcr")
+        if not mcr:
+            continue
+        cy_blocks = cy_by_mcr.get(mcr, {})
+        # resident progress incl. all years
+        progress = get_posting_progress(output_history, posting_info).get(mcr, {})
+        completed_electives = set(
+            p.split(" (")[0]
+            for p in get_unique_electives_completed(progress, posting_info)
+        )
+
+        entries: List[Dict] = []
+        for b in range(1, 13):
+            if b in cy_blocks:
+                continue  # already assigned
+            reasons_by_posting: Dict[str, List[str]] = {}
+            feasible: List[str] = []
+
+            for p, pinfo in posting_info.items():
+                reasons: List[str] = []
+                # 1) capacity at this block
+                cap_map = cap_fill.get(p, {})
+                cap = int(pinfo.get("max_residents", 0))
+                filled_b = int(cap_map.get(b, 0))
+                if filled_b >= cap:
+                    reasons.append("capacity_full")
+
+                # 2) start rules
+                dur = int(pinfo.get("required_block_duration", 1))
+                # quarter starts for 3-month runs
+                if dur == 3 and b not in quarter_starts:
+                    reasons.append("start_month_disallowed_for_3m")
+                # GRM must start on odd block numbers
+                if str(p).startswith("GRM (") and b % 2 == 0:
+                    reasons.append("grm_even_start_disallowed")
+                # cannot cross Dec(6) - Jan(7)
+                if dur > 1:
+                    end_b = b + dur - 1
+                    if b <= 6 and end_b >= 7:
+                        reasons.append("crosses_dec_jan_boundary")
+                    # capacity across full run
+                    for t in range(b, min(end_b, 12) + 1):
+                        if int(cap_map.get(t, 0)) >= cap:
+                            reasons.append(f"capacity_full_at_{t}")
+
+                # 3) elective base uniqueness
+                if pinfo.get("posting_type") == "elective":
+                    base = str(p).split(" (")[0]
+                    if base in completed_electives:
+                        reasons.append("elective_base_already_completed")
+
+                if not reasons:
+                    feasible.append(p)
+                reasons_by_posting[p] = reasons
+
+            if feasible or any(reasons_by_posting.values()):
+                entries.append(
+                    {
+                        "block": b,
+                        "feasible_postings": feasible,
+                        "reasons_by_posting": reasons_by_posting,
+                    }
+                )
+
+        if entries:
+            off_explanations_by_resident[mcr] = entries
 
     return {
         "success": True,
@@ -288,6 +372,9 @@ def compute_postprocess(
         "statistics": {
             "total_residents": len(residents),
             "cohort": cohort_statistics,
+        },
+        "diagnostics": {
+            "off_explanations_by_resident": off_explanations_by_resident,
         },
     }
 

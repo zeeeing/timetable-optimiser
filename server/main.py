@@ -1,5 +1,5 @@
 import sys, json
-from posting_allocator import allocate_timetable
+from server.services.posting_allocator import allocate_timetable
 
 
 def main():
@@ -22,6 +22,7 @@ def main():
             resident_preferences=input_data["resident_preferences"],
             postings=input_data["postings"],
             weightages=input_data["weightages"],
+            pinned_assignments=input_data.get("pinned_assignments", {}),
         )
         # needs to be printed to stdout for server.js to read
         print(json.dumps(result, indent=2))
