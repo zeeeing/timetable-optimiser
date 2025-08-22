@@ -16,7 +16,7 @@ import {
   restrictToWindowEdges,
 } from "@dnd-kit/modifiers";
 
-import type { Resident, ResidentHistory, Posting } from "../types";
+import type { Resident, ResidentHistory, Posting, Violation } from "../types";
 import monthLabels from "../../../shared/monthLabels.json";
 import { areSchedulesEqual, moveByInsert } from "@/lib/utils";
 import { useApiResponseContext } from "@/context/ApiResponseContext";
@@ -68,6 +68,7 @@ const ResidentTimetable: React.FC<Props> = ({
 }) => {
   const { apiResponse, setApiResponse } = useApiResponseContext();
   const [isSaving, setIsSaving] = useState(false);
+  const [violations, setViolations] = useState<Violation[]>([]);
 
   // required so that popover does not get "eaten" by the DnD overlay
   const sensors = useSensors(
@@ -205,6 +206,7 @@ const ResidentTimetable: React.FC<Props> = ({
   const handleCancel = () => {
     setCurrentYearBlockPostings(originalBlockPostings.current);
     setEditedBlocks(new Set());
+    setViolations([]);
   };
 
   const handleSelectPosting = (blockNumber: number, newPostingCode: string) => {
@@ -257,9 +259,8 @@ const ResidentTimetable: React.FC<Props> = ({
         resident_mcr: resident.mcr,
         current_year,
       });
-      if (!validated.success) {
-        throw new Error(validated.errors?.join(", ") || "Validation failed");
-      }
+      setViolations(validated.success ? [] : validated.violations || []);
+      if (!validated.success) return; // show violations, abort save
 
       // 2. save response if validated
       const updatedApi = await saveSchedule({
@@ -267,6 +268,8 @@ const ResidentTimetable: React.FC<Props> = ({
         current_year,
       });
       setApiResponse(updatedApi);
+      // clear alerts on successful save
+      setViolations([]);
     } catch (err: any) {
       const msg =
         err?.response?.data?.errors?.join(", ") ||
@@ -487,29 +490,31 @@ const ResidentTimetable: React.FC<Props> = ({
         </div>
       </CardContent>
 
-      {/* constraints (violations and penalties) */}
+      {/* validation results */}
       <CardContent className="flex gap-6">
         <div className="flex flex-col gap-2 w-1/2">
-          {resident.constraints.filter((c) => c.type === "violation").length >
-            0 && (
+          {violations.length > 0 ? (
             <ErrorAlert
               message="Violations"
-              description={resident.constraints
-                .filter((c) => c.type === "violation")
-                .map((c) => c.description)}
+              description={violations.map(
+                (v) => `[${v.code}] ${v.description}`
+              )}
+              variantType="destructive"
             />
-          )}
-          {resident.constraints.filter((c) => c.type === "penalty").length >
-            0 && (
-            <ErrorAlert
-              message="Penalties"
-              description={resident.constraints
-                .filter((c) => c.type === "penalty")
-                .map((c) => c.description)}
-            />
-          )}
-          {resident.constraints.length == 0 && (
-            <ErrorAlert message="No violations or penalties incurred." />
+          ) : (
+            <>
+              {resident.violations && resident.violations.length > 0 && (
+                <ErrorAlert
+                  message="Violations"
+                  description={resident.violations.map(
+                    (v) => `[${v.code}] ${v.description}`
+                  )}
+                />
+              )}
+              {(!resident.violations || resident.violations.length === 0) && (
+                <ErrorAlert message="No violations." />
+              )}
+            </>
           )}
         </div>
         <div className="w-1/2">

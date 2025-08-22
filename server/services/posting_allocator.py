@@ -49,28 +49,6 @@ def allocate_timetable(
     # DEFINE HELPERS
     ###########################################################################
 
-    # initialise constraint tracker
-    constraints_by_resident = {}
-    for resident in residents:
-        constraints_by_resident[resident["mcr"]] = []
-
-    # helper function to record constraint
-    def record_constraint(
-        mcr: str,
-        constraint_type: str,
-        category: str,
-        description: str,
-        penalty_value: float = None,
-    ):
-        constraints_by_resident[mcr].append(
-            {
-                "type": constraint_type,
-                "category": category,
-                "description": description,
-                "penalty_value": penalty_value,
-            }
-        )
-
     # create and register assumption literals (for infeasible outcomes)
     assumption_literals = {}
 
@@ -165,14 +143,6 @@ def allocate_timetable(
             model.Add(count >= 1).OnlyEnforceIf(flag)
             model.Add(count == 0).OnlyEnforceIf(flag.Not())
 
-    # define per-block slack (OFF) variables to enable ExactlyOne feasibility
-    off = {}
-    for resident in residents:
-        mcr = resident["mcr"]
-        off[mcr] = {}
-        for b in blocks:
-            off[mcr][b] = model.NewBoolVar(f"{mcr}_OFF_{b}")
-
     # pinned residents: force exact block/posting for selected residents
     _pins = pinned_assignments or {}
     if _pins:
@@ -187,6 +157,14 @@ def allocate_timetable(
                         model.Add(x[mcr][p][b] == 1)
             except Exception as e:
                 logger.warning("Failed to apply pins for %s: %s", mcr, e)
+
+    # DEBUG: define per-block slack (OFF) variables to enable ExactlyOne feasibility
+    off = {}
+    for resident in residents:
+        mcr = resident["mcr"]
+        off[mcr] = {}
+        for b in blocks:
+            off[mcr][b] = model.NewBoolVar(f"{mcr}_OFF_{b}")
 
     ###########################################################################
     # DEFINE HARD CONSTRAINTS
@@ -763,7 +741,7 @@ def allocate_timetable(
         for p in CORE_CODES:
             core_bonus_terms.append(core_bonus_weight * selection_flags[mcr][p])
 
-    # OFF penalty (discourage empty blocks)
+    # DEBUG: OFF penalty (discourage empty blocks)
     off_penalty_terms = []
     off_penalty_weight = weightages.get("off_penalty", 10000)
     for resident in residents:
@@ -780,7 +758,7 @@ def allocate_timetable(
         - sum(elective_shortfall_penalty_terms)
         - sum(core_shortfall_penalty_terms)
         + sum(core_bonus_terms)
-        - sum(off_penalty_terms)  # for debugging purposes, can be removed later
+        - sum(off_penalty_terms)
     )
 
     ###########################################################################
@@ -842,17 +820,12 @@ def allocate_timetable(
                         }
                     )
 
-        # debug: log OFF usage per resident (helps pinpoint why blocks aren't filled)
+        # DEBUG: log OFF usage per resident (helps pinpoint why blocks aren't filled)
         for resident in residents:
             mcr = resident["mcr"]
             off_blocks = [b for b in blocks if solver.Value(off[mcr][b]) > 0.5]
             if off_blocks:
                 logger.info("[DEBUG] OFF used for %s at blocks: %s", mcr, off_blocks)
-
-        # log constraints (for debugging only)
-        for resident in residents:
-            mcr = resident["mcr"]
-            logger.info(f"{mcr} : {constraints_by_resident[mcr]}")
 
         payload = {
             "residents": residents,

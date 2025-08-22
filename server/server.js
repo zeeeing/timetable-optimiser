@@ -286,6 +286,18 @@ app.post("/api/validate", async (req, res) => {
         .json({ success: false, error: "missing resident_mcr" });
     }
 
+    // prepare dataToValidate with latest dataset for validation
+    const base =
+      req.app.locals.store.latestApiResponse ||
+      req.app.locals.store.latestInputs;
+    const dataToValidate = {
+      resident_mcr: residentMcr,
+      current_year: currentYear,
+      residents: base?.residents || [],
+      resident_history: base?.resident_history || [],
+      postings: base?.postings || [],
+    };
+
     // spawn python process
     const process = spawn("python3", [
       path.join(__dirname, "services", "validate.py"),
@@ -307,9 +319,7 @@ app.post("/api/validate", async (req, res) => {
     });
 
     // this time we write to stdin and read from there
-    process.stdin.write(
-      JSON.stringify({ resident_mcr: residentMcr, current_year: currentYear })
-    );
+    process.stdin.write(JSON.stringify(dataToValidate));
     process.stdin.end();
 
     process.on("close", () => {

@@ -15,10 +15,9 @@ export type ValidateSchedulePayload = {
   current_year: { block: number; posting_code: string }[];
 };
 
-export type ValidateOnlyResponse = {
+export type ValidateScheduleResponse = {
   success: boolean;
-  errors?: string[];
-  warnings?: string[];
+  violations: { code: string; description: string }[];
 };
 
 // routes
@@ -35,9 +34,9 @@ export const uploadCsv = async (formData: FormData): Promise<ApiResponse> => {
 
 export const validateSchedule = async (
   payload: ValidateSchedulePayload
-): Promise<ValidateOnlyResponse> => {
+): Promise<ValidateScheduleResponse> => {
   try {
-    const { data } = await api.post<ValidateOnlyResponse>("/validate", payload);
+    const { data } = await api.post<ValidateScheduleResponse>("/validate", payload);
     return data;
   } catch (err) {
     throw new Error(toMessage(err));

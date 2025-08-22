@@ -74,71 +74,8 @@ def compute_postprocess(
         else:
             ccr_status = {"completed": False, "posting_code": "-"}
 
-        # constraints: use provided if available; otherwise compute heuristically
-        if constraints_by_resident is not None:
-            constraints = constraints_by_resident.get(mcr, [])
-        else:
-            constraints = []
-            # 2) Elective shortfall penalties (Y2/Y3)
-            year = current_year  # use resident's current year for thresholds
-            if year in (2, 3):
-                hist_electives = len(
-                    get_unique_electives_completed(
-                        updated_resident_progress, posting_info
-                    )
-                )
-                selection_count = sum(
-                    1
-                    for h in updated_resident_history
-                    if h.get("is_current_year")
-                    and posting_info.get(h.get("posting_code"), {}).get("posting_type")
-                    == "elective"
-                )
-
-                resident_prefs = pref_map.get(mcr, {})
-                required = 5 if year == 3 else (1 if not resident_prefs else 2)
-                elective_shortfall_penalty_weight = weightages.get(
-                    "elective_shortfall_penalty", 5
-                )
-                missing_elec = max(
-                    0, int(required) - int(hist_electives + selection_count)
-                )
-                if missing_elec > 0:
-                    constraints.append(
-                        {
-                            "type": "penalty",
-                            "category": "elective_shortfall",
-                            "description": f"Missing {missing_elec} elective(s) (Required for Y{year}: {required})",
-                            "penalty_value": missing_elec
-                            * elective_shortfall_penalty_weight,
-                        }
-                    )
-
-            # 3) Core shortfall penalties (Y3)
-            if year == 3:
-                core_shortfall_penalty_weight = weightages.get(
-                    "core_shortfall_penalty", 10
-                )
-                # historical core blocks per base
-                for base, required in CORE_REQUIREMENTS.items():
-                    hist_done = int(core_blocks_completed.get(base, 0))
-                    assigned = sum(
-                        1
-                        for h in updated_resident_history
-                        if h.get("is_current_year")
-                        and str(h.get("posting_code", "")).split(" (")[0] == base
-                    )
-                    shortfall = max(0, int(required) - int(hist_done + assigned))
-                    if shortfall > 0:
-                        constraints.append(
-                            {
-                                "type": "penalty",
-                                "category": "core_shortfall",
-                                "description": f"Missing {shortfall} months(s) of {base} (Required: {required})",
-                                "penalty_value": shortfall
-                                * core_shortfall_penalty_weight,
-                            }
-                        )
+        # violations: allocate phase adheres to hard constraints; none are reported here
+        violations = []
 
         output_residents.append(
             {
@@ -147,7 +84,7 @@ def compute_postprocess(
                 "resident_year": current_year,
                 "core_blocks_completed": core_blocks_completed,
                 "unique_electives_completed": unique_electives_completed,
-                "constraints": constraints,
+                "violations": violations,
                 "ccr_status": ccr_status,
             }
         )

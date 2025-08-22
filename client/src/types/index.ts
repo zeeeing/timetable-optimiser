@@ -1,5 +1,5 @@
 // api response types
-export interface ApiResponse {
+export interface BaseApiResponse {
   success: boolean;
   residents: Resident[];
   resident_history: ResidentHistory[];
@@ -7,6 +7,14 @@ export interface ApiResponse {
   postings: Posting[];
   statistics: Statistics;
   diagnostics?: Diagnostics;
+}
+export interface ApiResponse extends BaseApiResponse {
+  solutions?: SolutionEntry[]; // multi-solution support
+}
+
+export interface SolutionEntry {
+  objective: number | null;
+  result: BaseApiResponse; // a full single-solution payload
 }
 
 export interface Resident {
@@ -21,15 +29,12 @@ export interface Resident {
     completed: boolean;
     posting_code: string;
   };
-  constraints: Constraint[];
+  violations: Violation[];
 }
 
-export interface Constraint {
-  resident_mcr: string;
-  type: string; // "violation" | "penalty"
-  category: string;
+export interface Violation {
+  code: string;
   description: string;
-  penalty: number;
 }
 
 export interface ResidentHistory {
