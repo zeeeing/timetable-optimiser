@@ -165,7 +165,7 @@ app.post(
         skip_empty_lines: true,
       });
 
-      // optional SR preferences
+      // SR preferences
       const srPreferences = (() => {
         try {
           const f = req.files.resident_sr_preferences?.[0];
