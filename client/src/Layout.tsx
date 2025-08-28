@@ -13,7 +13,7 @@ const Layout: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-tr from-blue-100 to-indigo-300 p-6">
-      <div className="max-w-7xl mx-auto flex gap-2 pb-6 pl-4">
+      <div className="container mx-auto flex gap-2 pb-6 pl-4">
         {navigationItems.map((item) => (
           <div key={item.key}>
             <Link to={item.href}>

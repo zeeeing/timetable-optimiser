@@ -155,15 +155,12 @@ const HomePage: React.FC = () => {
       localStorage.setItem("selectedResidentMcr", selectedResidentMcr);
   }, [selectedResidentMcr]);
 
-  useEffect(() => {
-    localStorage.removeItem("selectedResidentMcr");
-  }, []);
 
   useEffect(() => {
     try {
       localStorage.setItem(
         "pinnedMcrs",
-        JSON.stringify(Array.from(pinnedMcrs.values())) // convert set values to array, then stringify to be stored locally
+        JSON.stringify(Array.from(pinnedMcrs.values()))
       );
     } catch {}
   }, [pinnedMcrs]);
@@ -178,7 +175,7 @@ const HomePage: React.FC = () => {
   };
 
   return (
-    <div className="max-w-7xl mx-auto bg-white rounded-xl shadow-md p-8 flex flex-col gap-6">
+    <div className="container mx-auto bg-white rounded-xl shadow-md p-8 flex flex-col gap-6">
       <h1 className="text-2xl font-semibold text-center mb-6 text-gray-800">
         IM Residency Rostering Tool
       </h1>
