@@ -64,6 +64,16 @@ export function generateSampleCSV(): void {
     { mcr: "M000003A", preference_rank: 5, posting_code: "Renal (KTPH)" },
   ];
 
+  // SR base-code preferences (ranks 1..3), columns: mcr, preference_rank, base_posting
+  const residentSrPreferences: CsvRow[] = [
+    { mcr: "M000001A", preference_rank: 1, base_posting: "Renal" },
+    { mcr: "M000001A", preference_rank: 2, base_posting: "Gastro" },
+    { mcr: "M000001A", preference_rank: 3, base_posting: "Endocrine" },
+    { mcr: "M000002A", preference_rank: 1, base_posting: "Gastro" },
+    { mcr: "M000002A", preference_rank: 2, base_posting: "Renal" },
+    { mcr: "M000002A", preference_rank: 3, base_posting: "Endocrine" },
+  ];
+
   const postings: CsvRow[] = [
     { posting_code: "CVM (TTSH)", posting_name: "Cardiovascular Medicine (TTSH)", posting_type: "core", max_residents: 3, required_block_duration: 3 },
     { posting_code: "ED (TTSH)", posting_name: "Emergency Department (TTSH)", posting_type: "core", max_residents: 4, required_block_duration: 1 },
@@ -112,6 +122,7 @@ export function generateSampleCSV(): void {
     { filename: "sample_residents.csv", content: toCsv(residents) },
     { filename: "sample_resident_history.csv", content: toCsv(residentHistory) },
     { filename: "sample_resident_preferences.csv", content: toCsv(residentPreferences) },
+    { filename: "sample_resident_sr_preferences.csv", content: toCsv(residentSrPreferences) },
     { filename: "sample_postings.csv", content: toCsv(postings) },
   ];
 

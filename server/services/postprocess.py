@@ -22,6 +22,7 @@ def compute_postprocess(
     residents: List[Dict] = payload.get("residents", [])
     resident_history: List[Dict] = payload.get("resident_history", [])
     resident_preferences: List[Dict] = payload.get("resident_preferences", [])
+    resident_sr_preferences: List[Dict] = payload.get("resident_sr_preferences", [])
     postings: List[Dict] = payload.get("postings", [])
     weightages: Dict = payload.get("weightages", {})
 
@@ -253,6 +254,7 @@ def compute_postprocess(
         "residents": output_residents,
         "resident_history": output_history,
         "resident_preferences": resident_preferences,
+        "resident_sr_preferences": resident_sr_preferences,
         "postings": postings,
         "statistics": {
             "total_residents": len(residents),

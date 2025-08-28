@@ -4,6 +4,7 @@ export interface BaseApiResponse {
   residents: Resident[];
   resident_history: ResidentHistory[];
   resident_preferences: ResidentPreference[];
+  resident_sr_preferences: ResidentSrPreference[];
   postings: Posting[];
   statistics: Statistics;
   diagnostics?: Diagnostics;
@@ -51,6 +52,12 @@ export interface ResidentPreference {
   posting_code: string;
 }
 
+export interface ResidentSrPreference {
+  mcr: string;
+  preference_rank: number;
+  base_posting: string;
+}
+
 export interface Posting {
   posting_code: string;
   posting_name: string;
@@ -96,6 +103,7 @@ export interface CsvFilesState {
   residents: File | null;
   resident_history: File | null;
   resident_preferences: File | null;
+  resident_sr_preferences: File | null;
   postings: File | null;
 }
 

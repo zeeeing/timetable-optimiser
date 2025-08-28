@@ -10,12 +10,16 @@ interface WeightageSelectorProps {
     seniority: number;
     elective_shortfall_penalty: number;
     core_shortfall_penalty: number;
+    sr_preference: number;
+    sr_y2_not_selected_penalty: number;
   };
   setValue: (val: {
     preference: number;
     seniority: number;
     elective_shortfall_penalty: number;
     core_shortfall_penalty: number;
+    sr_preference: number;
+    sr_y2_not_selected_penalty: number;
   }) => void;
 }
 
@@ -30,6 +34,8 @@ const WeightageSelector: React.FC<WeightageSelectorProps> = ({
         | "seniority"
         | "elective_shortfall_penalty"
         | "core_shortfall_penalty"
+        | "sr_preference"
+        | "sr_y2_not_selected_penalty"
     ) =>
     (e: React.ChangeEvent<HTMLInputElement>) => {
       setValue({ ...value, [field]: Number(e.target.value) });
@@ -42,7 +48,7 @@ const WeightageSelector: React.FC<WeightageSelectorProps> = ({
         Adjust the weightages to determine how much weight the different factors
         can contribute and influence the optimal timetable solution.
       </p>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-3 md:grid-cols-6 gap-4 items-end">
         <div className="flex flex-col gap-2">
           <Label htmlFor="preference">
             Preference Satisfaction
@@ -62,6 +68,48 @@ const WeightageSelector: React.FC<WeightageSelectorProps> = ({
             type="number"
             value={value.preference}
             onChange={handleChange("preference")}
+          />
+        </div>
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="sr_preference">
+            SR Preference Satisfaction
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="cursor-pointer">
+                  <Info size={16} />
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="top">
+                Residents get more points for hitting higher-rank SR choices.
+              </TooltipContent>
+            </Tooltip>
+          </Label>
+          <Input
+            id="sr_preference"
+            type="number"
+            value={value.sr_preference}
+            onChange={handleChange("sr_preference")}
+          />
+        </div>
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="sr_y2_not_selected_penalty">
+            SR not given in Y2 Penalty
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="cursor-pointer">
+                  <Info size={16} />
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="top">
+                Applies a small penalty if a Y2 resident has no SR posting.
+              </TooltipContent>
+            </Tooltip>
+          </Label>
+          <Input
+            id="sr_y2_not_selected_penalty"
+            type="number"
+            value={value.sr_y2_not_selected_penalty}
+            onChange={handleChange("sr_y2_not_selected_penalty")}
           />
         </div>
         <div className="flex flex-col gap-2">

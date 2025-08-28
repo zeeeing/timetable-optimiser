@@ -100,7 +100,7 @@ const OverviewPage: React.FC = () => {
   };
 
   return (
-    <div className="max-w-7xl mx-auto bg-white rounded-xl shadow-md p-8 flex flex-col gap-6">
+    <div className="container mx-auto bg-white rounded-xl shadow-md p-8 flex flex-col gap-6">
       {!apiResponse && (
         <p className="text-center">Please generate a timetable first.</p>
       )}

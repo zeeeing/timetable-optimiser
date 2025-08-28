@@ -23,6 +23,7 @@ const HomePage: React.FC = () => {
     residents: null,
     resident_history: null,
     resident_preferences: null,
+    resident_sr_preferences: null,
     postings: null,
   });
   const [isProcessing, setIsProcessing] = useState(false);
@@ -32,9 +33,11 @@ const HomePage: React.FC = () => {
   );
   const [weightages, setWeightages] = useState({
     preference: 1,
-    seniority: 2,
+    seniority: 1,
     elective_shortfall_penalty: 10,
     core_shortfall_penalty: 10,
+    sr_preference: 5,
+    sr_y2_not_selected_penalty: 0,
   });
   const [pinnedMcrs, setPinnedMcrs] = useState<Set<string>>(() => {
     try {
@@ -73,6 +76,11 @@ const HomePage: React.FC = () => {
       formData.append("resident_history", csvFiles.resident_history);
     if (csvFiles.resident_preferences)
       formData.append("resident_preferences", csvFiles.resident_preferences);
+    if (csvFiles.resident_sr_preferences)
+      formData.append(
+        "resident_sr_preferences",
+        csvFiles.resident_sr_preferences
+      );
     if (csvFiles.postings) formData.append("postings", csvFiles.postings);
 
     // always include weightages and pinned residents
@@ -156,14 +164,10 @@ const HomePage: React.FC = () => {
   }, [selectedResidentMcr]);
 
   useEffect(() => {
-    localStorage.removeItem("selectedResidentMcr");
-  }, []);
-
-  useEffect(() => {
     try {
       localStorage.setItem(
         "pinnedMcrs",
-        JSON.stringify(Array.from(pinnedMcrs.values())) // convert set values to array, then stringify to be stored locally
+        JSON.stringify(Array.from(pinnedMcrs.values()))
       );
     } catch {}
   }, [pinnedMcrs]);
@@ -178,13 +182,13 @@ const HomePage: React.FC = () => {
   };
 
   return (
-    <div className="max-w-7xl mx-auto bg-white rounded-xl shadow-md p-8 flex flex-col gap-6">
+    <div className="container mx-auto bg-white rounded-xl shadow-md p-8 flex flex-col gap-6">
       <h1 className="text-2xl font-semibold text-center mb-6 text-gray-800">
         IM Residency Rostering Tool
       </h1>
 
       {/* Upload Section */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-6">
         <FileUpload
           label="Residents CSV"
           onChange={handleFileUpload("residents")}
@@ -196,6 +200,10 @@ const HomePage: React.FC = () => {
         <FileUpload
           label="Resident Preferences CSV"
           onChange={handleFileUpload("resident_preferences")}
+        />
+        <FileUpload
+          label="SR Preferences CSV"
+          onChange={handleFileUpload("resident_sr_preferences")}
         />
         <FileUpload
           label="Postings CSV"
@@ -215,6 +223,7 @@ const HomePage: React.FC = () => {
             (!apiResponse &&
               (!csvFiles.residents ||
                 !csvFiles.resident_preferences ||
+                !csvFiles.resident_sr_preferences ||
                 !csvFiles.resident_history ||
                 !csvFiles.postings))
           }

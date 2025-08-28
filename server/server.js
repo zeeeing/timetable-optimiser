@@ -29,6 +29,7 @@ app.post(
     { name: "residents", maxCount: 1 },
     { name: "resident_history", maxCount: 1 },
     { name: "resident_preferences", maxCount: 1 },
+    { name: "resident_sr_preferences", maxCount: 1 },
     { name: "postings", maxCount: 1 },
     { name: "weightages", maxCount: 1 },
     { name: "pinned_mcrs", maxCount: 1 },
@@ -88,6 +89,10 @@ app.post(
           resident_preferences:
             latest.resident_preferences ||
             (base && base.resident_preferences) ||
+            [],
+          resident_sr_preferences:
+            latest.resident_sr_preferences ||
+            (base && base.resident_sr_preferences) ||
             [],
           postings: latest.postings || (base && base.postings) || [],
           weightages,
@@ -160,6 +165,18 @@ app.post(
         skip_empty_lines: true,
       });
 
+      // optional SR preferences
+      const srPreferences = (() => {
+        try {
+          const f = req.files.resident_sr_preferences?.[0];
+          if (!f) return [];
+          const csv = f.buffer.toString("utf-8");
+          return parse(csv, { columns: true, skip_empty_lines: true });
+        } catch (_) {
+          return [];
+        }
+      })();
+
       const postingsCsv = req.files.postings[0].buffer.toString("utf-8");
       const postings = parse(postingsCsv, {
         columns: true,
@@ -189,6 +206,12 @@ app.post(
         posting_code: p.posting_code,
       }));
 
+      const residentSrPreferencesFormatted = srPreferences.map((p) => ({
+        mcr: p.mcr,
+        preference_rank: parseInt(p.preference_rank),
+        base_posting: p.base_posting,
+      }));
+
       const postingsFormatted = postings.map((q) => ({
         posting_code: q.posting_code,
         posting_name: q.posting_name,
@@ -201,6 +224,7 @@ app.post(
         residents: residentsFormatted,
         resident_history: residentHistoryFormatted,
         resident_preferences: residentPreferencesFormatted,
+        resident_sr_preferences: residentSrPreferencesFormatted,
         postings: postingsFormatted,
         weightages: weightages,
       };
@@ -396,6 +420,7 @@ app.post("/api/save", async (req, res) => {
       residents,
       resident_history: [...filteredHistory, ...newEntries],
       resident_preferences: base.resident_preferences || [],
+      resident_sr_preferences: base.resident_sr_preferences || [],
       postings: base.postings || [],
       weightages: base.weightages || {},
     };
