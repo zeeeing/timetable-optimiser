@@ -38,7 +38,7 @@ const CohortStatistics: React.FC<Props> = ({ residents, statistics }) => {
       </CardHeader>
 
       {/* histogram of optimisation scores */}
-      <CardContent className="flex flex-col md:flex-row justify-center items-center gap-6">
+      <CardContent>
         {/* <OptimisationScoreHistogram
           optimisationScores={mappedScores.map((r) => r.score)}
         /> */}

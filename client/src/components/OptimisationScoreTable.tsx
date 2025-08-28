@@ -29,7 +29,7 @@ const OptimisationScoreTable: React.FC<Props> = ({ scores }) => {
           <TableHeader>
             <TableRow>
               <TableHead>Resident</TableHead>
-              <TableHead>Optimisation Score</TableHead>
+              <TableHead className="text-center">Optimisation Score</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>

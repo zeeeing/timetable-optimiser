@@ -201,6 +201,12 @@ def is_unique_posting_completed(
     return blocks_completed >= required_blocks if required_blocks is not None else False
 
 
+def variants_for_base(base: str, posting_codes: List[Dict[str, Dict]]) -> List[str]:
+    if not base:
+        return []
+    return [p for p in posting_codes if p.split(" (")[0] == base]
+
+
 # constants
 CORE_REQUIREMENTS = {
     # total blocks required for each core posting

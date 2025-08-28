@@ -162,7 +162,7 @@ const PlanningOverviewTable: React.FC<PlanningOverviewTableProps> = ({
                       {residentPostings[resident.mcr][index + 1] || "-"}
                     </TableCell>
                   ))}
-                  <TableCell>
+                  <TableCell className="text-center">
                     {resident.ccr_status.posting_code ?? "-"}
                   </TableCell>
                 </TableRow>

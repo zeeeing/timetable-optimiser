@@ -82,6 +82,7 @@ const ResidentTimetable: React.FC<Props> = ({
   const {
     postingMap,
     preferenceMap,
+    srPreferenceMap,
     pastYearBlockPostings,
     initialCurrentYearBlockPostings,
     electiveCounts,
@@ -120,9 +121,16 @@ const ResidentTimetable: React.FC<Props> = ({
     }, {});
 
     const preferenceMap = (apiResponse?.resident_preferences ?? [])
-      .filter((p) => p.mcr === resident.mcr)
+      .filter((p) => p.mcr === resident.mcr && p.posting_code)
       .reduce<Record<number, string>>((m, p) => {
         m[p.preference_rank] = p.posting_code;
+        return m;
+      }, {});
+
+    const srPreferenceMap = (apiResponse?.resident_sr_preferences ?? [])
+      .filter((p) => p.mcr === resident.mcr && p.base_posting)
+      .reduce<Record<number, string>>((m, p) => {
+        m[p.preference_rank] = p.base_posting;
         return m;
       }, {});
 
@@ -147,6 +155,7 @@ const ResidentTimetable: React.FC<Props> = ({
     return {
       postingMap,
       preferenceMap,
+      srPreferenceMap,
       pastYearBlockPostings,
       initialCurrentYearBlockPostings,
       electiveCounts,
@@ -288,6 +297,10 @@ const ResidentTimetable: React.FC<Props> = ({
     setEditedBlocks(new Set());
   }, [initialCurrentYearBlockPostings]);
 
+  useEffect(() => {
+    console.log(srPreferenceMap);
+  }, [srPreferenceMap]);
+
   return (
     <Card className="bg-gray-50">
       {/* resident information */}
@@ -324,7 +337,7 @@ const ResidentTimetable: React.FC<Props> = ({
                 <div className="flex flex-col justify-center items-center text-center">
                   <p>
                     This score reflects how well this resident's timetable
-                    matches their preferences and program goals, normalised to
+                    matches their preferences and programme goals, normalised to
                     the top-performing resident in the cohort (100% = best score
                     achieved).
                   </p>
@@ -562,7 +575,7 @@ const ResidentTimetable: React.FC<Props> = ({
             <CardContent>
               <div className="flex justify-center mb-2">
                 <Badge variant="secondary" className="text-sm">
-                  Total Preferences:{" "}
+                  Total Elective Preferences:{" "}
                   {
                     Object.values(preferenceMap).filter(
                       (code) => code.trim() !== ""
@@ -573,7 +586,7 @@ const ResidentTimetable: React.FC<Props> = ({
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="text-center">Preference</TableHead>
+                    <TableHead className="text-center">Rank</TableHead>
                     <TableHead className="text-center">Elective Code</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -586,6 +599,42 @@ const ResidentTimetable: React.FC<Props> = ({
                       </TableCell>
                     </TableRow>
                   ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+
+          {/* SR base preferences */}
+          <Card>
+            <CardContent>
+              <div className="flex justify-center mb-2">
+                <Badge variant="secondary" className="text-sm">
+                  Total SR Preferences:{" "}
+                  {
+                    (Object.values(srPreferenceMap) as string[]).filter(
+                      (base) => base.trim() !== ""
+                    ).length
+                  }
+                </Badge>
+              </div>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="text-center">Rank</TableHead>
+                    <TableHead className="text-center">Department</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {(Object.entries(srPreferenceMap) as [string, string][]).map(
+                    ([rank, base]) => (
+                      <TableRow key={rank}>
+                        <TableCell className="text-center">{rank}</TableCell>
+                        <TableCell className="text-center">
+                          {base && base.length > 0 ? base : "-"}
+                        </TableCell>
+                      </TableRow>
+                    )
+                  )}
                 </TableBody>
               </Table>
             </CardContent>

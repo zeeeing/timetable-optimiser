@@ -1,5 +1,7 @@
 import sys, json, os
 from typing import List, Dict, Optional
+import logging
+
 from ortools.sat.python import cp_model
 
 # prepend the base directory to sys.path
@@ -13,10 +15,10 @@ from utils import (
     get_core_blocks_completed,
     get_unique_electives_completed,
     to_snake_case,
+    variants_for_base,
     CORE_REQUIREMENTS,
     CCR_POSTINGS,
 )
-import logging
 from postprocess import compute_postprocess
 
 
@@ -24,6 +26,7 @@ def allocate_timetable(
     residents: List[Dict],
     resident_history: List[Dict],
     resident_preferences: List[Dict],
+    resident_sr_preferences: List[Dict],
     postings: List[Dict],
     weightages: Dict,
     pinned_assignments: Optional[Dict[str, List[Dict]]] = None,
@@ -84,13 +87,21 @@ def allocate_timetable(
             pref_map[mcr] = {}
         pref_map[mcr][pref["preference_rank"]] = pref["posting_code"]
 
-    # 5. get completed postings for each resident
+    # 5. create map of resident mcr to their SR base-code preferences (ranks 1..3)
+    sr_pref_map = {}
+    for pref in resident_sr_preferences:
+        mcr = pref["mcr"]
+        if mcr not in sr_pref_map:
+            sr_pref_map[mcr] = {}
+        sr_pref_map[mcr][pref["preference_rank"]] = pref["base_posting"]
+
+    # 6. get completed postings for each resident
     completed_postings_map = get_completed_postings(resident_history, posting_info)
 
-    # 6. get posting progress for each resident
+    # 7. get posting progress for each resident
     posting_progress = get_posting_progress(resident_history, posting_info)
 
-    # 7.
+    # 8. create lists of ED, GRM, GM postings
     ED_codes = [p for p in posting_codes if p.startswith("ED")]
     GRM_codes = [p for p in posting_codes if p.startswith("GRM")]
     GM_codes = [p for p in posting_codes if p.startswith("GM")]
@@ -403,7 +414,7 @@ def allocate_timetable(
 
     # Hard Constraint 11: GM capped at 3 blocks in Year 1
     gm_ktph_bonus_terms = []
-    gm_ktph_bonus_weight = weightages.get("gm_ktph_bonus", 2)
+    gm_ktph_bonus_weight = 1
 
     for resident in residents:
         mcr = resident["mcr"]
@@ -537,6 +548,36 @@ def allocate_timetable(
                 if rccm_count < CORE_REQUIREMENTS.get("RCCM", 3):
                     model.Add(rccm_blocks >= 1)
 
+    # Hard Constraint 16: Ban SR posting allocation in the last 3 months of Y3
+    for resident in residents:
+        mcr = resident["mcr"]
+        year = resident["resident_year"]
+        sr_prefs = sr_pref_map.get(mcr, {})
+        if not sr_prefs:
+            continue
+
+        # get all base variants
+        sr_variants = set()
+        for _, base in sr_prefs.items():
+            for p in variants_for_base(base, posting_codes):
+                sr_variants.add(p)
+        sr_variants = list(sr_variants)
+        if not sr_variants:
+            continue
+
+        # Build per-block SR indicator
+        Y = []
+        for b in blocks:
+            yb = model.NewBoolVar(f"{mcr}_SR_at_block_{b}")
+            model.Add(sum(x[mcr][p][b] for p in sr_variants) == yb)
+            Y.append(yb)
+
+        # Ban last 3 blocks of Year 3 for SR
+        if year == 3:
+            for b in [10, 11, 12]:
+                if b in blocks:
+                    model.Add(Y[b - 1] == 0)
+
     ###########################################################################
     # DEFINE SOFT CONSTRAINTS WITH PENALTIES
     ###########################################################################
@@ -642,6 +683,109 @@ def allocate_timetable(
             else:
                 model.Add(hist_done + assigned + slack == req)
 
+    # Hybrid Constraint: SR preference (bonus and timing penalties)
+    # Year 3: exactly one SR required, big out-of-window penalty if not in blocks 1–6.
+    # Year 2: optional with small penalty if none; still at most one SR; big out-of-window penalty if not in blocks 7–12.
+    # Year 1: no SR allowed.
+    sr_preference_bonus_terms = []
+    sr_preference_bonus_weight = weightages.get("sr_preference", 5)
+
+    sr_not_selected_y2_penalty_terms = []
+    sr_not_selected_y2_penalty_weight = weightages.get("sr_y2_not_selected_penalty", 0)
+
+    sr_out_of_window_penalty_terms = []
+    sr_out_of_window_penalty_weight = 999
+
+    for resident in residents:
+        mcr = resident["mcr"]
+        year = resident["resident_year"]
+        sr_prefs = sr_pref_map.get(mcr, {})
+        if not sr_prefs:
+            continue
+
+        # get all base variants
+        sr_variants = set()
+        for _, base in sr_prefs.items():
+            for p in variants_for_base(base, posting_codes):
+                sr_variants.add(p)
+        sr_variants = list(sr_variants)
+        if not sr_variants:
+            continue
+
+        # SR selection count and selection flag
+        sr_count = sum(selection_flags[mcr][p] for p in sr_variants)
+        has_sr = model.NewBoolVar(f"{mcr}_has_sr")
+
+        model.Add(sr_count == 1).OnlyEnforceIf(has_sr)
+        model.Add(sr_count == 0).OnlyEnforceIf(has_sr.Not())
+
+        if year == 3:
+            # exactly one SR in Year 3
+            model.Add(sr_count == 1)
+        elif year == 2:
+            # at most one SR in Year 2; with small penalty if not selected
+            model.Add(sr_count <= 1)
+            # sr_not_selected_y2_penalty_terms.append(
+            #     sr_not_selected_y2_penalty_weight * (1 - has_sr)
+            # )
+        else:
+            # do not allow SR selection for all other years (i.e., year 1)
+            model.Add(sr_count == 0)
+
+        # SR preference bonus
+        for rank, base in sr_prefs.items():
+            if not base:
+                continue
+            base_vars = variants_for_base(base, posting_codes)
+            if not base_vars:
+                continue
+
+            flag = model.NewBoolVar(f"{mcr}_sr_base_{to_snake_case(base)}_selected")
+
+            model.Add(
+                sum(selection_flags[mcr][p] for p in base_vars) == 1
+            ).OnlyEnforceIf(flag)
+            model.Add(
+                sum(selection_flags[mcr][p] for p in base_vars) == 0
+            ).OnlyEnforceIf(flag.Not())
+
+            w = sr_preference_bonus_weight * (4 - rank)
+            sr_preference_bonus_terms.append(w * flag)
+
+        # huge penalisation if SR assigned outside the allowed window
+        if year in (2, 3):
+            # block-wise SR indicator
+            Y = []
+            for b in blocks:
+                yb = model.NewBoolVar(f"{mcr}_SR_at_block_{b}")
+                model.Add(sum(x[mcr][p][b] for p in sr_variants) == yb)
+                Y.append(yb)
+
+            # define the disallowed indices
+            if year == 2:
+                disallowed_idx = [b - 1 for b in blocks if b <= 6]
+            elif year == 3:
+                disallowed_idx = [b - 1 for b in blocks if b >= 7]
+
+            # detect if any SR assigned in disallowed window
+            sr_in_disallowed = model.NewBoolVar(f"{mcr}_sr_in_disallowed")
+            model.Add(sum(Y[i] for i in disallowed_idx) > 0).OnlyEnforceIf(
+                sr_in_disallowed
+            )
+            model.Add(sum(Y[i] for i in disallowed_idx) == 0).OnlyEnforceIf(
+                sr_in_disallowed.Not()
+            )
+
+            # penalise if they have SR and it is in disallowed window
+            sr_penalty_flag = model.NewBoolVar(f"{mcr}_sr_out_of_window")
+            model.Add(sr_penalty_flag <= has_sr)
+            model.Add(sr_penalty_flag <= sr_in_disallowed)
+            model.Add(sr_penalty_flag >= has_sr + sr_in_disallowed - 1)
+
+            sr_out_of_window_penalty_terms.append(
+                sr_out_of_window_penalty_weight * sr_penalty_flag
+            )
+
     ###########################################################################
     # DEFINE BONUSES, PENALTIES AND OBJECTIVE
     ###########################################################################
@@ -652,7 +796,7 @@ def allocate_timetable(
     GM_codes = [p for p in posting_codes if p.startswith("GM")]
 
     three_gm_bonus_terms = []
-    three_gm_bonus_weight = weightages.get("three_gm_bonus", 5)
+    three_gm_bonus_weight = 1
 
     for resident in residents:
         mcr = resident["mcr"]
@@ -702,11 +846,11 @@ def allocate_timetable(
 
     # seniority bonus
     seniority_bonus_terms = []
-    seniority_bonus_weight = weightages.get("seniority", 2)
+    seniority_bonus_weight = weightages.get("seniority", 1)
 
     for resident in residents:
         mcr = resident["mcr"]
-        resident_year = resident.get("resident_year", 1)
+        resident_year = resident["resident_year"]
         for p in posting_codes:
             for b in blocks:
                 seniority_bonus_terms.append(
@@ -743,7 +887,7 @@ def allocate_timetable(
 
     # DEBUG: OFF penalty (discourage empty blocks)
     off_penalty_terms = []
-    off_penalty_weight = weightages.get("off_penalty", 10000)
+    off_penalty_weight = 10000
     for resident in residents:
         mcr = resident["mcr"]
         for b in blocks:
@@ -751,14 +895,17 @@ def allocate_timetable(
 
     # Objective
     model.Maximize(
-        sum(gm_ktph_bonus_terms)
-        + sum(three_gm_bonus_terms)
+        sum(gm_ktph_bonus_terms)  # static
+        + sum(sr_preference_bonus_terms)
+        - sum(sr_not_selected_y2_penalty_terms)
+        - sum(sr_out_of_window_penalty_terms)  # static
+        + sum(three_gm_bonus_terms)  # static
         + sum(preference_bonus_terms)
         + sum(seniority_bonus_terms)
         - sum(elective_shortfall_penalty_terms)
         - sum(core_shortfall_penalty_terms)
-        + sum(core_bonus_terms)
-        - sum(off_penalty_terms)
+        + sum(core_bonus_terms)  # static
+        - sum(off_penalty_terms)  # static
     )
 
     ###########################################################################
@@ -831,6 +978,7 @@ def allocate_timetable(
             "residents": residents,
             "resident_history": output_history,
             "resident_preferences": resident_preferences,
+            "resident_sr_preferences": resident_sr_preferences,
             "postings": postings,
             "weightages": weightages,
         }
@@ -864,6 +1012,7 @@ def main():
             residents=input_data["residents"],
             resident_history=input_data["resident_history"],
             resident_preferences=input_data["resident_preferences"],
+            resident_sr_preferences=input_data.get("resident_sr_preferences"),
             postings=input_data["postings"],
             weightages=input_data["weightages"],
             pinned_assignments=input_data.get("pinned_assignments", {}),

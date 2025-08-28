@@ -23,6 +23,7 @@ const HomePage: React.FC = () => {
     residents: null,
     resident_history: null,
     resident_preferences: null,
+    resident_sr_preferences: null,
     postings: null,
   });
   const [isProcessing, setIsProcessing] = useState(false);
@@ -32,9 +33,11 @@ const HomePage: React.FC = () => {
   );
   const [weightages, setWeightages] = useState({
     preference: 1,
-    seniority: 2,
+    seniority: 1,
     elective_shortfall_penalty: 10,
     core_shortfall_penalty: 10,
+    sr_preference: 5,
+    sr_y2_not_selected_penalty: 0,
   });
   const [pinnedMcrs, setPinnedMcrs] = useState<Set<string>>(() => {
     try {
@@ -73,6 +76,11 @@ const HomePage: React.FC = () => {
       formData.append("resident_history", csvFiles.resident_history);
     if (csvFiles.resident_preferences)
       formData.append("resident_preferences", csvFiles.resident_preferences);
+    if (csvFiles.resident_sr_preferences)
+      formData.append(
+        "resident_sr_preferences",
+        csvFiles.resident_sr_preferences
+      );
     if (csvFiles.postings) formData.append("postings", csvFiles.postings);
 
     // always include weightages and pinned residents
@@ -155,7 +163,6 @@ const HomePage: React.FC = () => {
       localStorage.setItem("selectedResidentMcr", selectedResidentMcr);
   }, [selectedResidentMcr]);
 
-
   useEffect(() => {
     try {
       localStorage.setItem(
@@ -181,7 +188,7 @@ const HomePage: React.FC = () => {
       </h1>
 
       {/* Upload Section */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-6">
         <FileUpload
           label="Residents CSV"
           onChange={handleFileUpload("residents")}
@@ -193,6 +200,10 @@ const HomePage: React.FC = () => {
         <FileUpload
           label="Resident Preferences CSV"
           onChange={handleFileUpload("resident_preferences")}
+        />
+        <FileUpload
+          label="SR Preferences CSV"
+          onChange={handleFileUpload("resident_sr_preferences")}
         />
         <FileUpload
           label="Postings CSV"
@@ -212,6 +223,7 @@ const HomePage: React.FC = () => {
             (!apiResponse &&
               (!csvFiles.residents ||
                 !csvFiles.resident_preferences ||
+                !csvFiles.resident_sr_preferences ||
                 !csvFiles.resident_history ||
                 !csvFiles.postings))
           }
