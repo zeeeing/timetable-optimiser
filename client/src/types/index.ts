@@ -1,5 +1,5 @@
 // api response types
-export interface BaseApiResponse {
+export interface ApiResponse {
   success: boolean;
   residents: Resident[];
   resident_history: ResidentHistory[];
@@ -8,14 +8,6 @@ export interface BaseApiResponse {
   postings: Posting[];
   statistics: Statistics;
   diagnostics?: Diagnostics;
-}
-export interface ApiResponse extends BaseApiResponse {
-  solutions?: SolutionEntry[]; // multi-solution support
-}
-
-export interface SolutionEntry {
-  objective: number | null;
-  result: BaseApiResponse; // a full single-solution payload
 }
 
 export interface Resident {
@@ -44,6 +36,8 @@ export interface ResidentHistory {
   block: number;
   posting_code: string;
   is_current_year: boolean;
+  is_leave: boolean;
+  leave_type: string | "";
 }
 
 export interface ResidentPreference {
@@ -105,6 +99,7 @@ export interface CsvFilesState {
   resident_preferences: File | null;
   resident_sr_preferences: File | null;
   postings: File | null;
+  resident_leaves?: File | null;
 }
 
 // generation of sample csv

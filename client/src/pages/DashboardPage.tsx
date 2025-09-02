@@ -25,6 +25,7 @@ const HomePage: React.FC = () => {
     resident_preferences: null,
     resident_sr_preferences: null,
     postings: null,
+    resident_leaves: null,
   });
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -56,7 +57,7 @@ const HomePage: React.FC = () => {
       const file = e.target.files?.[0];
       if (!file) return;
       if (!file.name.endsWith(".csv")) {
-        setError("Please upload a CSV file");
+        setError("Please upload a CSV file.");
         return;
       }
       setCsvFiles((prev) => ({ ...prev, [fileType]: file }));
@@ -72,36 +73,27 @@ const HomePage: React.FC = () => {
 
     // if CSVs present, always include them, else omit
     if (csvFiles.residents) formData.append("residents", csvFiles.residents);
-    if (csvFiles.resident_history)
-      formData.append("resident_history", csvFiles.resident_history);
-    if (csvFiles.resident_preferences)
-      formData.append("resident_preferences", csvFiles.resident_preferences);
-    if (csvFiles.resident_sr_preferences)
-      formData.append(
-        "resident_sr_preferences",
-        csvFiles.resident_sr_preferences
-      );
+    if (csvFiles.resident_history) formData.append("resident_history", csvFiles.resident_history);
+    if (csvFiles.resident_preferences) formData.append("resident_preferences", csvFiles.resident_preferences);
+    if (csvFiles.resident_sr_preferences) formData.append("resident_sr_preferences", csvFiles.resident_sr_preferences);
     if (csvFiles.postings) formData.append("postings", csvFiles.postings);
-
-    // always include weightages and pinned residents
+    if (csvFiles.resident_leaves) formData.append("resident_leaves", csvFiles.resident_leaves);
+    // include weightages and pinned residents
     formData.append("weightages", JSON.stringify(weightages));
-    formData.append(
-      "pinned_mcrs",
-      JSON.stringify(Array.from(pinnedMcrs.values()))
-    );
+    formData.append("pinned_mcrs", JSON.stringify(Array.from(pinnedMcrs.values())));
 
     try {
       const json: ApiResponse = await uploadCsv(formData);
       if (json.success && json.residents) {
         setApiResponse(json);
       } else {
-        throw new Error("Failed to retrieve api response");
+        throw new Error("Failed to retrieve api response.");
       }
     } catch (err: unknown) {
       if (err instanceof Error) {
         setError(err.message);
       } else {
-        setError("An unknown error occurred");
+        setError("An unknown error occurred.");
       }
     } finally {
       setIsProcessing(false);
@@ -188,7 +180,7 @@ const HomePage: React.FC = () => {
       </h1>
 
       {/* Upload Section */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-6">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-6">
         <FileUpload
           label="Residents CSV"
           onChange={handleFileUpload("residents")}
@@ -208,6 +200,10 @@ const HomePage: React.FC = () => {
         <FileUpload
           label="Postings CSV"
           onChange={handleFileUpload("postings")}
+        />
+        <FileUpload
+          label="Leave CSV (columns: mcr, block, leave_type, posting_code)"
+          onChange={handleFileUpload("resident_leaves")}
         />
       </div>
 
@@ -250,7 +246,7 @@ const HomePage: React.FC = () => {
       </div>
 
       {/* Error Message */}
-      {error && <ErrorAlert message={error} />}
+      {error && <ErrorAlert message={error} variantType={"destructive"} />}
 
       {/* Timetable Results */}
       {apiResponse && (

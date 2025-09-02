@@ -32,6 +32,7 @@ app.post(
     { name: "resident_sr_preferences", maxCount: 1 },
     { name: "postings", maxCount: 1 },
     { name: "weightages", maxCount: 1 },
+    { name: "resident_leaves", maxCount: 1 },
     { name: "pinned_mcrs", maxCount: 1 },
   ]),
   async (req, res) => {
@@ -96,6 +97,8 @@ app.post(
             [],
           postings: latest.postings || (base && base.postings) || [],
           weightages,
+          resident_leaves:
+            latest.resident_leaves || (base && base.resident_leaves) || [],
           pinned_assignments,
         };
 
@@ -165,7 +168,6 @@ app.post(
         skip_empty_lines: true,
       });
 
-      // SR preferences
       const srPreferences = (() => {
         try {
           const f = req.files.resident_sr_preferences?.[0];
@@ -183,7 +185,17 @@ app.post(
         skip_empty_lines: true,
       });
 
-      // get weightages from request body
+      const residentLeaves = (() => {
+        try {
+          const f = req.files.resident_leaves?.[0];
+          if (!f) return [];
+          const csv = f.buffer.toString("utf-8");
+          return parse(csv, { columns: true, skip_empty_lines: true });
+        } catch (_) {
+          return [];
+        }
+      })();
+
       const weightages = JSON.parse(req.body.weightages);
 
       // format parsed files
@@ -193,12 +205,16 @@ app.post(
         resident_year: parseInt(r.resident_year),
       }));
 
-      const residentHistoryFormatted = residentHistory.map((h) => ({
-        mcr: h.mcr,
-        year: parseInt(h.year),
-        block: parseInt(h.block),
-        posting_code: h.posting_code,
-      }));
+      const residentHistoryFormatted = residentHistory.map((h) => {
+        return {
+          mcr: String(h.mcr).trim(),
+          year: parseInt(h.year),
+          block: parseInt(h.block),
+          posting_code: String(h.posting_code).trim(),
+          is_leave: Boolean(h.is_leave),
+          leave_type: String(h.leave_type).trim() || "",
+        };
+      });
 
       const residentPreferencesFormatted = residentPreferences.map((p) => ({
         mcr: p.mcr,
@@ -220,6 +236,15 @@ app.post(
         required_block_duration: parseInt(q.required_block_duration),
       }));
 
+      const residentLeavesFormatted = residentLeaves.map((a) => {
+        return {
+          mcr: String(a.mcr).trim(),
+          block: parseInt(a.block),
+          leave_type: String(a.leave_type) || "",
+          posting_code: String(a.posting_code).trim(),
+        };
+      });
+
       const inputData = {
         residents: residentsFormatted,
         resident_history: residentHistoryFormatted,
@@ -227,6 +252,7 @@ app.post(
         resident_sr_preferences: residentSrPreferencesFormatted,
         postings: postingsFormatted,
         weightages: weightages,
+        resident_leaves: residentLeavesFormatted,
       };
 
       // cache the latest uploaded inputs for subsequent operations

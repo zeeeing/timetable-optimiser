@@ -135,7 +135,10 @@ const ResidentTimetable: React.FC<Props> = ({
       }, {});
 
     const electiveCounts = allHistory
-      .filter((h) => postingMap[h.posting_code]?.posting_type === "elective")
+      .filter(
+        (h) =>
+          postingMap[h.posting_code]?.posting_type === "elective" && !h.is_leave
+      )
       .reduce<Record<string, number>>((acc, h) => {
         acc[h.posting_code] = (acc[h.posting_code] ?? 0) + 1;
         return acc;
@@ -229,13 +232,20 @@ const ResidentTimetable: React.FC<Props> = ({
         Object.values(initialCurrentYearBlockPostings)[0]?.year ||
         0;
       updated[blockNumber] = existing
-        ? { ...existing, posting_code: newPostingCode }
+        ? {
+            ...existing,
+            posting_code: newPostingCode,
+            is_leave: false,
+            leave_type: "",
+          }
         : {
             mcr: resident.mcr,
             year: inferredYear,
             block: blockNumber,
             posting_code: newPostingCode,
             is_current_year: true,
+            is_leave: false,
+            leave_type: "",
           };
 
       // recompute edited blocks vs baseline snapshot
@@ -405,37 +415,58 @@ const ResidentTimetable: React.FC<Props> = ({
                         </TableCell>
                         {monthLabels.map((month, index) => {
                           const blockNumber = index + 1;
-                          const assignment = yearPostings[blockNumber];
-                          const posting = assignment
-                            ? postingMap[assignment.posting_code]
+                          const postingAssignment = yearPostings[blockNumber];
+                          const posting = postingAssignment
+                            ? postingMap[postingAssignment.posting_code]
                             : null;
+
+                          const code = posting?.posting_code;
+                          const isLeave = postingAssignment?.is_leave;
+                          const leaveType = postingAssignment?.leave_type;
+
+                          const displayCode = isLeave
+                            ? leaveType && code
+                              ? `${code} (${leaveType})`
+                              : leaveType
+                            : code;
+
+                          const badgeClass =
+                            posting?.posting_code &&
+                            CCR_POSTINGS.includes(posting.posting_code)
+                              ? "bg-purple-100 text-purple-800"
+                              : posting?.posting_type === "core"
+                              ? "bg-orange-100 text-orange-800"
+                              : "bg-green-100 text-green-800";
 
                           return (
                             <TableCell key={month} className="text-center">
-                              {assignment ? (
+                              {postingAssignment ? (
                                 <div className="space-y-1">
                                   <div className="font-medium text-sm text-gray-600">
-                                    {assignment.posting_code}
+                                    {displayCode}
                                   </div>
-                                  <Badge
-                                    className={`${
-                                      posting?.posting_code &&
+                                  {posting && (
+                                    <Badge
+                                      className={badgeClass}
+                                      variant="outline"
+                                    >
+                                      {posting?.posting_code &&
                                       CCR_POSTINGS.includes(
                                         posting.posting_code
                                       )
-                                        ? "bg-purple-100 text-purple-800"
-                                        : posting?.posting_type === "core"
-                                        ? "bg-orange-100 text-orange-800"
-                                        : "bg-green-100 text-green-800"
-                                    }`}
-                                    variant="outline"
-                                  >
-                                    {posting?.posting_code &&
-                                    CCR_POSTINGS.includes(posting.posting_code)
-                                      ? "CCR"
-                                      : posting?.posting_type.toUpperCase() ||
-                                        ""}
-                                  </Badge>
+                                        ? "CCR"
+                                        : posting?.posting_type.toUpperCase() ||
+                                          ""}
+                                    </Badge>
+                                  )}
+                                  {isLeave && (
+                                    <Badge
+                                      variant="secondary"
+                                      className="bg-gray-200 text-gray-700"
+                                    >
+                                      {leaveType}
+                                    </Badge>
+                                  )}
                                 </div>
                               ) : (
                                 <span className="text-gray-300 text-sm">-</span>

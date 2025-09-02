@@ -108,6 +108,11 @@ export function generateSampleCSV(): void {
     { posting_code: "GM (WH)", posting_name: "General Medicine (WH)", posting_type: "CCR", max_residents: 3, required_block_duration: 3 },
   ];
 
+  const otherAssignments: CsvRow[] = [
+    { mcr: "M000001A", block: 5, leave_type: "LOA", posting_code: "GM (TTSH)" },
+    { mcr: "M000002A", block: 9, leave_type: "NS", posting_code: "" },
+  ];
+
   // convert object arrays to CSV string
   const toCsv = (data: CsvRow[]): string => {
     if (data.length === 0) return "";
@@ -124,6 +129,7 @@ export function generateSampleCSV(): void {
     { filename: "sample_resident_preferences.csv", content: toCsv(residentPreferences) },
     { filename: "sample_resident_sr_preferences.csv", content: toCsv(residentSrPreferences) },
     { filename: "sample_postings.csv", content: toCsv(postings) },
+    { filename: "sample_leave.csv", content: toCsv(otherAssignments) },
   ];
 
   // trigger downloads

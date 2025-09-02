@@ -54,7 +54,16 @@ const PlanningOverviewTable: React.FC<PlanningOverviewTableProps> = ({
   // fill in postings for each resident and block
   currentYearHistory.forEach((history) => {
     if (residentPostings[history.mcr]) {
-      residentPostings[history.mcr][history.block] = history.posting_code;
+      const code = history.posting_code;
+      const isLeave = history.is_leave;
+      const leaveType = history.leave_type;
+
+      const display = isLeave
+        ? leaveType && code
+          ? `${leaveType} (${code})`
+          : leaveType
+        : code;
+      residentPostings[history.mcr][history.block] = display as string;
     }
   });
 

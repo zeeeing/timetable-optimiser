@@ -176,9 +176,12 @@ def parse_resident_history(resident_history: List[Dict]) -> Dict[str, Dict[str, 
     """
     history_map = {}
     for hist in resident_history:
-        mcr = hist["mcr"]
-        posting_code = hist["posting_code"]
+        # ignore leave rows
+        posting_code = hist.get("posting_code")
+        if hist.get("is_leave"):
+            continue
 
+        mcr = hist["mcr"]
         if mcr not in history_map:
             history_map[mcr] = {}
 

@@ -29,6 +29,7 @@ def allocate_timetable(
     resident_sr_preferences: List[Dict],
     postings: List[Dict],
     weightages: Dict,
+    resident_leaves: Optional[List[Dict]] = None,
     pinned_assignments: Optional[Dict[str, List[Dict]]] = None,
 ) -> Dict:
 
@@ -95,13 +96,18 @@ def allocate_timetable(
             sr_pref_map[mcr] = {}
         sr_pref_map[mcr][pref["preference_rank"]] = pref["base_posting"]
 
-    # 6. get completed postings for each resident
-    completed_postings_map = get_completed_postings(resident_history, posting_info)
+    # 6. Filter out leave rows from historical credit-bearing calculations
+    credit_history = [
+        h for h in resident_history if not (h.get("is_leave") or h.get("leave_type"))
+    ]
 
-    # 7. get posting progress for each resident
-    posting_progress = get_posting_progress(resident_history, posting_info)
+    # 7. get completed postings for each resident (excluding leave rows)
+    completed_postings_map = get_completed_postings(credit_history, posting_info)
 
-    # 8. create lists of ED, GRM, GM postings
+    # 8. get posting progress for each resident (excluding leave rows)
+    posting_progress = get_posting_progress(credit_history, posting_info)
+
+    # 9. create lists of ED, GRM, GM postings
     ED_codes = [p for p in posting_codes if p.startswith("ED")]
     GRM_codes = [p for p in posting_codes if p.startswith("GRM")]
     GM_codes = [p for p in posting_codes if p.startswith("GM")]
@@ -154,11 +160,20 @@ def allocate_timetable(
             model.Add(count >= 1).OnlyEnforceIf(flag)
             model.Add(count == 0).OnlyEnforceIf(flag.Not())
 
+    # DEBUG: define per-block slack (OFF) variables
+    off = {}
+    for resident in residents:
+        mcr = resident["mcr"]
+        off[mcr] = {}
+        for b in blocks:
+            off[mcr][b] = model.NewBoolVar(f"{mcr}_OFF_{b}")
+
     # pinned residents: force exact block/posting for selected residents
-    _pins = pinned_assignments or {}
-    if _pins:
-        logger.info("Applying pinned assignments for %d residents", len(_pins))
-        for mcr, entries in _pins.items():
+    if pinned_assignments:
+        logger.info(
+            "Applying pinned assignments for %d residents", len(pinned_assignments)
+        )
+        for mcr, entries in pinned_assignments.items():
             try:
                 for entry in entries or []:
                     b = int(entry.get("block"))
@@ -169,13 +184,42 @@ def allocate_timetable(
             except Exception as e:
                 logger.warning("Failed to apply pins for %s: %s", mcr, e)
 
-    # DEBUG: define per-block slack (OFF) variables to enable ExactlyOne feasibility
-    off = {}
-    for resident in residents:
-        mcr = resident["mcr"]
-        off[mcr] = {}
-        for b in blocks:
-            off[mcr][b] = model.NewBoolVar(f"{mcr}_OFF_{b}")
+    # resident leaves
+    leave_map: Dict[str, Dict[int, Dict]] = {}
+    if resident_leaves:
+        logger.info("Applying leave assignments: %d entries", len(resident_leaves))
+        for leave in resident_leaves:
+            try:
+                mcr = leave.get("mcr")
+                b = int(leave.get("block"))
+                p = leave.get("posting_code")
+                leave_type = (leave.get("leave_type", "")).strip()
+
+                if not mcr or b not in blocks:
+                    continue
+
+                leave_map.setdefault(mcr, {})[b] = {
+                    "leave_type": leave_type,
+                    "posting_code": p,
+                }
+
+                # if posting_code provided, pin to that posting
+                if p and p in posting_info:
+                    model.Add(x[mcr][p][b] == 1)
+                # if leave_type indicates a blocked-out month (NS/LOA), force OFF at that block
+                # allow optimiser to assign no postings to that specific block
+                else:
+                    blocked_leaves = {"loa", "ns"}
+                    if leave_type.lower() in blocked_leaves:
+                        model.Add(off[mcr][b] == 1)
+            except Exception as e:
+                logger.warning("Failed to apply leave: %s", e)
+
+    # Convenience: set of leave blocks per resident (used to avoid counting leave toward requirements)
+    leave_blocks_by_mcr: Dict[str, set] = {
+        mcr: {b for b, meta in bmap.items() if (meta.get("leave_type", "")).strip()}
+        for mcr, bmap in leave_map.items()
+    }
 
     ###########################################################################
     # DEFINE HARD CONSTRAINTS
@@ -268,6 +312,7 @@ def allocate_timetable(
                 for p in posting_codes
                 if p.split(" (")[0] == base_posting
                 for b in blocks
+                if b not in leave_blocks_by_mcr.get(mcr, set())
             )
 
             if blocks_completed >= required_blocks:
@@ -425,6 +470,7 @@ def allocate_timetable(
                 for p in posting_codes
                 if p.split(" (")[0] == "GM"
                 for b in blocks
+                if b not in leave_blocks_by_mcr.get(mcr, set())
             )
 
             # ensure GM postings are capped at 3 blocks
@@ -506,12 +552,14 @@ def allocate_timetable(
             for p in posting_codes
             if p.startswith("MICU (")
             for b in blocks
+            if b not in leave_blocks_by_mcr.get(mcr, set())
         )
         rccm_blocks = sum(
             x[mcr][p][b]
             for p in posting_codes
             if p.startswith("RCCM (")
             for b in blocks
+            if b not in leave_blocks_by_mcr.get(mcr, set())
         )
 
         # count completed MICU/RCCM blocks historically
@@ -688,13 +736,13 @@ def allocate_timetable(
     # Year 2: optional with small penalty if none; still at most one SR; big out-of-window penalty if not in blocks 7–12.
     # Year 1: no SR allowed.
     sr_preference_bonus_terms = []
-    sr_preference_bonus_weight = weightages.get("sr_preference", 5)
+    sr_preference_bonus_weight = weightages.get("sr_preference")
 
     sr_not_selected_y2_penalty_terms = []
-    sr_not_selected_y2_penalty_weight = weightages.get("sr_y2_not_selected_penalty", 0)
+    sr_not_selected_y2_penalty_weight = weightages.get("sr_y2_not_selected_penalty")
 
     sr_out_of_window_penalty_terms = []
-    sr_out_of_window_penalty_weight = 999
+    sr_out_of_window_penalty_weight = 999  # extreme penalty
 
     for resident in residents:
         mcr = resident["mcr"]
@@ -725,9 +773,9 @@ def allocate_timetable(
         elif year == 2:
             # at most one SR in Year 2; with small penalty if not selected
             model.Add(sr_count <= 1)
-            # sr_not_selected_y2_penalty_terms.append(
-            #     sr_not_selected_y2_penalty_weight * (1 - has_sr)
-            # )
+            sr_not_selected_y2_penalty_terms.append(
+                sr_not_selected_y2_penalty_weight * (1 - has_sr)
+            )
         else:
             # do not allow SR selection for all other years (i.e., year 1)
             model.Add(sr_count == 0)
@@ -834,7 +882,7 @@ def allocate_timetable(
 
     # preference bonus
     preference_bonus_terms = []
-    preference_bonus_weight = weightages.get("preference", 1)
+    preference_bonus_weight = weightages.get("preference")
 
     for resident in residents:
         mcr = resident["mcr"]
@@ -846,7 +894,7 @@ def allocate_timetable(
 
     # seniority bonus
     seniority_bonus_terms = []
-    seniority_bonus_weight = weightages.get("seniority", 1)
+    seniority_bonus_weight = weightages.get("seniority")
 
     for resident in residents:
         mcr = resident["mcr"]
@@ -859,7 +907,7 @@ def allocate_timetable(
 
     # elective shortfall penalty
     elective_shortfall_penalty_terms = []
-    elective_shortfall_penalty_weight = weightages.get("elective_shortfall_penalty", 10)
+    elective_shortfall_penalty_weight = weightages.get("elective_shortfall_penalty")
 
     for mcr in elective_shortfall_penalty_flags:
         elective_shortfall_penalty_terms.append(
@@ -868,7 +916,7 @@ def allocate_timetable(
 
     # core shortfall penalty
     core_shortfall_penalty_terms = []
-    core_shortfall_penalty_weight = weightages.get("core_shortfall_penalty", 10)
+    core_shortfall_penalty_weight = weightages.get("core_shortfall_penalty")
 
     for mcr, base_map in core_shortfall.items():
         for base, slack in base_map.items():
@@ -916,7 +964,7 @@ def allocate_timetable(
     solver = cp_model.CpSolver()
 
     # solver settings
-    solver.parameters.max_time_in_seconds = 60 * 5  # 5 minutes
+    solver.parameters.max_time_in_seconds = 60 * 5  # max 5 minutes run time
     solver.parameters.cp_model_presolve = True  # enable presolve for better performance
     solver.parameters.log_search_progress = False  # log solver progress to stderr (will be captured as [PYTHON LOG] by Node.js backend)
     solver.parameters.enumerate_all_solutions = False
@@ -946,10 +994,21 @@ def allocate_timetable(
         logger.info("Model is feasible. Preparing output for post-processing...")
 
         # build full resident_history including current-year assignments
-        output_history = [dict(h, is_current_year=False) for h in resident_history]
+        output_history = []
+        for h in resident_history:
+            entry = dict(h)
+            entry["is_current_year"] = False
+            # ensure is_leave is always present as a boolean
+            entry["is_leave"] = bool(entry.get("is_leave") or entry.get("leave_type"))
+            # normalise leave_type to empty string if absent
+            if not entry.get("leave_type"):
+                entry["leave_type"] = ""
+            output_history.append(entry)
         for resident in residents:
             mcr = resident["mcr"]
             current_year = resident["resident_year"]
+            populated_blocks = set()
+            # for each assigned block of each resident...
             for posting_code in posting_codes:
                 assigned_blocks = [
                     block
@@ -957,13 +1016,63 @@ def allocate_timetable(
                     if solver.Value(x[mcr][posting_code][block]) > 0.5
                 ]
                 for block in assigned_blocks:
+                    entry = {
+                        "mcr": mcr,
+                        "year": current_year,
+                        "block": block,
+                        "posting_code": posting_code,
+                        "is_current_year": True,
+                        "is_leave": False,
+                    }
+
+                    # if leave meta is available, append leave flags if any for this resident's block
+                    leave_meta = leave_map.get(mcr, {}).get(block)
+                    if leave_meta:
+                        leave_type = (leave_meta.get("leave_type", "")).strip()
+                        if leave_type:
+                            entry["is_leave"] = True
+                            entry["leave_type"] = leave_type
+                    output_history.append(entry)
+                    populated_blocks.add(block)
+
+            # no posting code; append explicit entries for OFF blocks with NS/LOA leave_type
+            for b in blocks:
+                leave_meta = leave_map.get(mcr, {}).get(b)
+
+                if not leave_meta:
+                    continue
+
+                p = leave_meta.get("posting_code")
+                leave_type = (leave_meta.get("leave_type", "")).strip()
+                # only add if 1. no posting was pinned, 2. this block is OFF, and 3. there is a leave_type
+                if not p and solver.Value(off[mcr][b]) > 0.5 and leave_type:
                     output_history.append(
                         {
                             "mcr": mcr,
                             "year": current_year,
-                            "block": block,
-                            "posting_code": posting_code,
+                            "block": b,
+                            "posting_code": "",
                             "is_current_year": True,
+                            "is_leave": True,
+                            "leave_type": leave_type,
+                        }
+                    )
+                    populated_blocks.add(b)
+
+            # OFF without leave: append explicit empty posting rows
+            for b in blocks:
+                if b in populated_blocks:
+                    continue
+                if solver.Value(off[mcr][b]) > 0.5:
+                    output_history.append(
+                        {
+                            "mcr": mcr,
+                            "year": current_year,
+                            "block": b,
+                            "posting_code": "",
+                            "is_current_year": True,
+                            "is_leave": False,
+                            "leave_type": "",
                         }
                     )
 
@@ -1015,6 +1124,7 @@ def main():
             resident_sr_preferences=input_data.get("resident_sr_preferences"),
             postings=input_data["postings"],
             weightages=input_data["weightages"],
+            resident_leaves=input_data.get("resident_leaves", []),
             pinned_assignments=input_data.get("pinned_assignments", {}),
         )
         # needs to be printed to stdout for server.js to read

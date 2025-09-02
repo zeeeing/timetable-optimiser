@@ -36,9 +36,18 @@ const SortableBlockCell: React.FC<SortableBlockCellProps> = ({
 }) => {
   const [open, setOpen] = useState<boolean>(false);
 
-  const posting: Posting | null = postingAssignment
+  const posting = postingAssignment
     ? postingMap[postingAssignment.posting_code]
     : null;
+
+  const isLeave = postingAssignment?.is_leave;
+  const leaveType = postingAssignment?.leave_type;
+
+  const displayCode = posting
+    ? posting.posting_code && isLeave
+      ? `${posting.posting_code} (${leaveType})`
+      : posting.posting_code
+    : "";
 
   const {
     attributes,
@@ -82,13 +91,13 @@ const SortableBlockCell: React.FC<SortableBlockCellProps> = ({
         {...attributes}
         className={cn("space-y-1 cursor-grab", isDragging && "cursor-grabbing")}
       >
-        {postingAssignment ? (
+        {posting || isLeave ? (
           <>
             <Popover open={open} onOpenChange={setOpen}>
               <PopoverTrigger asChild>
                 <div className="flex items-center">
                   <p className="font-medium text-sm text-blue-800">
-                    {postingAssignment.posting_code}
+                    {displayCode}
                   </p>
                   <ChevronsUpDownIcon
                     color="blue"
@@ -130,7 +139,7 @@ const SortableBlockCell: React.FC<SortableBlockCellProps> = ({
                           key={p.posting_code}
                           // include name in value to allow searching by name as well
                           value={`${p.posting_code} ${p.posting_name}`}
-                          onSelect={(_value) => { // add '_' to avoid unused variable warning
+                          onSelect={(_) => {
                             onSelectPosting?.(p.posting_code); // optional chaining for function call
                             setOpen(false);
                           }}
@@ -183,12 +192,24 @@ const SortableBlockCell: React.FC<SortableBlockCellProps> = ({
                 </Command>
               </PopoverContent>
             </Popover>
-            <Badge className={badgeClass} variant="outline">
-              {posting?.posting_code &&
-              CCR_POSTINGS.includes(posting.posting_code)
-                ? "CCR"
-                : posting?.posting_type.toUpperCase() || ""}
-            </Badge>
+            <div className="flex items-center gap-1 justify-center">
+              {posting && (
+                <Badge className={badgeClass} variant="outline">
+                  {posting?.posting_code &&
+                  CCR_POSTINGS.includes(posting.posting_code)
+                    ? "CCR"
+                    : posting?.posting_type.toUpperCase() || ""}
+                </Badge>
+              )}
+              {isLeave && (
+                <Badge
+                  variant="secondary"
+                  className="bg-gray-200 text-gray-700"
+                >
+                  {leaveType}
+                </Badge>
+              )}
+            </div>
           </>
         ) : (
           <span className="text-gray-400 text-sm">-</span>

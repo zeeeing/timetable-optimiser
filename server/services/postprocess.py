@@ -26,7 +26,6 @@ def compute_postprocess(
     postings: List[Dict] = payload.get("postings", [])
     weightages: Dict = payload.get("weightages", {})
 
-    # Build maps
     posting_info = {p["posting_code"]: p for p in postings}
     pref_map: Dict[str, Dict[int, str]] = {}
     for pref in resident_preferences:
@@ -37,14 +36,15 @@ def compute_postprocess(
             "posting_code"
         )
 
-    # Ensure is_current_year key is present (default to False) for consistency
     output_history = []
     for h in resident_history:
         entry = dict(h)
         entry.setdefault("is_current_year", False)
+        entry["is_leave"] = bool(entry.get("is_leave"))
+        entry["leave_type"] = entry.get("leave_type", "")
         output_history.append(entry)
 
-    # Per-resident details
+    # per-resident details
     output_residents: List[Dict] = []
     for r in residents:
         mcr = r.get("mcr")
@@ -56,8 +56,14 @@ def compute_postprocess(
 
         # filter by resident to get updated resident progress
         updated_resident_history = [h for h in output_history if h.get("mcr") == mcr]
+        # credit-bearing history excludes leave blocks (LOA/NS)
+        credit_resident_history = [
+            h
+            for h in updated_resident_history
+            if not (h.get("is_leave") or h.get("leave_type"))
+        ]
         updated_resident_progress = get_posting_progress(
-            updated_resident_history, posting_info
+            credit_resident_history, posting_info
         ).get(mcr, {})
 
         # derive stats used in the original post-processing section
@@ -75,7 +81,6 @@ def compute_postprocess(
         else:
             ccr_status = {"completed": False, "posting_code": "-"}
 
-        # violations: allocate phase adheres to hard constraints; none are reported here
         violations = []
 
         output_residents.append(
@@ -90,10 +95,11 @@ def compute_postprocess(
             }
         )
 
-    # Cohort statistics: optimisation scores and posting utilisation
-    preference_bonus_weight = weightages.get("preference", 1)
-    seniority_bonus_weight = weightages.get("seniority", 2)
+    # cohort statistics: optimisation scores and posting utilisation
+    preference_bonus_weight = weightages.get("preference")
+    seniority_bonus_weight = weightages.get("seniority")
 
+    # calculate optimisation scores
     optimisation_scores: List[float] = []
     for r in residents:
         mcr = r.get("mcr")
@@ -104,7 +110,10 @@ def compute_postprocess(
         assigned_postings = [
             h
             for h in output_history
-            if h.get("mcr") == mcr and h.get("is_current_year")
+            if h.get("mcr") == mcr
+            and h.get("is_current_year")
+            and h.get("posting_code")
+            and not (h.get("is_leave") or h.get("leave_type"))
         ]
 
         # preference satisfaction
@@ -131,7 +140,8 @@ def compute_postprocess(
         for s in optimisation_scores
     ]
 
-    # Posting utilisation by block, and precompute capacity fill for diagnostics
+    # calculate posting utilisation by block
+    # precompute capacity fill for diagnostics
     posting_util: List[Dict] = []
     cap_fill: Dict[str, Dict[int, int]] = {}
     for posting_code, pinfo in posting_info.items():
@@ -160,13 +170,50 @@ def compute_postprocess(
         )
         cap_fill[posting_code] = block_filled
 
+    # aggregate cohort statistics
     cohort_statistics = {
         "optimisation_scores": optimisation_scores,
         "optimisation_scores_normalised": optimisation_scores_normalised,
         "posting_util": posting_util,
     }
 
-    # Diagnostics: explain OFF (unassigned) blocks heuristically
+    # DEBUG: explain OFF (unassigned) blocks heuristically
+    off_explanations_by_resident = compute_off_explanations(
+        residents=residents,
+        output_history=output_history,
+        posting_info=posting_info,
+        cap_fill=cap_fill,
+    )
+
+    return {
+        "success": True,
+        "residents": output_residents,
+        "resident_history": output_history,
+        "resident_preferences": resident_preferences,
+        "resident_sr_preferences": resident_sr_preferences,
+        "postings": postings,
+        "statistics": {
+            "total_residents": len(residents),
+            "cohort": cohort_statistics,
+        },
+        "diagnostics": {
+            "off_explanations_by_resident": off_explanations_by_resident,
+        },
+    }
+
+
+def compute_off_explanations(
+    *,
+    residents: List[Dict],
+    output_history: List[Dict],
+    posting_info: Dict[str, Dict],
+    cap_fill: Dict[str, Dict[int, int]],
+) -> Dict[str, List[Dict]]:
+    """
+    Build a heuristic explanation for why certain current-year blocks remain OFF
+    (unassigned). For each resident and each unfilled block, list postings that
+    are feasible and reasons why others are not (capacity, start rules, etc.).
+    """
     quarter_starts = {1, 4, 7, 10}
     off_explanations_by_resident: Dict[str, List[Dict]] = {}
 
@@ -249,21 +296,7 @@ def compute_postprocess(
         if entries:
             off_explanations_by_resident[mcr] = entries
 
-    return {
-        "success": True,
-        "residents": output_residents,
-        "resident_history": output_history,
-        "resident_preferences": resident_preferences,
-        "resident_sr_preferences": resident_sr_preferences,
-        "postings": postings,
-        "statistics": {
-            "total_residents": len(residents),
-            "cohort": cohort_statistics,
-        },
-        "diagnostics": {
-            "off_explanations_by_resident": off_explanations_by_resident,
-        },
-    }
+    return off_explanations_by_resident
 
 
 def main():
