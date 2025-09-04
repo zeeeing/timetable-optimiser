@@ -180,7 +180,7 @@ const HomePage: React.FC = () => {
       </h1>
 
       {/* Upload Section */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-6">
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
         <FileUpload
           label="Residents CSV"
           onChange={handleFileUpload("residents")}

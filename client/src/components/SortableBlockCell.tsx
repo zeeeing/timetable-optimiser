@@ -6,6 +6,7 @@ import type { Posting, ResidentHistory } from "../types";
 import { cn } from "@/lib/utils";
 import { CCR_POSTINGS } from "@/lib/constants";
 
+import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import { TableCell } from "./ui/table";
 import {
@@ -17,7 +18,7 @@ import {
   CommandList,
 } from "./ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
-import { ChevronsUpDownIcon, CheckIcon } from "lucide-react";
+import { ChevronsUpDownIcon, CheckIcon, TrashIcon } from "lucide-react";
 
 interface SortableBlockCellProps {
   blockNumber: number;
@@ -40,14 +41,9 @@ const SortableBlockCell: React.FC<SortableBlockCellProps> = ({
     ? postingMap[postingAssignment.posting_code]
     : null;
 
+  const code = posting?.posting_code;
   const isLeave = postingAssignment?.is_leave;
   const leaveType = postingAssignment?.leave_type;
-
-  const displayCode = posting
-    ? posting.posting_code && isLeave
-      ? `${posting.posting_code} (${leaveType})`
-      : posting.posting_code
-    : "";
 
   const {
     attributes,
@@ -91,13 +87,13 @@ const SortableBlockCell: React.FC<SortableBlockCellProps> = ({
         {...attributes}
         className={cn("space-y-1 cursor-grab", isDragging && "cursor-grabbing")}
       >
-        {posting || isLeave ? (
+        {postingAssignment ? (
           <>
             <Popover open={open} onOpenChange={setOpen}>
               <PopoverTrigger asChild>
-                <div className="flex items-center">
+                <div className="flex items-center justify-center">
                   <p className="font-medium text-sm text-blue-800">
-                    {displayCode}
+                    {code ?? "-"}
                   </p>
                   <ChevronsUpDownIcon
                     color="blue"
@@ -107,7 +103,21 @@ const SortableBlockCell: React.FC<SortableBlockCellProps> = ({
               </PopoverTrigger>
               <PopoverContent className="w-[260px] p-0">
                 <Command>
-                  <CommandInput placeholder="Search by code or name..." />
+                  <div className="flex justify-between items-center pr-2">
+                    <CommandInput placeholder="Search by code or name..." />
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="destructive"
+                      onClick={() => {
+                        onSelectPosting?.("");
+                        setOpen(false);
+                      }}
+                      className="size-6 cursor-pointer"
+                    >
+                      <TrashIcon />
+                    </Button>
+                  </div>
                   <CommandList>
                     <CommandEmpty>No posting found.</CommandEmpty>
                     {(() => {

@@ -221,6 +221,16 @@ def allocate_timetable(
         for mcr, bmap in leave_map.items()
     }
 
+    # Convenience: set of residents who have indicated any current-year leave
+    # We detect this by the presence of a non-empty leave_type in resident_leaves.
+    # For these residents, we turn OFF minimum-requirement constraints (hard and soft)
+    # to avoid infeasibility from reduced availability.
+    residents_with_current_leave = {
+        mcr
+        for mcr, bmap in leave_map.items()
+        if any((meta.get("leave_type", "")).strip() for meta in bmap.values())
+    }
+
     ###########################################################################
     # DEFINE HARD CONSTRAINTS
     ###########################################################################
@@ -291,8 +301,9 @@ def allocate_timetable(
             for p in offered:
                 model.Add(posting_asgm_count[mcr][p] == 0)
         else:
-            # exactly one run of any CCR posting
-            model.Add(sum(posting_asgm_count[mcr][p] for p in offered) == 1)
+            # exactly one run of any CCR posting (skip for residents with current-year leave)
+            if mcr not in residents_with_current_leave:
+                model.Add(sum(posting_asgm_count[mcr][p] for p in offered) == 1)
 
     # Hard Constraint 5: Ensure core postings are not over-assigned to each resident
     for resident in residents:
@@ -529,6 +540,9 @@ def allocate_timetable(
     # Hard Constraint 14: enforce 1 ED and 1 GRM SELECTION if BOTH not done before
     for resident in residents:
         mcr = resident["mcr"]
+        # Skip ED/GRM minimum selection if resident has current-year leave
+        if mcr in residents_with_current_leave:
+            continue
         progress = get_core_blocks_completed(
             posting_progress.get(mcr, {}), posting_info
         )
@@ -545,6 +559,10 @@ def allocate_timetable(
         mcr = resident["mcr"]
         year = resident["resident_year"]
         resident_progress = posting_progress.get(mcr, {})
+
+        # Skip minimum requirements if resident has indicated leave this year
+        if mcr in residents_with_current_leave:
+            continue
 
         # count assigned blocks for the current year
         micu_blocks = sum(
@@ -604,6 +622,10 @@ def allocate_timetable(
         if not sr_prefs:
             continue
 
+        # Skip SR constraints for residents with current-year leave
+        if mcr in residents_with_current_leave:
+            continue
+
         # get all base variants
         sr_variants = set()
         for _, base in sr_prefs.items():
@@ -642,6 +664,10 @@ def allocate_timetable(
     for resident in residents:
         mcr = resident["mcr"]
         year = resident["resident_year"]
+
+        # Skip minimum elective penalties for residents with current-year leave
+        if mcr in residents_with_current_leave:
+            continue
 
         if year not in (2, 3):
             continue
@@ -690,8 +716,10 @@ def allocate_timetable(
 
     # Soft Constraint 2: Penalty if core posting requirements are under-assigned by end of Year 3
 
-    # get all y3 residents
-    y3_residents = [r for r in residents if r["resident_year"] == 3]
+    # get all Y3 residents, excluding those with current-year leave (turn OFF min reqs)
+    y3_residents = [
+        r for r in residents if r["resident_year"] == 3 and r["mcr"] not in residents_with_current_leave
+    ]
 
     # define core under-assignment flags
     core_shortfall = {}
@@ -749,6 +777,10 @@ def allocate_timetable(
         year = resident["resident_year"]
         sr_prefs = sr_pref_map.get(mcr, {})
         if not sr_prefs:
+            continue
+
+        # Skip SR constraints/penalties/bonuses for residents with current-year leave
+        if mcr in residents_with_current_leave:
             continue
 
         # get all base variants

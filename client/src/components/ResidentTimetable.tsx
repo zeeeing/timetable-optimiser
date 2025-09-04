@@ -424,12 +424,6 @@ const ResidentTimetable: React.FC<Props> = ({
                           const isLeave = postingAssignment?.is_leave;
                           const leaveType = postingAssignment?.leave_type;
 
-                          const displayCode = isLeave
-                            ? leaveType && code
-                              ? `${code} (${leaveType})`
-                              : leaveType
-                            : code;
-
                           const badgeClass =
                             posting?.posting_code &&
                             CCR_POSTINGS.includes(posting.posting_code)
@@ -443,7 +437,7 @@ const ResidentTimetable: React.FC<Props> = ({
                               {postingAssignment ? (
                                 <div className="space-y-1">
                                   <div className="font-medium text-sm text-gray-600">
-                                    {displayCode}
+                                    {code ?? "-"}
                                   </div>
                                   {posting && (
                                     <Badge
@@ -567,7 +561,7 @@ const ResidentTimetable: React.FC<Props> = ({
       </CardContent>
 
       {/* resident statistics */}
-      <CardContent className="flex flex-col md:flex-row justify-between gap-6">
+      <CardContent className="flex flex-col md:flex-row justify-between gap-6 overflow-auto">
         <div className="flex gap-6">
           {/* core postings completed */}
           <div className="flex flex-col gap-2">
@@ -600,7 +594,7 @@ const ResidentTimetable: React.FC<Props> = ({
           </div>
         </div>
 
-        <div className="flex flex-col md:flex-row gap-6">
+        <div className="flex flex-col lg:flex-row gap-6">
           {/* resident preferences */}
           <Card>
             <CardContent>

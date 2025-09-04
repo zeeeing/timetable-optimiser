@@ -211,7 +211,7 @@ app.post(
           year: parseInt(h.year),
           block: parseInt(h.block),
           posting_code: String(h.posting_code).trim(),
-          is_leave: Boolean(h.is_leave),
+          is_leave: Boolean(parseInt(h.is_leave)),
           leave_type: String(h.leave_type).trim() || "",
         };
       });
