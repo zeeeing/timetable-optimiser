@@ -21,6 +21,7 @@ import monthLabels from "../../../shared/monthLabels.json";
 import { areSchedulesEqual, moveByInsert } from "@/lib/utils";
 import { useApiResponseContext } from "@/context/ApiResponseContext";
 import { validateSchedule, saveSchedule } from "@/api/api";
+import { cn } from "@/lib/utils";
 
 import ErrorAlert from "./ErrorAlert";
 import ConstraintsAccordion from "./ConstraintsAccordion";
@@ -433,34 +434,42 @@ const ResidentTimetable: React.FC<Props> = ({
                               : "bg-green-100 text-green-800";
 
                           return (
-                            <TableCell key={month} className="text-center">
+                            <TableCell
+                              key={month}
+                              className={cn(
+                                "text-center",
+                                isLeave && "bg-gray-100"
+                              )}
+                            >
                               {postingAssignment ? (
                                 <div className="space-y-1">
                                   <div className="font-medium text-sm text-gray-600">
                                     {code ?? "-"}
                                   </div>
-                                  {posting && (
-                                    <Badge
-                                      className={badgeClass}
-                                      variant="outline"
-                                    >
-                                      {posting?.posting_code &&
-                                      CCR_POSTINGS.includes(
-                                        posting.posting_code
-                                      )
-                                        ? "CCR"
-                                        : posting?.posting_type.toUpperCase() ||
-                                          ""}
-                                    </Badge>
-                                  )}
-                                  {isLeave && (
-                                    <Badge
-                                      variant="secondary"
-                                      className="bg-gray-200 text-gray-700"
-                                    >
-                                      {leaveType}
-                                    </Badge>
-                                  )}
+                                  <div className="flex items-center gap-1 justify-center">
+                                    {posting && (
+                                      <Badge
+                                        className={badgeClass}
+                                        variant="outline"
+                                      >
+                                        {posting?.posting_code &&
+                                        CCR_POSTINGS.includes(
+                                          posting.posting_code
+                                        )
+                                          ? "CCR"
+                                          : posting?.posting_type.toUpperCase() ||
+                                            ""}
+                                      </Badge>
+                                    )}
+                                    {isLeave && (
+                                      <Badge
+                                        variant="secondary"
+                                        className="bg-gray-200 text-gray-700"
+                                      >
+                                        {leaveType}
+                                      </Badge>
+                                    )}
+                                  </div>
                                 </div>
                               ) : (
                                 <span className="text-gray-300 text-sm">-</span>
