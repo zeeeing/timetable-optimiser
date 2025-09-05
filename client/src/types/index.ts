@@ -37,7 +37,7 @@ export interface ResidentHistory {
   posting_code: string;
   is_current_year: boolean;
   is_leave: boolean;
-  leave_type: string | "";
+  leave_type: string;
 }
 
 export interface ResidentPreference {

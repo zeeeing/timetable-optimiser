@@ -96,11 +96,10 @@ def allocate_timetable(
             sr_pref_map[mcr] = {}
         sr_pref_map[mcr][pref["preference_rank"]] = pref["base_posting"]
 
-    # 6-8. Use full resident history for credit-bearing calculations (ignore leave metadata)
-    completed_postings_map = get_completed_postings(resident_history, posting_info)
+    # 6. get posting progress for each resident
     posting_progress = get_posting_progress(resident_history, posting_info)
 
-    # 9. create lists of ED, GRM, GM postings
+    # 7. create lists of ED, GRM, GM postings
     ED_codes = [p for p in posting_codes if p.startswith("ED")]
     GRM_codes = [p for p in posting_codes if p.startswith("GRM")]
     GM_codes = [p for p in posting_codes if p.startswith("GM")]
@@ -153,14 +152,6 @@ def allocate_timetable(
             model.Add(count >= 1).OnlyEnforceIf(flag)
             model.Add(count == 0).OnlyEnforceIf(flag.Not())
 
-    # DEBUG: define per-block slack (OFF) variables
-    off = {}
-    for resident in residents:
-        mcr = resident["mcr"]
-        off[mcr] = {}
-        for b in blocks:
-            off[mcr][b] = model.NewBoolVar(f"{mcr}_OFF_{b}")
-
     # pinned residents: force exact block/posting for selected residents
     if pinned_assignments:
         logger.info(
@@ -176,6 +167,14 @@ def allocate_timetable(
                         model.Add(x[mcr][p][b] == 1)
             except Exception as e:
                 logger.warning("Failed to apply pins for %s: %s", mcr, e)
+
+    # DEBUG: define per-block slack (OFF) variables
+    off = {}
+    for resident in residents:
+        mcr = resident["mcr"]
+        off[mcr] = {}
+        for b in blocks:
+            off[mcr][b] = model.NewBoolVar(f"{mcr}_OFF_{b}")
 
     ###########################################################################
     # DEFINE HARD CONSTRAINTS
@@ -642,7 +641,7 @@ def allocate_timetable(
 
     # Soft Constraint 2: Penalty if core posting requirements are under-assigned by end of Year 3
 
-    # get all Y3 residents
+    # get all y3 residents
     y3_residents = [r for r in residents if r["resident_year"] == 3]
 
     # define core under-assignment flags
@@ -946,15 +945,12 @@ def allocate_timetable(
         logger.info("Model is feasible. Preparing output for post-processing...")
 
         # build full resident_history including current-year assignments
-        output_history = []
-        for h in resident_history:
-            entry = dict(h)
-            entry["is_current_year"] = False
-            output_history.append(entry)
+        output_history = [dict(h, is_current_year=False) for h in resident_history]
         for resident in residents:
             mcr = resident["mcr"]
             current_year = resident["resident_year"]
             populated_blocks = set()
+
             # for each assigned block of each resident...
             for posting_code in posting_codes:
                 assigned_blocks = [
@@ -975,7 +971,7 @@ def allocate_timetable(
                     output_history.append(entry)
                     populated_blocks.add(block)
 
-            # OFF without leave: append explicit empty posting rows
+            # for any OFF blocks, append explicit empty posting rows
             for b in blocks:
                 if b in populated_blocks:
                     continue
@@ -1006,6 +1002,7 @@ def allocate_timetable(
             "resident_sr_preferences": resident_sr_preferences,
             "postings": postings,
             "weightages": weightages,
+            "resident_leaves": resident_leaves or [],
         }
 
         # post-processing

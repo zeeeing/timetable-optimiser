@@ -25,6 +25,7 @@ def compute_postprocess(
     resident_sr_preferences: List[Dict] = payload.get("resident_sr_preferences", [])
     postings: List[Dict] = payload.get("postings", [])
     weightages: Dict = payload.get("weightages", {})
+    resident_leaves: List[Dict] = payload.get("resident_leaves", [])
 
     posting_info = {p["posting_code"]: p for p in postings}
     pref_map: Dict[str, Dict[int, str]] = {}
@@ -186,6 +187,7 @@ def compute_postprocess(
         "resident_preferences": resident_preferences,
         "resident_sr_preferences": resident_sr_preferences,
         "postings": postings,
+        "resident_leaves": resident_leaves,
         "statistics": {
             "total_residents": len(residents),
             "cohort": cohort_statistics,

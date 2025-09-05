@@ -7,7 +7,7 @@ export function generateSampleCSV(): void {
     { mcr: "M000003A", name: "Dr. Carol Lee", resident_year: 1 },
   ];
 
-  const residentHistory: CsvRow[] = [
+  const residentHistoryRaw: CsvRow[] = [
     { mcr: "M000001A", year: 1, block: 1, posting_code: "GM (TTSH)" },
     { mcr: "M000001A", year: 1, block: 2, posting_code: "GM (TTSH)" },
     { mcr: "M000001A", year: 1, block: 3, posting_code: "GM (TTSH)" },
@@ -46,6 +46,12 @@ export function generateSampleCSV(): void {
     { mcr: "M000002A", year: 1, block: 12, posting_code: "NL (NNI)" },
   ];
 
+  const residentHistory: CsvRow[] = residentHistoryRaw.map((row) => ({
+    ...row,
+    is_leave: 0,
+    leave_type: "",
+  }));
+
   const residentPreferences: CsvRow[] = [
     { mcr: "M000001A", preference_rank: 1, posting_code: "Gastro (TTSH)" },
     { mcr: "M000001A", preference_rank: 2, posting_code: "Endocrine (KTPH)" },
@@ -64,7 +70,6 @@ export function generateSampleCSV(): void {
     { mcr: "M000003A", preference_rank: 5, posting_code: "Renal (KTPH)" },
   ];
 
-  // SR base-code preferences (ranks 1..3), columns: mcr, preference_rank, base_posting
   const residentSrPreferences: CsvRow[] = [
     { mcr: "M000001A", preference_rank: 1, base_posting: "Renal" },
     { mcr: "M000001A", preference_rank: 2, base_posting: "Gastro" },
@@ -108,9 +113,16 @@ export function generateSampleCSV(): void {
     { posting_code: "GM (WH)", posting_name: "General Medicine (WH)", posting_type: "CCR", max_residents: 3, required_block_duration: 3 },
   ];
 
-  const otherAssignments: CsvRow[] = [
+  const residentLeaves: CsvRow[] = [
+    { mcr: "M000001A", block: 4, leave_type: "LOA", posting_code: "GM (TTSH)" },
     { mcr: "M000001A", block: 5, leave_type: "LOA", posting_code: "GM (TTSH)" },
+    { mcr: "M000001A", block: 6, leave_type: "LOA", posting_code: "GM (TTSH)" },
+    { mcr: "M000002A", block: 7, leave_type: "NS", posting_code: "" },
+    { mcr: "M000002A", block: 8, leave_type: "NS", posting_code: "" },
     { mcr: "M000002A", block: 9, leave_type: "NS", posting_code: "" },
+    { mcr: "M000002A", block: 10, leave_type: "NS", posting_code: "" },
+    { mcr: "M000002A", block: 11, leave_type: "NS", posting_code: "" },
+    { mcr: "M000002A", block: 12, leave_type: "NS", posting_code: "" },
   ];
 
   // convert object arrays to CSV string
@@ -129,7 +141,7 @@ export function generateSampleCSV(): void {
     { filename: "sample_resident_preferences.csv", content: toCsv(residentPreferences) },
     { filename: "sample_resident_sr_preferences.csv", content: toCsv(residentSrPreferences) },
     { filename: "sample_postings.csv", content: toCsv(postings) },
-    { filename: "sample_leave.csv", content: toCsv(otherAssignments) },
+    { filename: "sample_resident_leaves.csv", content: toCsv(residentLeaves) },
   ];
 
   // trigger downloads
