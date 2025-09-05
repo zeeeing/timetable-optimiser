@@ -37,6 +37,7 @@ def compute_postprocess(
             "posting_code"
         )
 
+    # sanitise input data
     output_history = []
     for h in resident_history:
         entry = dict(h)

@@ -449,6 +449,7 @@ app.post("/api/save", async (req, res) => {
       resident_sr_preferences: base.resident_sr_preferences || [],
       postings: base.postings || [],
       weightages: base.weightages || {},
+      resident_leaves: base.resident_leaves || [],
     };
 
     // create temp JSON file (similar to /api/solve)
