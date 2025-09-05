@@ -56,14 +56,9 @@ def compute_postprocess(
 
         # filter by resident to get updated resident progress
         updated_resident_history = [h for h in output_history if h.get("mcr") == mcr]
-        # credit-bearing history excludes leave blocks (LOA/NS)
-        credit_resident_history = [
-            h
-            for h in updated_resident_history
-            if not (h.get("is_leave") or h.get("leave_type"))
-        ]
+        # Use full history for progress (ignore leave metadata)
         updated_resident_progress = get_posting_progress(
-            credit_resident_history, posting_info
+            updated_resident_history, posting_info
         ).get(mcr, {})
 
         # derive stats used in the original post-processing section
@@ -113,7 +108,6 @@ def compute_postprocess(
             if h.get("mcr") == mcr
             and h.get("is_current_year")
             and h.get("posting_code")
-            and not (h.get("is_leave") or h.get("leave_type"))
         ]
 
         # preference satisfaction

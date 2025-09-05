@@ -96,16 +96,9 @@ def allocate_timetable(
             sr_pref_map[mcr] = {}
         sr_pref_map[mcr][pref["preference_rank"]] = pref["base_posting"]
 
-    # 6. Filter out leave rows from historical credit-bearing calculations
-    credit_history = [
-        h for h in resident_history if not (h.get("is_leave") or h.get("leave_type"))
-    ]
-
-    # 7. get completed postings for each resident (excluding leave rows)
-    completed_postings_map = get_completed_postings(credit_history, posting_info)
-
-    # 8. get posting progress for each resident (excluding leave rows)
-    posting_progress = get_posting_progress(credit_history, posting_info)
+    # 6-8. Use full resident history for credit-bearing calculations (ignore leave metadata)
+    completed_postings_map = get_completed_postings(resident_history, posting_info)
+    posting_progress = get_posting_progress(resident_history, posting_info)
 
     # 9. create lists of ED, GRM, GM postings
     ED_codes = [p for p in posting_codes if p.startswith("ED")]
@@ -184,53 +177,6 @@ def allocate_timetable(
             except Exception as e:
                 logger.warning("Failed to apply pins for %s: %s", mcr, e)
 
-    # resident leaves
-    leave_map: Dict[str, Dict[int, Dict]] = {}
-    if resident_leaves:
-        logger.info("Applying leave assignments: %d entries", len(resident_leaves))
-        for leave in resident_leaves:
-            try:
-                mcr = leave.get("mcr")
-                b = int(leave.get("block"))
-                p = leave.get("posting_code")
-                leave_type = (leave.get("leave_type", "")).strip()
-
-                if not mcr or b not in blocks:
-                    continue
-
-                leave_map.setdefault(mcr, {})[b] = {
-                    "leave_type": leave_type,
-                    "posting_code": p,
-                }
-
-                # if posting_code provided, pin to that posting
-                if p and p in posting_info:
-                    model.Add(x[mcr][p][b] == 1)
-                # if leave_type indicates a blocked-out month (NS/LOA), force OFF at that block
-                # allow optimiser to assign no postings to that specific block
-                else:
-                    blocked_leaves = {"loa", "ns"}
-                    if leave_type.lower() in blocked_leaves:
-                        model.Add(off[mcr][b] == 1)
-            except Exception as e:
-                logger.warning("Failed to apply leave: %s", e)
-
-    # Convenience: set of leave blocks per resident (used to avoid counting leave toward requirements)
-    leave_blocks_by_mcr: Dict[str, set] = {
-        mcr: {b for b, meta in bmap.items() if (meta.get("leave_type", "")).strip()}
-        for mcr, bmap in leave_map.items()
-    }
-
-    # Convenience: set of residents who have indicated any current-year leave
-    # We detect this by the presence of a non-empty leave_type in resident_leaves.
-    # For these residents, we turn OFF minimum-requirement constraints (hard and soft)
-    # to avoid infeasibility from reduced availability.
-    residents_with_current_leave = {
-        mcr
-        for mcr, bmap in leave_map.items()
-        if any((meta.get("leave_type", "")).strip() for meta in bmap.values())
-    }
-
     ###########################################################################
     # DEFINE HARD CONSTRAINTS
     ###########################################################################
@@ -301,9 +247,8 @@ def allocate_timetable(
             for p in offered:
                 model.Add(posting_asgm_count[mcr][p] == 0)
         else:
-            # exactly one run of any CCR posting (skip for residents with current-year leave)
-            if mcr not in residents_with_current_leave:
-                model.Add(sum(posting_asgm_count[mcr][p] for p in offered) == 1)
+            # exactly one run of any CCR posting
+            model.Add(sum(posting_asgm_count[mcr][p] for p in offered) == 1)
 
     # Hard Constraint 5: Ensure core postings are not over-assigned to each resident
     for resident in residents:
@@ -323,7 +268,6 @@ def allocate_timetable(
                 for p in posting_codes
                 if p.split(" (")[0] == base_posting
                 for b in blocks
-                if b not in leave_blocks_by_mcr.get(mcr, set())
             )
 
             if blocks_completed >= required_blocks:
@@ -481,7 +425,6 @@ def allocate_timetable(
                 for p in posting_codes
                 if p.split(" (")[0] == "GM"
                 for b in blocks
-                if b not in leave_blocks_by_mcr.get(mcr, set())
             )
 
             # ensure GM postings are capped at 3 blocks
@@ -540,9 +483,6 @@ def allocate_timetable(
     # Hard Constraint 14: enforce 1 ED and 1 GRM SELECTION if BOTH not done before
     for resident in residents:
         mcr = resident["mcr"]
-        # Skip ED/GRM minimum selection if resident has current-year leave
-        if mcr in residents_with_current_leave:
-            continue
         progress = get_core_blocks_completed(
             posting_progress.get(mcr, {}), posting_info
         )
@@ -560,24 +500,18 @@ def allocate_timetable(
         year = resident["resident_year"]
         resident_progress = posting_progress.get(mcr, {})
 
-        # Skip minimum requirements if resident has indicated leave this year
-        if mcr in residents_with_current_leave:
-            continue
-
         # count assigned blocks for the current year
         micu_blocks = sum(
             x[mcr][p][b]
             for p in posting_codes
             if p.startswith("MICU (")
             for b in blocks
-            if b not in leave_blocks_by_mcr.get(mcr, set())
         )
         rccm_blocks = sum(
             x[mcr][p][b]
             for p in posting_codes
             if p.startswith("RCCM (")
             for b in blocks
-            if b not in leave_blocks_by_mcr.get(mcr, set())
         )
 
         # count completed MICU/RCCM blocks historically
@@ -622,10 +556,6 @@ def allocate_timetable(
         if not sr_prefs:
             continue
 
-        # Skip SR constraints for residents with current-year leave
-        if mcr in residents_with_current_leave:
-            continue
-
         # get all base variants
         sr_variants = set()
         for _, base in sr_prefs.items():
@@ -664,10 +594,6 @@ def allocate_timetable(
     for resident in residents:
         mcr = resident["mcr"]
         year = resident["resident_year"]
-
-        # Skip minimum elective penalties for residents with current-year leave
-        if mcr in residents_with_current_leave:
-            continue
 
         if year not in (2, 3):
             continue
@@ -716,10 +642,8 @@ def allocate_timetable(
 
     # Soft Constraint 2: Penalty if core posting requirements are under-assigned by end of Year 3
 
-    # get all Y3 residents, excluding those with current-year leave (turn OFF min reqs)
-    y3_residents = [
-        r for r in residents if r["resident_year"] == 3 and r["mcr"] not in residents_with_current_leave
-    ]
+    # get all Y3 residents
+    y3_residents = [r for r in residents if r["resident_year"] == 3]
 
     # define core under-assignment flags
     core_shortfall = {}
@@ -777,10 +701,6 @@ def allocate_timetable(
         year = resident["resident_year"]
         sr_prefs = sr_pref_map.get(mcr, {})
         if not sr_prefs:
-            continue
-
-        # Skip SR constraints/penalties/bonuses for residents with current-year leave
-        if mcr in residents_with_current_leave:
             continue
 
         # get all base variants
@@ -1030,11 +950,6 @@ def allocate_timetable(
         for h in resident_history:
             entry = dict(h)
             entry["is_current_year"] = False
-            # ensure is_leave is always present as a boolean
-            entry["is_leave"] = bool(entry.get("is_leave") or entry.get("leave_type"))
-            # normalise leave_type to empty string if absent
-            if not entry.get("leave_type"):
-                entry["leave_type"] = ""
             output_history.append(entry)
         for resident in residents:
             mcr = resident["mcr"]
@@ -1055,41 +970,10 @@ def allocate_timetable(
                         "posting_code": posting_code,
                         "is_current_year": True,
                         "is_leave": False,
+                        "leave_type": "",
                     }
-
-                    # if leave meta is available, append leave flags if any for this resident's block
-                    leave_meta = leave_map.get(mcr, {}).get(block)
-                    if leave_meta:
-                        leave_type = (leave_meta.get("leave_type", "")).strip()
-                        if leave_type:
-                            entry["is_leave"] = True
-                            entry["leave_type"] = leave_type
                     output_history.append(entry)
                     populated_blocks.add(block)
-
-            # no posting code; append explicit entries for OFF blocks with NS/LOA leave_type
-            for b in blocks:
-                leave_meta = leave_map.get(mcr, {}).get(b)
-
-                if not leave_meta:
-                    continue
-
-                p = leave_meta.get("posting_code")
-                leave_type = (leave_meta.get("leave_type", "")).strip()
-                # only add if 1. no posting was pinned, 2. this block is OFF, and 3. there is a leave_type
-                if not p and solver.Value(off[mcr][b]) > 0.5 and leave_type:
-                    output_history.append(
-                        {
-                            "mcr": mcr,
-                            "year": current_year,
-                            "block": b,
-                            "posting_code": "",
-                            "is_current_year": True,
-                            "is_leave": True,
-                            "leave_type": leave_type,
-                        }
-                    )
-                    populated_blocks.add(b)
 
             # OFF without leave: append explicit empty posting rows
             for b in blocks:
