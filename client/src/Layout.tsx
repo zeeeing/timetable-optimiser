@@ -1,39 +1,28 @@
 import React from "react";
-import { Link, Outlet, useLocation } from "react-router-dom";
-import { Button } from "./components/ui/button";
-import { cn } from "./lib/utils";
+import { Outlet, useLocation } from "react-router-dom";
+import { SidebarProvider, useSidebar } from "./components/ui/sidebar";
+import { AppSidebar } from "./components/AppSidebar";
+
+function SidebarAutoCloser() {
+  const location = useLocation();
+  const { isMobile, openMobile, setOpenMobile } = useSidebar();
+  React.useEffect(() => {
+    if (isMobile && openMobile) setOpenMobile(false);
+  }, [location.pathname]);
+  return null;
+}
 
 const Layout: React.FC = () => {
-  const location = useLocation();
-
-  const navigationItems = [
-    { href: "/", label: "Dashboard", key: 1 },
-    { href: "/overview", label: "Overview", key: 2 },
-  ];
-
   return (
-    <div className="min-h-screen bg-gradient-to-tr from-blue-100 to-indigo-300 p-6">
-      <div className="container mx-auto flex gap-2 pb-6 pl-4">
-        {navigationItems.map((item) => (
-          <div key={item.key}>
-            <Link to={item.href}>
-              <Button
-                variant="ghost"
-                className={cn(
-                  "cursor-pointer hover:bg-indigo-300",
-                  `${location.pathname === item.href && "font-bold text-lg"}`
-                )}
-              >
-                {item.label}
-              </Button>
-            </Link>
-          </div>
-        ))}
+    <SidebarProvider>
+      <SidebarAutoCloser />
+      <div className="flex flex-1 w-full flex-col min-h-svh bg-gradient-to-tr from-blue-100 to-indigo-300 p-6">
+        <AppSidebar />
+        <div>
+          <Outlet />
+        </div>
       </div>
-      <div>
-        <Outlet />
-      </div>
-    </div>
+    </SidebarProvider>
   );
 };
 
