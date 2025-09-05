@@ -1,6 +1,6 @@
 import {
-  Home,
-  Globe2Icon,
+  LayoutDashboardIcon,
+  SheetIcon,
   PanelLeftOpenIcon,
   PanelLeftCloseIcon,
 } from "lucide-react";
@@ -22,17 +22,17 @@ const items = [
   {
     title: "Dashboard",
     url: "/",
-    icon: Home,
+    icon: LayoutDashboardIcon,
   },
   {
     title: "Overview",
     url: "/overview",
-    icon: Globe2Icon,
+    icon: SheetIcon,
   },
 ];
 
 export function AppSidebar() {
-  const { open, isMobile, setOpenMobile, toggleSidebar } = useSidebar();
+  const { open, setOpen, toggleSidebar } = useSidebar();
   return (
     <Sidebar variant="floating" collapsible="icon">
       <SidebarContent>
@@ -58,7 +58,7 @@ export function AppSidebar() {
                   <SidebarMenuButton
                     asChild
                     onClick={() => {
-                      if (isMobile) setOpenMobile(false);
+                      if (open) setOpen(false);
                     }}
                   >
                     <Link to={item.url}>

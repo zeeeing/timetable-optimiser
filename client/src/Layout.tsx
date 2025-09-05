@@ -5,8 +5,8 @@ import { AppSidebar } from "./components/AppSidebar";
 
 const Layout: React.FC = () => {
   return (
-    <SidebarProvider>
-      <div className="flex flex-1 w-full flex-col min-h-svh bg-gradient-to-tr from-blue-100 to-indigo-300 p-6">
+    <SidebarProvider defaultOpen={false}>
+      <div className="flex flex-1 w-full flex-col min-h-svh bg-gradient-to-tr from-blue-100 to-indigo-300 py-2 px-24">
         <AppSidebar />
         <div>
           <Outlet />
