@@ -104,6 +104,23 @@ def allocate_timetable(
     GRM_codes = [p for p in posting_codes if p.startswith("GRM")]
     GM_codes = [p for p in posting_codes if p.startswith("GM")]
 
+    # 8. create map of resident leaves
+    leave_map: Dict[str, Dict[int, Dict]] = {}
+    if resident_leaves:
+        for row in resident_leaves:
+            try:
+                m = str(row.get("mcr", "")).strip()
+                b = int(row.get("block"))
+                if not m or b not in blocks:
+                    continue
+                leave_map.setdefault(m, {})[b] = {
+                    "leave_type": row.get("leave_type", ""),
+                    "posting_code": row.get("posting_code", ""),
+                }
+            except Exception:
+                # ignore malformed leave rows
+                continue
+
     ###########################################################################
     # CREATE DECISION VARIABLES
     ###########################################################################
@@ -949,44 +966,37 @@ def allocate_timetable(
         for resident in residents:
             mcr = resident["mcr"]
             current_year = resident["resident_year"]
-            populated_blocks = set()
 
-            # for each assigned block of each resident...
-            for posting_code in posting_codes:
-                assigned_blocks = [
-                    block
-                    for block in blocks
-                    if solver.Value(x[mcr][posting_code][block]) > 0.5
-                ]
-                for block in assigned_blocks:
-                    entry = {
-                        "mcr": mcr,
-                        "year": current_year,
-                        "block": block,
-                        "posting_code": posting_code,
-                        "is_current_year": True,
-                        "is_leave": False,
-                        "leave_type": "",
-                    }
-                    output_history.append(entry)
-                    populated_blocks.add(block)
-
-            # for any OFF blocks, append explicit empty posting rows
             for b in blocks:
-                if b in populated_blocks:
-                    continue
-                if solver.Value(off[mcr][b]) > 0.5:
-                    output_history.append(
-                        {
-                            "mcr": mcr,
-                            "year": current_year,
-                            "block": b,
-                            "posting_code": "",
-                            "is_current_year": True,
-                            "is_leave": False,
-                            "leave_type": "",
-                        }
-                    )
+                is_off_block = solver.Value(off[mcr][b]) > 0.5
+                assigned_posting = ""
+
+                # if not an OFF block, find the assigned posting for that block
+                if not is_off_block:
+                    for p in posting_codes:
+                        if solver.Value(x[mcr][p][b]) > 0.5:
+                            assigned_posting = p
+                            break
+
+                entry = {
+                    "mcr": mcr,
+                    "year": current_year,
+                    "block": b,
+                    "posting_code": assigned_posting,
+                    "is_current_year": True,
+                    "is_leave": False,
+                    "leave_type": "",
+                }
+
+                # check for leave details
+                leave_meta = leave_map.get(mcr, {}).get(b)
+                if leave_meta:
+                    leave_type = (leave_meta.get("leave_type", "")).strip()
+                    if leave_type:
+                        entry["is_leave"] = True
+                        entry["leave_type"] = leave_type
+
+                output_history.append(entry)
 
         # DEBUG: log OFF usage per resident (helps pinpoint why blocks aren't filled)
         for resident in residents:
