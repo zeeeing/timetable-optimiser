@@ -37,7 +37,6 @@ app.post(
   ]),
   async (req, res) => {
     try {
-      const hasFiles = req.files && Object.keys(req.files).length > 0;
       const pinnedMcrs = (() => {
         try {
           const raw = req.body.pinned_mcrs;
@@ -65,8 +64,13 @@ app.post(
         const pinned_assignments = {};
         for (const h of latest.resident_history || []) {
           if (h.is_current_year && pinnedSet.has(h.mcr)) {
+            const monthBlock = parseInt(
+              String(h.month_block ?? h.block ?? "").trim(),
+              10
+            );
+            if (!Number.isFinite(monthBlock)) continue;
             (pinned_assignments[h.mcr] ??= []).push({
-              block: h.block,
+              month_block: monthBlock,
               posting_code: h.posting_code,
             });
           }
@@ -199,22 +203,57 @@ app.post(
       const weightages = JSON.parse(req.body.weightages);
 
       // format parsed files
-      const residentsFormatted = residents.map((r) => ({
-        mcr: r.mcr,
-        name: r.name,
-        resident_year: parseInt(r.resident_year),
-      }));
-
-      const residentHistoryFormatted = residentHistory.map((h) => {
+      const residentsFormatted = residents.map((r) => {
+        const careerBlocksRaw =
+          r.career_blocks_completed ?? r.careerBlocksCompleted;
+        const careerBlocks = parseInt(String(careerBlocksRaw ?? "").trim(), 10);
+        const residentYearParsed = parseInt(
+          String(r.resident_year ?? "").trim(),
+          10
+        );
+        const residentYear = Number.isFinite(residentYearParsed)
+          ? residentYearParsed
+          : 0;
         return {
-          mcr: String(h.mcr).trim(),
-          year: parseInt(h.year),
-          block: parseInt(h.block),
-          posting_code: String(h.posting_code).trim(),
-          is_leave: Boolean(parseInt(h.is_leave)),
-          leave_type: String(h.leave_type).trim() || "",
+          mcr: String(r.mcr).trim(),
+          name: String(r.name).trim(),
+          resident_year: residentYear,
+          career_blocks_completed: Number.isFinite(careerBlocks)
+            ? careerBlocks
+            : null,
         };
       });
+
+      const residentHistoryFormatted = residentHistory
+        .map((h) => {
+          const monthBlock = parseInt(
+            String(h.month_block ?? h.block ?? "").trim(),
+            10
+          );
+          if (!Number.isFinite(monthBlock)) return null;
+
+          const careerBlock = parseInt(String(h.career_block ?? "").trim(), 10);
+          const year = parseInt(String(h.year ?? "").trim(), 10);
+          if (!Number.isFinite(year)) return null;
+          const isCurrentYear = Boolean(
+            parseInt(String(h.is_current_year ?? h.isCurrentYear ?? 0), 10)
+          );
+          const isLeave = Boolean(
+            parseInt(String(h.is_leave ?? h.isLeave ?? 0), 10)
+          );
+
+          return {
+            mcr: String(h.mcr).trim(),
+            year,
+            month_block: monthBlock,
+            career_block: Number.isFinite(careerBlock) ? careerBlock : null,
+            posting_code: String(h.posting_code ?? "").trim(),
+            is_current_year: isCurrentYear,
+            is_leave: isLeave,
+            leave_type: String(h.leave_type ?? "").trim(),
+          };
+        })
+        .filter(Boolean);
 
       const residentPreferencesFormatted = residentPreferences.map((p) => ({
         mcr: p.mcr,
@@ -236,14 +275,21 @@ app.post(
         required_block_duration: parseInt(q.required_block_duration),
       }));
 
-      const residentLeavesFormatted = residentLeaves.map((a) => {
-        return {
-          mcr: String(a.mcr).trim(),
-          block: parseInt(a.block),
-          leave_type: String(a.leave_type) || "",
-          posting_code: String(a.posting_code).trim(),
-        };
-      });
+      const residentLeavesFormatted = residentLeaves
+        .map((a) => {
+          const monthBlock = parseInt(
+            String(a.month_block ?? a.block ?? "").trim(),
+            10
+          );
+          if (!Number.isFinite(monthBlock)) return null;
+          return {
+            mcr: String(a.mcr).trim(),
+            month_block: monthBlock,
+            leave_type: String(a.leave_type ?? "").trim(),
+            posting_code: String(a.posting_code ?? "").trim(),
+          };
+        })
+        .filter(Boolean);
 
       const inputData = {
         residents: residentsFormatted,
@@ -340,9 +386,25 @@ app.post("/api/validate", async (req, res) => {
     const base =
       req.app.locals.store.latestApiResponse ||
       req.app.locals.store.latestInputs;
+    const normalisedCurrentYear = currentYear
+      .map((entry) => {
+        const monthBlock = parseInt(
+          String(entry?.month_block ?? entry?.block ?? "").trim(),
+          10
+        );
+        if (!Number.isFinite(monthBlock)) return null;
+        const postingCode = String(entry?.posting_code ?? "").trim();
+        if (!postingCode) return null;
+        return {
+          month_block: monthBlock,
+          posting_code: postingCode,
+        };
+      })
+      .filter(Boolean);
+
     const dataToValidate = {
       resident_mcr: residentMcr,
-      current_year: currentYear,
+      current_year: normalisedCurrentYear,
       residents: base?.residents || [],
       resident_history: base?.resident_history || [],
       postings: base?.postings || [],
@@ -407,8 +469,9 @@ app.post("/api/save", async (req, res) => {
     }
 
     // access latest data from in-memory store
-    const base =
-      app.locals.store.latestApiResponse || app.locals.store.latestInputs;
+    const store = req.app.locals.store || {};
+    const latestInputs = store.latestInputs || {};
+    const base = store.latestApiResponse || latestInputs;
 
     if (!base) {
       return res.status(400).json({
@@ -433,22 +496,41 @@ app.post("/api/save", async (req, res) => {
     const year = resident ? resident.resident_year : undefined;
 
     // generate new entries for the current year
-    const newEntries = currentYear.map((r) => ({
-      mcr: residentMcr,
-      year: year,
-      block: parseInt(r.block),
-      posting_code: r.posting_code,
-      is_current_year: true,
-    }));
+    const newEntries = currentYear
+      .map((r) => {
+        const monthBlock = parseInt(
+          String(r.month_block ?? r.block ?? "").trim(),
+          10
+        );
+        if (!Number.isFinite(monthBlock)) return null;
+        const careerBlock = parseInt(String(r.career_block ?? "").trim(), 10);
+        const postingCode = String(r.posting_code ?? "").trim();
+        if (!postingCode) return null;
+        return {
+          mcr: residentMcr,
+          year: year,
+          month_block: monthBlock,
+          career_block: Number.isFinite(careerBlock) ? careerBlock : null,
+          posting_code: postingCode,
+          is_current_year: true,
+          is_leave: false,
+          leave_type: "",
+        };
+      })
+      .filter(Boolean);
 
     // update existing resident's history
+    const weightages = JSON.parse(
+      JSON.stringify(base?.weightages ?? latestInputs?.weightages ?? {})
+    );
+
     const updatedPayload = {
       residents,
       resident_history: [...filteredHistory, ...newEntries],
       resident_preferences: base.resident_preferences || [],
       resident_sr_preferences: base.resident_sr_preferences || [],
       postings: base.postings || [],
-      weightages: base.weightages || {},
+      weightages,
       resident_leaves: base.resident_leaves || [],
     };
 
@@ -530,7 +612,13 @@ app.post("/api/download-csv", (req, res) => {
       .filter((h) => h.is_current_year) // filter by current year
       .forEach((h) => {
         if (!historyByMcr[h.mcr]) historyByMcr[h.mcr] = {};
-        historyByMcr[h.mcr][h.block] = h.posting_code;
+        const monthBlock = parseInt(
+          String(h.month_block ?? h.block ?? "").trim(),
+          10
+        );
+        if (Number.isFinite(monthBlock)) {
+          historyByMcr[h.mcr][monthBlock] = h.posting_code;
+        }
       });
 
     // build csv header

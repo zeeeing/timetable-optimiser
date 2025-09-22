@@ -55,8 +55,8 @@ const UnfilledMonthsDiagnostics: React.FC<Props> = ({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {diag.map((entry: any) => {
-            const b = Number(entry.block);
+          {diag.map((entry) => {
+            const b = Number(entry.month_block ?? entry.block);
             const feasibleCount = (entry.feasible_postings || []).length;
             const reasonsBy = entry.reasons_by_posting || {};
 

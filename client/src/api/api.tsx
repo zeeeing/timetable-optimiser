@@ -12,7 +12,7 @@ export const api = axios.create({
 // types
 export type ValidateSchedulePayload = {
   resident_mcr: string;
-  current_year: { block: number; posting_code: string }[];
+  current_year: { month_block: number; posting_code: string }[];
 };
 
 export type ValidateScheduleResponse = {
@@ -36,7 +36,10 @@ export const validateSchedule = async (
   payload: ValidateSchedulePayload
 ): Promise<ValidateScheduleResponse> => {
   try {
-    const { data } = await api.post<ValidateScheduleResponse>("/validate", payload);
+    const { data } = await api.post<ValidateScheduleResponse>(
+      "/validate",
+      payload
+    );
     return data;
   } catch (err) {
     throw new Error(toMessage(err));

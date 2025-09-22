@@ -90,7 +90,7 @@ const PlanningOverviewTable: React.FC<PlanningOverviewTableProps> = ({
               ? `${leaveType} (${code})`
               : leaveType
             : code;
-          map[history.mcr][history.block] = display as string;
+          map[history.mcr][history.month_block] = display as string;
         }
       });
 
@@ -126,7 +126,7 @@ const PlanningOverviewTable: React.FC<PlanningOverviewTableProps> = ({
     residents.forEach((r) => (map[r.mcr] = {}));
     currentYearHistory.forEach((h) => {
       if (map[h.mcr]) {
-        map[h.mcr][h.block] = h.posting_code;
+        map[h.mcr][h.month_block] = h.posting_code;
       }
     });
     return map;

@@ -1,6 +1,6 @@
 import sys, os
 import json
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 # prepend the base directory to sys.path
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
@@ -12,20 +12,20 @@ from utils import (
     get_core_blocks_completed,
     get_unique_electives_completed,
     get_ccr_postings_completed,
-    CORE_REQUIREMENTS,
 )
 
 
-def compute_postprocess(
-    payload: Dict, constraints_by_resident: Optional[Dict[str, List[Dict]]] = None
-) -> Dict:
-    residents: List[Dict] = payload.get("residents", [])
-    resident_history: List[Dict] = payload.get("resident_history", [])
+def compute_postprocess(payload: Dict) -> Dict:
+    residents_input: List[Dict] = payload.get("residents", [])
+    resident_history_input: List[Dict] = payload.get("resident_history", [])
     resident_preferences: List[Dict] = payload.get("resident_preferences", [])
     resident_sr_preferences: List[Dict] = payload.get("resident_sr_preferences", [])
     postings: List[Dict] = payload.get("postings", [])
-    weightages: Dict = payload.get("weightages", {})
+    weightages: Dict = dict(payload.get("weightages", {}) or {})
     resident_leaves: List[Dict] = payload.get("resident_leaves", [])
+
+    # clone resident entries for mutation
+    residents: List[Dict] = [dict(item) for item in residents_input]
 
     posting_info = {p["posting_code"]: p for p in postings}
     pref_map: Dict[str, Dict[int, str]] = {}
@@ -37,14 +37,125 @@ def compute_postprocess(
             "posting_code"
         )
 
-    # sanitise input data
-    output_history = []
-    for h in resident_history:
+    # sanitise resident history entries
+    output_history: List[Dict] = []
+    for h in resident_history_input:
         entry = dict(h)
         entry.setdefault("is_current_year", False)
         entry["is_leave"] = bool(entry.get("is_leave"))
         entry["leave_type"] = entry.get("leave_type", "")
         output_history.append(entry)
+
+    solver_solution: Dict = dict(payload.get("solver_solution", {}) or {})
+    if solver_solution:
+        entries: List[Dict] = list(solver_solution.get("entries", []) or [])
+        leave_map: Dict[str, Dict[int, Dict]] = solver_solution.get("leave_map", {})
+        career_progress: Dict[str, Dict[str, int]] = solver_solution.get(
+            "career_progress", {}
+        )
+
+        entries_by_resident: Dict[str, List[Dict]] = {}
+        for entry in entries:
+            mcr = entry.get("mcr")
+            b = entry.get("month_block")
+            if not mcr or not isinstance(b, int):
+                continue
+            entries_by_resident.setdefault(mcr, []).append(
+                {
+                    "month_block": b,
+                    "assigned_posting": str(entry.get("assigned_posting", "") or ""),
+                    "is_off": bool(entry.get("is_off")),
+                }
+            )
+
+        for mcr in entries_by_resident:
+            entries_by_resident[mcr].sort(key=lambda e: e["month_block"])
+
+        for resident in residents:
+            mcr = resident.get("mcr")
+            if not mcr:
+                continue
+
+            current_year = resident.get("resident_year")
+            res_entries = entries_by_resident.get(mcr, [])
+
+            # derive starting career blocks from existing history; fall back to metadata
+            historical_entries = [
+                h
+                for h in output_history
+                if h.get("mcr") == mcr and not h.get("is_current_year")
+            ]
+
+            base_completed = 0
+            if historical_entries:
+                try:
+                    non_leave_blocks = [
+                        int(h.get("career_block", 0) or 0)
+                        for h in historical_entries
+                        if not h.get("is_leave")
+                    ]
+                    if non_leave_blocks:
+                        base_completed = max(non_leave_blocks)
+                    else:
+                        base_completed = max(
+                            int(h.get("career_block", 0) or 0)
+                            for h in historical_entries
+                        )
+                except (TypeError, ValueError):
+                    base_completed = 0
+
+            if base_completed == 0:
+                fallback = career_progress.get(mcr, {}).get("completed_blocks")
+                if fallback is None:
+                    fallback = resident.get("career_blocks_completed", 0)
+                try:
+                    base_completed = int(fallback or 0)
+                except (TypeError, ValueError):
+                    base_completed = 0
+
+            career_counter = base_completed
+
+            for row in res_entries:
+                b = row["month_block"]
+                assigned_posting = row.get("assigned_posting", "") or ""
+
+                leave_meta = leave_map.get(mcr, {}).get(b, {}) if leave_map else {}
+                leave_type = (leave_meta.get("leave_type", "") or "").strip()
+                leave_posting_code = (leave_meta.get("posting_code", "") or "").strip()
+                is_leave_block = bool(leave_meta)
+
+                career_block_value = career_counter
+                if assigned_posting and not is_leave_block:
+                    career_counter += 1
+                    career_block_value = career_counter
+
+                posting_code_value = assigned_posting
+                if is_leave_block and leave_posting_code:
+                    posting_code_value = leave_posting_code
+                posting_code_value = str(posting_code_value or "")
+
+                history_entry = {
+                    "mcr": mcr,
+                    "year": current_year,
+                    "month_block": b,
+                    "career_block": career_block_value,
+                    "posting_code": posting_code_value,
+                    "is_current_year": True,
+                    "is_leave": is_leave_block,
+                    "leave_type": leave_type,
+                }
+
+                output_history.append(history_entry)
+
+            resident["career_blocks_completed"] = career_counter
+
+    # ensure career blocks are canonical integers
+    for resident in residents:
+        try:
+            value = resident.get("career_blocks_completed")
+            resident["career_blocks_completed"] = int(value)
+        except (TypeError, ValueError):
+            resident["career_blocks_completed"] = 0
 
     # per-resident details
     output_residents: List[Dict] = []
@@ -58,9 +169,12 @@ def compute_postprocess(
 
         # filter by resident to get updated resident progress
         updated_resident_history = [h for h in output_history if h.get("mcr") == mcr]
-        # Use full history for progress (ignore leave metadata)
+        # exclude leave blocks when computing progress-based statistics
+        history_without_leave = [
+            h for h in updated_resident_history if not h.get("is_leave")
+        ]
         updated_resident_progress = get_posting_progress(
-            updated_resident_history, posting_info
+            history_without_leave, posting_info
         ).get(mcr, {})
 
         # derive stats used in the original post-processing section
@@ -80,11 +194,19 @@ def compute_postprocess(
 
         violations = []
 
+        career_blocks_completed = r.get("career_blocks_completed")
+        try:
+            if career_blocks_completed is not None:
+                career_blocks_completed = int(career_blocks_completed)
+        except (TypeError, ValueError):
+            career_blocks_completed = None
+
         output_residents.append(
             {
                 "mcr": mcr,
                 "name": r.get("name"),
                 "resident_year": current_year,
+                "career_blocks_completed": career_blocks_completed,
                 "core_blocks_completed": core_blocks_completed,
                 "unique_electives_completed": unique_electives_completed,
                 "violations": violations,
@@ -93,8 +215,8 @@ def compute_postprocess(
         )
 
     # cohort statistics: optimisation scores and posting utilisation
-    preference_bonus_weight = weightages.get("preference")
-    seniority_bonus_weight = weightages.get("seniority")
+    preference_bonus_weight = float(weightages.get("preference", 0) or 0)
+    seniority_bonus_weight = float(weightages.get("seniority", 0) or 0)
 
     # calculate optimisation scores
     optimisation_scores: List[float] = []
@@ -110,6 +232,7 @@ def compute_postprocess(
             if h.get("mcr") == mcr
             and h.get("is_current_year")
             and h.get("posting_code")
+            and not h.get("is_leave")
         ]
 
         # preference satisfaction
@@ -148,13 +271,13 @@ def compute_postprocess(
         ]
         block_filled = {block: 0 for block in range(1, 13)}
         for a in assignments:
-            b = int(a.get("block", 0))
+            b = int(a.get("month_block", 0))
             if 1 <= b <= 12:
                 block_filled[b] += 1
         capacity = int(pinfo.get("max_residents", 0))
         util_per_block = [
             {
-                "block": block,
+                "month_block": block,
                 "filled": count,
                 "capacity": capacity,
                 "is_over_capacity": count > capacity,
@@ -189,6 +312,7 @@ def compute_postprocess(
         "resident_sr_preferences": resident_sr_preferences,
         "postings": postings,
         "resident_leaves": resident_leaves,
+        "weightages": weightages,
         "statistics": {
             "total_residents": len(residents),
             "cohort": cohort_statistics,
@@ -220,7 +344,7 @@ def compute_off_explanations(
         if not h.get("is_current_year"):
             continue
         mcr = h.get("mcr")
-        b = int(h.get("block", 0))
+        b = int(h.get("month_block", 0))
         if not mcr or b <= 0:
             continue
         cy_by_mcr.setdefault(mcr, {})[b] = h.get("posting_code")
@@ -284,7 +408,7 @@ def compute_off_explanations(
             if feasible or any(reasons_by_posting.values()):
                 entries.append(
                     {
-                        "block": b,
+                        "month_block": b,
                         "feasible_postings": feasible,
                         "reasons_by_posting": reasons_by_posting,
                     }

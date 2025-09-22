@@ -7,7 +7,8 @@ def get_completed_postings(
     """
     Returns a dictionary mapping each resident to a set of unique postings completed.
 
-    Output:
+    Example output:
+    ```
       {
         mcr_1: {
           posting_code_1,
@@ -16,6 +17,7 @@ def get_completed_postings(
         },
         ...
       }
+    ```
     """
     history_map = parse_resident_history(resident_history)
 
@@ -38,7 +40,8 @@ def get_posting_progress(
     """
     Get detailed progress of each resident's postings.
 
-    Output:
+    Example output:
+    ```
       {
         mcr_1: {
           posting_code_1: {
@@ -50,6 +53,7 @@ def get_posting_progress(
         },
         ...
       }
+    ```
     """
     history_map = parse_resident_history(resident_history)
 
@@ -83,11 +87,13 @@ def get_core_blocks_completed(
     return a dictionary of base core posting names to total blocks completed.
 
     Example output:
+    ```
       {
         "GM": 3,
         "GRM": 2,
         ...
       }
+    ```
     """
     core_blocks = {}
     for base_posting in CORE_REQUIREMENTS:
@@ -111,11 +117,13 @@ def get_unique_electives_completed(
     return the set of unique electives completed.
 
     Example output:
+    ```
       {
         "Rehab (TTSH)",
         "Endocrine (KTPH)",
         ...
       }
+    ```
     """
     unique_electives = set()
     for posting_code, details in resident_progress.items():
@@ -165,6 +173,7 @@ def parse_resident_history(resident_history: List[Dict]) -> Dict[str, Dict[str, 
     Returns a dictionary mapping each resident to a dictionary of posting codes. This dictionary maps each posting code to the number of blocks completed.
 
     Example output:
+    ```
       {
         "M123123A": {
           "GM (TTSH)": 3,
@@ -173,6 +182,7 @@ def parse_resident_history(resident_history: List[Dict]) -> Dict[str, Dict[str, 
         },
         ...
       }
+    ```
     """
     history_map = {}
     for hist in resident_history:

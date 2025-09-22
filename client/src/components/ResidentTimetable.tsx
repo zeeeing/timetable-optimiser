@@ -108,7 +108,7 @@ const ResidentTimetable: React.FC<Props> = ({
 
     const initialCurrentYearBlockPostings = currentYear.reduce<BlockMap>(
       (m, a) => {
-        m[a.block] = a;
+        m[a.month_block] = a;
         return m;
       },
       {}
@@ -117,7 +117,7 @@ const ResidentTimetable: React.FC<Props> = ({
     const pastYearBlockPostings = pastYear.reduce<
       Record<number, Record<number, ResidentHistory>>
     >((m, a) => {
-      (m[a.year] ??= {})[a.block] = a;
+      (m[a.year] ??= {})[a.month_block] = a;
       return m;
     }, {});
 
@@ -199,6 +199,10 @@ const ResidentTimetable: React.FC<Props> = ({
     const to = parseInt(String(over.id), 10);
     if (Number.isNaN(from) || Number.isNaN(to) || from === to) return;
 
+    const fromEntry = currentYearBlockPostings[from];
+    const toEntry = currentYearBlockPostings[to];
+    if (fromEntry?.is_leave || toEntry?.is_leave) return;
+
     setCurrentYearBlockPostings((prev) => {
       // insert and move other postings
       const updated = moveByInsert(prev, from, to);
@@ -222,17 +226,25 @@ const ResidentTimetable: React.FC<Props> = ({
     setViolations([]);
   };
 
-  const handleSelectPosting = (blockNumber: number, newPostingCode: string) => {
+  const handleSelectPosting = (monthBlock: number, newPostingCode: string) => {
     if (isSaving) return;
     setCurrentYearBlockPostings((prev) => {
+      if (prev[monthBlock]?.is_leave) {
+        return prev;
+      }
       const updated: BlockMap = { ...prev } as BlockMap;
 
-      const existing: ResidentHistory = updated[blockNumber];
+      const existing: ResidentHistory = updated[monthBlock];
       const inferredYear =
         existing?.year ||
         Object.values(initialCurrentYearBlockPostings)[0]?.year ||
         0;
-      updated[blockNumber] = existing
+      const inferredCareerBlock =
+        existing?.career_block ||
+        (Object.values(initialCurrentYearBlockPostings)[0]?.career_block ?? 0) +
+          (monthBlock - 1);
+
+      updated[monthBlock] = existing
         ? {
             ...existing,
             posting_code: newPostingCode,
@@ -242,7 +254,8 @@ const ResidentTimetable: React.FC<Props> = ({
         : {
             mcr: resident.mcr,
             year: inferredYear,
-            block: blockNumber,
+            month_block: monthBlock, // Ensure month_block is used here
+            career_block: inferredCareerBlock, // Add career_block
             posting_code: newPostingCode,
             is_current_year: true,
             is_leave: false,
@@ -269,10 +282,12 @@ const ResidentTimetable: React.FC<Props> = ({
     setIsSaving(true);
     try {
       const current_year = Array.from({ length: 12 }, (_, i) => {
-        const block = i + 1;
-        const a = currentYearBlockPostings[block];
-        return a?.posting_code ? { block, posting_code: a.posting_code } : null;
-      }).filter(Boolean) as { block: number; posting_code: string }[];
+        const month_block = i + 1;
+        const assignment = currentYearBlockPostings[month_block];
+        return assignment?.posting_code
+          ? { month_block, posting_code: assignment.posting_code }
+          : null;
+      }).filter(Boolean) as { month_block: number; posting_code: string }[];
 
       // 1. validate
       const validated = await validateSchedule({
@@ -307,10 +322,6 @@ const ResidentTimetable: React.FC<Props> = ({
     originalBlockPostings.current = initialCurrentYearBlockPostings;
     setEditedBlocks(new Set());
   }, [initialCurrentYearBlockPostings]);
-
-  useEffect(() => {
-    console.log(srPreferenceMap);
-  }, [srPreferenceMap]);
 
   return (
     <Card className="bg-gray-50">
@@ -486,8 +497,8 @@ const ResidentTimetable: React.FC<Props> = ({
                   items={currentYearItemIds}
                   strategy={horizontalListSortingStrategy}
                 >
-                  <TableRow className="bg-blue-100 hover:bg-blue-100">
-                    <TableCell className="font-semibold">
+                  <TableRow>
+                    <TableCell className="bg-blue-100 font-semibold">
                       Current Year
                     </TableCell>
                     {monthLabels.map((month, index) => {
