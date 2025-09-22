@@ -607,8 +607,7 @@ const ResidentTimetable: React.FC<Props> = ({
               }`}
             >
               CCR Completed : {resident.ccr_status.completed ? "YES" : "NO"}
-            </Badge>
-            <Badge variant="outline" className="text-sm">
+              <br />
               CCR Posting : {resident.ccr_status.posting_code}
             </Badge>
           </div>
