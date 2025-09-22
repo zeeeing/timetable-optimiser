@@ -28,8 +28,8 @@ const PostingUtilTable: React.FC<{
       (p) => p.posting_code === postingCode
     )?.util_per_block;
     return (
-      utilPerBlockArr?.find((b) => b.block === blockNumber) ?? {
-        block: blockNumber,
+      utilPerBlockArr?.find((b) => b.month_block === blockNumber) ?? {
+        month_block: blockNumber,
         filled: 0,
         capacity: 0,
         is_over_capacity: false,

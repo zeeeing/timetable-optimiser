@@ -40,10 +40,10 @@ export function moveByInsert(
   // Move the item and shift others
   const nextSlots = arrayMove(slots, from - 1, to - 1);
 
-  // rebuild BlockMap with corrected block indices
+  // rebuild BlockMap with corrected month_block indices
   const next: BlockMap = {};
   nextSlots.forEach((a, idx) => {
-    if (a) next[idx + 1] = { ...a, block: idx + 1 };
+    if (a) next[idx + 1] = { ...a, month_block: idx + 1 };
   });
   return next;
 }

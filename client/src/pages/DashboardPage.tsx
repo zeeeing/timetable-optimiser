@@ -1,6 +1,11 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useApiResponseContext } from "@/context/ApiResponseContext";
-import type { Resident, ApiResponse, CsvFilesState } from "../types";
+import type {
+  Resident,
+  ApiResponse,
+  CsvFilesState,
+  Weightages,
+} from "../types";
 import { uploadCsv } from "../api/api";
 import { groupResidentsByYear } from "@/lib/residentOrdering";
 
@@ -32,13 +37,13 @@ const HomePage: React.FC = () => {
   const [selectedResidentMcr, setSelectedResidentMcr] = useState<string | null>(
     () => localStorage.getItem("selectedResidentMcr")
   );
-  const [weightages, setWeightages] = useState({
+  const [weightages, setWeightages] = useState<Weightages>({
     preference: 1,
+    sr_preference: 5,
+    sr_y2_not_selected_penalty: 0,
     seniority: 1,
     elective_shortfall_penalty: 10,
     core_shortfall_penalty: 10,
-    sr_preference: 5,
-    sr_y2_not_selected_penalty: 0,
   });
   const [pinnedMcrs, setPinnedMcrs] = useState<Set<string>>(() => {
     try {
@@ -202,7 +207,7 @@ const HomePage: React.FC = () => {
           onChange={handleFileUpload("postings")}
         />
         <FileUpload
-          label="Leave CSV (columns: mcr, block, leave_type, posting_code)"
+          label="Leave CSV"
           onChange={handleFileUpload("resident_leaves")}
         />
       </div>

@@ -1,3 +1,13 @@
+// input weightages
+export interface Weightages {
+  preference: number;
+  sr_preference: number;
+  sr_y2_not_selected_penalty: number;
+  seniority: number;
+  elective_shortfall_penalty: number;
+  core_shortfall_penalty: number;
+}
+
 // api response types
 export interface ApiResponse {
   success: boolean;
@@ -14,6 +24,7 @@ export interface Resident {
   mcr: string;
   name: string;
   resident_year: number;
+  career_blocks_completed: number | null; // number of blocks completed to date
   core_blocks_completed: {
     [key: string]: number;
   };
@@ -33,7 +44,8 @@ export interface Violation {
 export interface ResidentHistory {
   mcr: string;
   year: number;
-  block: number;
+  month_block: number; // block number within the year (1-12)
+  career_block: number; // block number in career (1-36)
   posting_code: string;
   is_current_year: boolean;
   is_leave: boolean;
@@ -75,7 +87,7 @@ export interface Diagnostics {
 }
 
 export interface OffBlockExplanation {
-  block: number;
+  month_block: number;
   feasible_postings: string[];
   reasons_by_posting: Record<string, string[]>;
 }
@@ -86,7 +98,7 @@ export interface PostingUtil {
 }
 
 export interface UtilPerBlock {
-  block: number;
+  month_block: number;
   filled: number;
   capacity: number;
   is_over_capacity: boolean;

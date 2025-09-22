@@ -31,11 +31,11 @@ const WeightageSelector: React.FC<WeightageSelectorProps> = ({
     (
       field:
         | "preference"
+        | "sr_preference"
+        | "sr_y2_not_selected_penalty"
         | "seniority"
         | "elective_shortfall_penalty"
         | "core_shortfall_penalty"
-        | "sr_preference"
-        | "sr_y2_not_selected_penalty"
     ) =>
     (e: React.ChangeEvent<HTMLInputElement>) => {
       setValue({ ...value, [field]: Number(e.target.value) });

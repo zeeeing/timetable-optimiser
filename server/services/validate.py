@@ -54,18 +54,18 @@ def main():
         seen_blocks = set()
         for r in current_year:
             try:
-                b = int(r.get("block", 0))
+                b = int(r.get("month_block") or r.get("block") or 0)
             except Exception:
                 b = 0
             code = r.get("posting_code")
             if b < 1 or b > 12:
-                add_violation("INPUT", f"invalid block {b}")
+                add_violation("INPUT", f"invalid month_block {b}")
                 continue
             if not code:
-                add_violation("INPUT", f"missing posting_code for block {b}")
+                add_violation("INPUT", f"missing posting_code for month_block {b}")
                 continue
             if b in seen_blocks:
-                add_violation("INPUT", f"duplicate block {b}")
+                add_violation("INPUT", f"duplicate month_block {b}")
                 continue
             seen_blocks.add(b)
             by_block[b] = code
@@ -103,12 +103,20 @@ def main():
             # run-length and start rules
             for s, L in runs:
                 if dur > 1 and (s <= 6 and s + L - 1 >= 7):
-                    add_violation("HC8", f"{code}: run starting at {s} crosses Dec–Jan boundary")
+                    add_violation(
+                        "HC8", f"{code}: run starting at {s} crosses Dec–Jan boundary"
+                    )
                 if dur == 3 and s not in quarter_starts:
-                    add_violation("HC10", f"{code}: 3-month run must start at 1, 4, 7, or 10 (got {s})")
+                    add_violation(
+                        "HC10",
+                        f"{code}: 3-month run must start at 1, 4, 7, or 10 (got {s})",
+                    )
                 # Only enforce exact run length when duration > 1 (solver enforces automaton only then)
                 if dur > 1 and L != dur:
-                    add_violation("HC3", f"{code}: run length {L} does not match required duration {dur}")
+                    add_violation(
+                        "HC3",
+                        f"{code}: run length {L} does not match required duration {dur}",
+                    )
 
             # GRM must start on odd months
             if str(code).startswith("GRM ("):
@@ -131,7 +139,9 @@ def main():
             # single contiguous interval
             for i in range(1, len(ed_grm_blocks)):
                 if ed_grm_blocks[i] != ed_grm_blocks[i - 1] + 1:
-                    add_violation("HC12", "ED/GRM months must be contiguous (single run)")
+                    add_violation(
+                        "HC12", "ED/GRM months must be contiguous (single run)"
+                    )
                     break
 
         # MICU/RCCM contiguity and same-institution rule
@@ -147,7 +157,9 @@ def main():
                 add_violation("HC8", "MICU/RCCM cannot cross Dec–Jan boundary (6→7)")
             for i in range(1, len(comb_blocks)):
                 if comb_blocks[i] != comb_blocks[i - 1] + 1:
-                    add_violation("HC7b", "MICU/RCCM months must be contiguous (single run)")
+                    add_violation(
+                        "HC7b", "MICU/RCCM months must be contiguous (single run)"
+                    )
                     break
             # same institution if both specialties appear
             if micu_blocks and rccm_blocks:
@@ -167,7 +179,10 @@ def main():
                     or not rccm_insts
                     or len(micu_insts | rccm_insts) != 1
                 ):
-                    add_violation("HC7a", "MICU and RCCM must be assigned from the same institution")
+                    add_violation(
+                        "HC7a",
+                        "MICU and RCCM must be assigned from the same institution",
+                    )
 
         # ---------- Resident + history aware checks ----------
         if residents and resident_history and postings:
@@ -196,7 +211,10 @@ def main():
                 hist_done = int(core_completed_hist.get(base, 0))
                 cy = int(base_counts_cy.get(base, 0))
                 if hist_done + cy > int(required):
-                    add_violation("HC5", f"{base}: exceeds required total blocks ({hist_done}+{cy}>{required})")
+                    add_violation(
+                        "HC5",
+                        f"{base}: exceeds required total blocks ({hist_done}+{cy}>{required})",
+                    )
 
             # Elective base uniqueness across years
             completed_elective_bases = {
@@ -207,7 +225,10 @@ def main():
                 if posting_info.get(code, {}).get("posting_type") == "elective":
                     base = _base_of(code)
                     if base in completed_elective_bases:
-                        add_violation("HC6", f"Elective base '{base}' already completed historically; cannot repeat")
+                        add_violation(
+                            "HC6",
+                            f"Elective base '{base}' already completed historically; cannot repeat",
+                        )
 
             # CCR rule: if already done or Y1, forbid CCR; else exactly one run of any CCR posting
             done_ccr = bool(get_ccr_postings_completed(past_prog, posting_info))
@@ -226,7 +247,10 @@ def main():
                 i = j + 1
             if done_ccr or resident_year == 1:
                 if runs > 0:
-                    add_violation("HC4", "CCR is already fulfilled or Y1; CCR assignments not allowed")
+                    add_violation(
+                        "HC4",
+                        "CCR is already fulfilled or Y1; CCR assignments not allowed",
+                    )
             else:
                 if runs != 1:
                     add_violation("HC4", "Exactly one contiguous CCR run is required")
@@ -250,7 +274,7 @@ def main():
                 cur.append(
                     {
                         "mcr": mcr,
-                        "block": int(b),
+                        "month_block": int(b),
                         "posting_code": code,
                         "is_current_year": True,
                     }
@@ -259,7 +283,7 @@ def main():
             cap: Dict[str, Dict[int, int]] = {}
             for h in cur:
                 p = h.get("posting_code")
-                b = int(h.get("block", 0))
+                b = int(h.get("month_block") or h.get("block") or 0)
                 if not p or b < 1 or b > 12:
                     continue
                 cap.setdefault(p, {})[b] = cap.get(p, {}).get(b, 0) + 1
@@ -268,7 +292,10 @@ def main():
                 max_r = int(posting_info.get(p_code, {}).get("max_residents", 0))
                 for b, filled in by_b.items():
                     if filled > max_r:
-                        add_violation("HC2", f"Capacity exceeded for {p_code} at block {b}: {filled}>{max_r}")
+                        add_violation(
+                            "HC2",
+                            f"Capacity exceeded for {p_code} at month_block {b}: {filled}>{max_r}",
+                        )
 
         # Return
         if violations:
