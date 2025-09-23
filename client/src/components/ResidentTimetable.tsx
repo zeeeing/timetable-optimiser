@@ -717,7 +717,7 @@ const ResidentTimetable: React.FC<Props> = ({
                           key={rank}
                           className={cn(
                             isAssignedSr &&
-                              "bg-green-50 font-semibold border border-green-200"
+                              "bg-green-50 hover:bg-green-100 font-semibold border border-green-200"
                           )}
                         >
                           <TableCell className="text-center align-middle">
@@ -726,10 +726,7 @@ const ResidentTimetable: React.FC<Props> = ({
                           <TableCell className="text-center align-middle">
                             {trimmedBase.length > 0 ? trimmedBase : "-"}
                             {isAssignedSr && (
-                              <Badge
-                                variant="secondary"
-                                className="ml-2 text-xs bg-green-200 text-green-900"
-                              >
+                              <Badge className="ml-2 text-xs bg-green-200 text-green-900">
                                 Assigned
                               </Badge>
                             )}
@@ -771,16 +768,13 @@ const ResidentTimetable: React.FC<Props> = ({
                         key={code}
                         className={cn(
                           isAssignedSr &&
-                            "bg-green-50 font-semibold border border-green-200"
+                            "bg-green-50 hover:bg-green-100 font-semibold border border-green-200"
                         )}
                       >
                         <TableCell className="text-center align-middle">
                           {postingMap[code]?.posting_code || code}
                           {isAssignedSr && (
-                            <Badge
-                              variant="secondary"
-                              className="ml-2 text-xs bg-green-200 text-green-900"
-                            >
+                            <Badge className="ml-2 text-xs bg-green-200 text-green-900">
                               Assigned SR
                             </Badge>
                           )}
