@@ -17,7 +17,11 @@ import {
 } from "@dnd-kit/modifiers";
 
 import type { Resident, ResidentHistory, Posting, Violation } from "../types";
-import monthLabels from "../../../shared/monthLabels.json";
+import {
+  monthLabels,
+  CORE_REQUIREMENTS,
+  ELECTIVE_REQUIREMENT,
+} from "../../../shared/config";
 import { areSchedulesEqual, moveByInsert } from "@/lib/utils";
 import { useApiResponseContext } from "@/context/ApiResponseContext";
 import { validateSchedule, saveSchedule } from "@/api/api";
@@ -169,6 +173,20 @@ const ResidentTimetable: React.FC<Props> = ({
       residentIndex,
     };
   }, [apiResponse, resident.mcr]);
+
+  const coreRequirementEntries = useMemo(
+    () => Object.entries(CORE_REQUIREMENTS) as [string, number][],
+    []
+  );
+
+  const electivesCompleted = resident.unique_electives_completed.length;
+  const electiveRequirementMet = electivesCompleted >= ELECTIVE_REQUIREMENT;
+
+  const requirementBadgeClass = (fulfilled: boolean) =>
+    cn(
+      "text-sm",
+      fulfilled ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
+    );
 
   // define current evolving state for current year block postings
   const [currentYearBlockPostings, setCurrentYearBlockPostings] =
@@ -585,26 +603,28 @@ const ResidentTimetable: React.FC<Props> = ({
         <div className="flex gap-6">
           {/* core postings completed */}
           <div className="flex flex-col gap-2">
-            {Object.entries(resident.core_blocks_completed)
-              .sort((a, b) => a[0].localeCompare(b[0]))
-              .map(([key, value]) => (
-                <div key={key}>
-                  <Badge variant="outline" className="text-sm">
-                    {key} : {value}
+            {coreRequirementEntries.map(([basePosting, requiredBlocks]) => {
+              const completedBlocks =
+                resident.core_blocks_completed?.[basePosting] ?? 0;
+              const isFulfilled = completedBlocks >= requiredBlocks;
+              return (
+                <div key={basePosting}>
+                  <Badge
+                    variant="outline"
+                    className={requirementBadgeClass(isFulfilled)}
+                  >
+                    {basePosting} : {completedBlocks} / {requiredBlocks}
                   </Badge>
                 </div>
-              ))}
+              );
+            })}
           </div>
 
           {/* ccr status */}
           <div className="flex flex-col gap-2">
             <Badge
               variant="outline"
-              className={`text-sm ${
-                resident.ccr_status.completed
-                  ? "bg-green-100 text-green-800"
-                  : "bg-red-100 text-red-800"
-              }`}
+              className={requirementBadgeClass(resident.ccr_status.completed)}
             >
               CCR Completed : {resident.ccr_status.completed ? "YES" : "NO"}
               <br />
@@ -688,9 +708,12 @@ const ResidentTimetable: React.FC<Props> = ({
           <Card>
             <CardContent>
               <div className="flex justify-center mb-2">
-                <Badge variant="secondary" className="text-sm">
+                <Badge
+                  variant="outline"
+                  className={requirementBadgeClass(electiveRequirementMet)}
+                >
                   Total Electives Completed:{" "}
-                  {resident.unique_electives_completed.length}
+                  {electivesCompleted} / {ELECTIVE_REQUIREMENT}
                 </Badge>
               </div>
               <Table>

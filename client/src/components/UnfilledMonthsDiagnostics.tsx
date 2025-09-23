@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import monthLabels from "../../../shared/monthLabels.json";
+import { monthLabels } from "../../../shared/config";
 import { Input } from "./ui/input";
 import {
   Table,
@@ -56,7 +56,7 @@ const UnfilledMonthsDiagnostics: React.FC<Props> = ({
         </TableHeader>
         <TableBody>
           {diag.map((entry) => {
-            const b = Number(entry.month_block ?? entry.block);
+            const b = Number(entry.month_block);
             const feasibleCount = (entry.feasible_postings || []).length;
             const reasonsBy = entry.reasons_by_posting || {};
 
