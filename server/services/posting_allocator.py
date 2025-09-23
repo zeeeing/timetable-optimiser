@@ -634,7 +634,7 @@ def allocate_timetable(
             model.Add(micu_blocks == micu_needed)
             model.Add(rccm_blocks == rccm_needed)
 
-    # Hard Constraint 16: Ban SR posting allocation in the last 3 months of Y3
+    # Hard Constraint 16: Ban SR posting allocation in the last 3 months of R3
     for resident in residents:
         mcr = resident["mcr"]
         stage = career_progress[mcr]["stage"]
@@ -671,8 +671,8 @@ def allocate_timetable(
     ###########################################################################
 
     # Soft Constraint 1: Shortfall on elective requirements
-    y2_elective_bonus_terms = []
-    y2_elective_bonus_weight = 1
+    s2_elective_bonus_terms = []
+    s2_elective_bonus_weight = 1
 
     elective_shortfall_penalty_flags = {}
     elective_shortfall_penalty_weight = weightages.get("elective_shortfall_penalty")
@@ -687,25 +687,25 @@ def allocate_timetable(
         if stage == 2:
             has_prefs = bool(pref_map.get(mcr, {}))
 
-            # goal would be to ensure 5 electives done by y3,
-            # so 1 elective done in y1 and y2 is the bare minimum to be achieved.
+            # goal would be to ensure 5 electives done by s3,
+            # so 1 elective done in s1 and s2 is the bare minimum to be achieved.
             # any more than 1 elective will be a bonus
-            y1_hist_electives = get_unique_electives_completed(
+            s1_hist_electives = get_unique_electives_completed(
                 posting_progress.get(mcr, {}), posting_info
             )
 
-            model.Add(len(y1_hist_electives) + selection_count >= 1)
+            model.Add(len(s1_hist_electives) + selection_count >= 1)
 
             if has_prefs:
                 # grant a bonus for more than 1 accumulated electives only if preference given
-                flag = model.NewBoolVar(f"{mcr}_y2_elective_second_bonus")
-                model.Add(selection_count + len(y1_hist_electives) >= 2).OnlyEnforceIf(
+                flag = model.NewBoolVar(f"{mcr}_s2_elective_second_bonus")
+                model.Add(selection_count + len(s1_hist_electives) >= 2).OnlyEnforceIf(
                     flag
                 )
-                model.Add(selection_count + len(y1_hist_electives) <= 1).OnlyEnforceIf(
+                model.Add(selection_count + len(s1_hist_electives) <= 1).OnlyEnforceIf(
                     flag.Not()
                 )
-                y2_elective_bonus_terms.append(y2_elective_bonus_weight * flag)
+                s2_elective_bonus_terms.append(s2_elective_bonus_weight * flag)
 
         elif stage == 3:
             hist = get_unique_electives_completed(
@@ -968,6 +968,7 @@ def allocate_timetable(
         + sum(three_gm_bonus_terms)  # static, 1
         + sum(preference_bonus_terms)
         + sum(seniority_bonus_terms)
+        + sum(s2_elective_bonus_terms)  # static, 1
         - sum(elective_shortfall_penalty_terms)
         - sum(core_shortfall_penalty_terms)
         + sum(core_bonus_terms)  # static, 5

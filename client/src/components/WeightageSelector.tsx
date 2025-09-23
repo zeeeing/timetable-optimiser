@@ -46,7 +46,8 @@ const WeightageSelector: React.FC<WeightageSelectorProps> = ({
       <h2 className="text-lg font-semibold">Weightages</h2>
       <p className="text-sm text-gray-500">
         Adjust the weightages to determine how much weight the different factors
-        can contribute and influence the optimal timetable solution.
+        can contribute and influence the optimal timetable solution. The
+        weightage selectors below are non-exhaustive.
       </p>
       <div className="grid grid-cols-3 md:grid-cols-6 gap-4 items-end">
         <div className="flex flex-col gap-2">

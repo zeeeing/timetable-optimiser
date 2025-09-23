@@ -95,6 +95,7 @@ const ResidentTimetable: React.FC<Props> = ({
     optimisationScoreRaw,
     optimisationScoreNormalised,
     residentIndex,
+    assignedSrPostingCode,
   } = useMemo(() => {
     const postingMap: Record<string, Posting> = (
       apiResponse?.postings ?? []
@@ -139,6 +140,18 @@ const ResidentTimetable: React.FC<Props> = ({
         return m;
       }, {});
 
+    const srPreferenceBases = Object.values(srPreferenceMap)
+      .map((base) => base?.trim())
+      .filter((base): base is string => Boolean(base));
+
+    const assignedSrPostingCode = currentYear
+      .filter((h) => !h.is_leave && h.posting_code)
+      .map((h) => h.posting_code as string)
+      .find((code) => {
+        const base = code.split(" (")[0]?.trim();
+        return base && srPreferenceBases.includes(base);
+      });
+
     const electiveCounts = allHistory
       .filter(
         (h) =>
@@ -171,6 +184,7 @@ const ResidentTimetable: React.FC<Props> = ({
       optimisationScoreRaw,
       optimisationScoreNormalised,
       residentIndex,
+      assignedSrPostingCode,
     };
   }, [apiResponse, resident.mcr]);
 
@@ -187,6 +201,10 @@ const ResidentTimetable: React.FC<Props> = ({
       "text-sm",
       fulfilled ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
     );
+
+  const assignedSrBase = assignedSrPostingCode
+    ? assignedSrPostingCode.split(" (")[0]?.trim()
+    : undefined;
 
   // define current evolving state for current year block postings
   const [currentYearBlockPostings, setCurrentYearBlockPostings] =
@@ -690,14 +708,35 @@ const ResidentTimetable: React.FC<Props> = ({
                 </TableHeader>
                 <TableBody>
                   {(Object.entries(srPreferenceMap) as [string, string][]).map(
-                    ([rank, base]) => (
-                      <TableRow key={rank}>
-                        <TableCell className="text-center">{rank}</TableCell>
-                        <TableCell className="text-center">
-                          {base && base.length > 0 ? base : "-"}
-                        </TableCell>
-                      </TableRow>
-                    )
+                    ([rank, base]) => {
+                      const trimmedBase = base?.trim() ?? "";
+                      const isAssignedSr =
+                        assignedSrBase && trimmedBase === assignedSrBase;
+                      return (
+                        <TableRow
+                          key={rank}
+                          className={cn(
+                            isAssignedSr &&
+                              "bg-green-50 font-semibold border border-green-200"
+                          )}
+                        >
+                          <TableCell className="text-center align-middle">
+                            {rank}
+                          </TableCell>
+                          <TableCell className="text-center align-middle">
+                            {trimmedBase.length > 0 ? trimmedBase : "-"}
+                            {isAssignedSr && (
+                              <Badge
+                                variant="secondary"
+                                className="ml-2 text-xs bg-green-200 text-green-900"
+                              >
+                                Assigned
+                              </Badge>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    }
                   )}
                 </TableBody>
               </Table>
@@ -724,14 +763,34 @@ const ResidentTimetable: React.FC<Props> = ({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {Object.entries(electiveCounts).map(([code, count]) => (
-                    <TableRow key={code}>
-                      <TableCell className="text-center">
-                        {postingMap[code]?.posting_code || code}
-                      </TableCell>
-                      <TableCell className="text-center">{count}</TableCell>
-                    </TableRow>
-                  ))}
+                  {Object.entries(electiveCounts).map(([code, count]) => {
+                    const isAssignedSr =
+                      assignedSrPostingCode && code === assignedSrPostingCode;
+                    return (
+                      <TableRow
+                        key={code}
+                        className={cn(
+                          isAssignedSr &&
+                            "bg-green-50 font-semibold border border-green-200"
+                        )}
+                      >
+                        <TableCell className="text-center align-middle">
+                          {postingMap[code]?.posting_code || code}
+                          {isAssignedSr && (
+                            <Badge
+                              variant="secondary"
+                              className="ml-2 text-xs bg-green-200 text-green-900"
+                            >
+                              Assigned SR
+                            </Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-center align-middle">
+                          {count}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </CardContent>
