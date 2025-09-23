@@ -37,7 +37,7 @@ import {
   getPaginationRowModel,
   flexRender,
 } from "@tanstack/react-table";
-import { monthLabels } from "../../../shared/config";
+import { monthLabels } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import {
   ChevronsUpDownIcon,

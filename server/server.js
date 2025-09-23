@@ -5,7 +5,21 @@ const fs = require("fs");
 const path = require("path");
 const { parse } = require("csv-parse/sync");
 const { spawn } = require("child_process");
-const monthLabels = require("../shared/monthLabels.json");
+
+const monthLabels = [
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+];
 
 const app = express();
 PORT = process.env.PORT || 3001;

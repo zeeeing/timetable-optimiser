@@ -21,7 +21,8 @@ import {
   monthLabels,
   CORE_REQUIREMENTS,
   ELECTIVE_REQUIREMENT,
-} from "../../../shared/config";
+  CCR_POSTINGS,
+} from "@/lib/constants";
 import { areSchedulesEqual, moveByInsert } from "@/lib/utils";
 import { useApiResponseContext } from "@/context/ApiResponseContext";
 import { validateSchedule, saveSchedule } from "@/api/api";
@@ -52,7 +53,6 @@ import {
 } from "./ui/table";
 import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
 import { Info, ChevronLeft, ChevronRight, Loader2Icon } from "lucide-react";
-import { CCR_POSTINGS } from "@/lib/constants";
 
 type BlockMap = Record<number, ResidentHistory>;
 

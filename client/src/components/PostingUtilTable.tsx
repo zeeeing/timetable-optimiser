@@ -16,7 +16,7 @@ import {
   CardTitle,
   CardDescription,
 } from "./ui/card";
-import { monthLabels } from "../../../shared/config";
+import { monthLabels } from "@/lib/constants";
 import { Badge } from "./ui/badge";
 
 const PostingUtilTable: React.FC<{

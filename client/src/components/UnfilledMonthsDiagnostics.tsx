@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { monthLabels } from "../../../shared/config";
+import { monthLabels } from "@/lib/constants";
 import { Input } from "./ui/input";
 import {
   Table,
