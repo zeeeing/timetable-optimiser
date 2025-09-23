@@ -961,17 +961,17 @@ def allocate_timetable(
 
     # Objective
     model.Maximize(
-        sum(gm_ktph_bonus_terms)  # static
+        sum(gm_ktph_bonus_terms)  # static, 1
         + sum(sr_preference_bonus_terms)
         - sum(sr_not_selected_y2_penalty_terms)
-        - sum(sr_out_of_window_penalty_terms)  # static, extreme penalty
-        + sum(three_gm_bonus_terms)  # static
+        - sum(sr_out_of_window_penalty_terms)  # static, extreme penalty 999
+        + sum(three_gm_bonus_terms)  # static, 1
         + sum(preference_bonus_terms)
         + sum(seniority_bonus_terms)
         - sum(elective_shortfall_penalty_terms)
         - sum(core_shortfall_penalty_terms)
-        + sum(core_bonus_terms)  # static
-        - sum(off_penalty_terms)  # static
+        + sum(core_bonus_terms)  # static, 5
+        - sum(off_penalty_terms)  # static, extreme penalty 999
     )
 
     ###########################################################################

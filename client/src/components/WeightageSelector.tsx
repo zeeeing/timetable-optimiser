@@ -7,19 +7,19 @@ import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
 interface WeightageSelectorProps {
   value: {
     preference: number;
+    sr_preference: number;
+    sr_y2_not_selected_penalty: number;
     seniority: number;
     elective_shortfall_penalty: number;
     core_shortfall_penalty: number;
-    sr_preference: number;
-    sr_y2_not_selected_penalty: number;
   };
   setValue: (val: {
     preference: number;
+    sr_preference: number;
+    sr_y2_not_selected_penalty: number;
     seniority: number;
     elective_shortfall_penalty: number;
     core_shortfall_penalty: number;
-    sr_preference: number;
-    sr_y2_not_selected_penalty: number;
   }) => void;
 }
 
@@ -59,7 +59,7 @@ const WeightageSelector: React.FC<WeightageSelectorProps> = ({
                 </span>
               </TooltipTrigger>
               <TooltipContent side="top">
-                Residents get more points for hitting higher-rank choices.
+                Gives extra points when a resident gets one of their top picks.
               </TooltipContent>
             </Tooltip>
           </Label>
@@ -80,7 +80,7 @@ const WeightageSelector: React.FC<WeightageSelectorProps> = ({
                 </span>
               </TooltipTrigger>
               <TooltipContent side="top">
-                Residents get more points for hitting higher-rank SR choices.
+                Rewards residents for landing their preferred SR departments.
               </TooltipContent>
             </Tooltip>
           </Label>
@@ -101,7 +101,11 @@ const WeightageSelector: React.FC<WeightageSelectorProps> = ({
                 </span>
               </TooltipTrigger>
               <TooltipContent side="top">
-                Applies a small penalty if a Y2 resident has no SR posting.
+                Takes away points if a Year 2 resident ends up without any SR
+                within the stipulated window.
+                <br />
+                <br />
+                Window: 2nd half of R2 - 1st half of R3
               </TooltipContent>
             </Tooltip>
           </Label>
@@ -122,7 +126,7 @@ const WeightageSelector: React.FC<WeightageSelectorProps> = ({
                 </span>
               </TooltipTrigger>
               <TooltipContent side="top">
-                Seniors will outrank juniors more strongly when slots conflict.
+                Pushes seniors ahead of juniors when they compete for a slot.
               </TooltipContent>
             </Tooltip>
           </Label>
@@ -143,7 +147,14 @@ const WeightageSelector: React.FC<WeightageSelectorProps> = ({
                 </span>
               </TooltipTrigger>
               <TooltipContent side="top">
-                Failing to meet elective targets carries a higher point cost.
+                Deducts points when a resident falls short on elective counts.
+                <br />
+                <br />
+                R1: No specific requirements
+                <br />
+                R2: 1 - 2 electives completed
+                <br />
+                R3: 5 electives completed
               </TooltipContent>
             </Tooltip>
           </Label>
@@ -164,8 +175,8 @@ const WeightageSelector: React.FC<WeightageSelectorProps> = ({
                 </span>
               </TooltipTrigger>
               <TooltipContent side="top">
-                Missing core blocks becomes very expensive; solver fills them
-                first.
+                Makes missing core postings by the end of their 3rd year very
+                costly so the solver fills those first.
               </TooltipContent>
             </Tooltip>
           </Label>

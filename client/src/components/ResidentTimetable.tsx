@@ -712,8 +712,8 @@ const ResidentTimetable: React.FC<Props> = ({
                   variant="outline"
                   className={requirementBadgeClass(electiveRequirementMet)}
                 >
-                  Total Electives Completed:{" "}
-                  {electivesCompleted} / {ELECTIVE_REQUIREMENT}
+                  Total Electives Completed: {electivesCompleted} /{" "}
+                  {ELECTIVE_REQUIREMENT}
                 </Badge>
               </div>
               <Table>
@@ -727,7 +727,7 @@ const ResidentTimetable: React.FC<Props> = ({
                   {Object.entries(electiveCounts).map(([code, count]) => (
                     <TableRow key={code}>
                       <TableCell className="text-center">
-                        {postingMap[code]?.posting_name || code}
+                        {postingMap[code]?.posting_code || code}
                       </TableCell>
                       <TableCell className="text-center">{count}</TableCell>
                     </TableRow>
