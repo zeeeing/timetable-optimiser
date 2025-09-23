@@ -860,6 +860,23 @@ def allocate_timetable(
     # DEFINE BONUSES, PENALTIES AND OBJECTIVE
     ###########################################################################
 
+    # elective shortfall penalty
+    elective_shortfall_penalty_terms = []
+    elective_shortfall_penalty_weight = weightages.get("elective_shortfall_penalty")
+
+    for mcr in elective_shortfall_penalty_flags:
+        elective_shortfall_penalty_terms.append(
+            elective_shortfall_penalty_weight * elective_shortfall_penalty_flags[mcr]
+        )
+
+    # core shortfall penalty
+    core_shortfall_penalty_terms = []
+    core_shortfall_penalty_weight = weightages.get("core_shortfall_penalty")
+
+    for mcr, base_map in core_shortfall.items():
+        for base, slack in base_map.items():
+            core_shortfall_penalty_terms.append(core_shortfall_penalty_weight * slack)
+
     # 3 GMs bonus if ED + GRM present
     three_gm_bonus_terms = []
     three_gm_bonus_weight = 1
@@ -923,23 +940,6 @@ def allocate_timetable(
                     stage * x[mcr][p][b] * seniority_bonus_weight
                 )
 
-    # elective shortfall penalty
-    elective_shortfall_penalty_terms = []
-    elective_shortfall_penalty_weight = weightages.get("elective_shortfall_penalty")
-
-    for mcr in elective_shortfall_penalty_flags:
-        elective_shortfall_penalty_terms.append(
-            elective_shortfall_penalty_weight * elective_shortfall_penalty_flags[mcr]
-        )
-
-    # core shortfall penalty
-    core_shortfall_penalty_terms = []
-    core_shortfall_penalty_weight = weightages.get("core_shortfall_penalty")
-
-    for mcr, base_map in core_shortfall.items():
-        for base, slack in base_map.items():
-            core_shortfall_penalty_terms.append(core_shortfall_penalty_weight * slack)
-
     # core prioritisation bonus
     core_bonus_terms = []
     core_bonus_weight = 5
@@ -962,15 +962,15 @@ def allocate_timetable(
     # Objective
     model.Maximize(
         sum(gm_ktph_bonus_terms)  # static, 1
+        + sum(s2_elective_bonus_terms)  # static, 1
+        - sum(elective_shortfall_penalty_terms)
+        - sum(core_shortfall_penalty_terms)
         + sum(sr_preference_bonus_terms)
         - sum(sr_not_selected_y2_penalty_terms)
         - sum(sr_out_of_window_penalty_terms)  # static, extreme penalty 999
         + sum(three_gm_bonus_terms)  # static, 1
         + sum(preference_bonus_terms)
         + sum(seniority_bonus_terms)
-        + sum(s2_elective_bonus_terms)  # static, 1
-        - sum(elective_shortfall_penalty_terms)
-        - sum(core_shortfall_penalty_terms)
         + sum(core_bonus_terms)  # static, 5
         - sum(off_penalty_terms)  # static, extreme penalty 999
     )
