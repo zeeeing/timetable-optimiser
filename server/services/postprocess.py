@@ -50,9 +50,7 @@ def compute_postprocess(payload: Dict) -> Dict:
     if solver_solution:
         entries: List[Dict] = list(solver_solution.get("entries", []) or [])
         leave_map: Dict[str, Dict[int, Dict]] = solver_solution.get("leave_map", {})
-        career_progress: Dict[str, Dict[str, int]] = solver_solution.get(
-            "career_progress", {}
-        )
+        career_progress: Dict[str, Dict] = solver_solution.get("career_progress", {})
 
         entries_by_resident: Dict[str, List[Dict]] = {}
         for entry in entries:
@@ -78,6 +76,18 @@ def compute_postprocess(payload: Dict) -> Dict:
 
             current_year = resident.get("resident_year")
             res_entries = entries_by_resident.get(mcr, [])
+            resident_career_progress = career_progress.get(mcr, {}) or {}
+            stages_by_block = {
+                int(k): v
+                for k, v in (
+                    resident_career_progress.get("stages_by_block", {}) or {}
+                ).items()
+            }
+            resident_stage = resident_career_progress.get("stage")
+            if resident_stage is not None:
+                resident["career_stage"] = resident_stage
+            if stages_by_block:
+                resident["stages_by_block"] = stages_by_block
 
             # derive starting career blocks from existing history; fall back to metadata
             historical_entries = [
@@ -105,7 +115,7 @@ def compute_postprocess(payload: Dict) -> Dict:
                     base_completed = 0
 
             if base_completed == 0:
-                fallback = career_progress.get(mcr, {}).get("completed_blocks")
+                fallback = resident_career_progress.get("completed_blocks")
                 if fallback is None:
                     fallback = resident.get("career_blocks_completed", 0)
                 try:
@@ -144,6 +154,8 @@ def compute_postprocess(payload: Dict) -> Dict:
                     "is_leave": is_leave_block,
                     "leave_type": leave_type,
                 }
+                if stages_by_block:
+                    history_entry["career_stage"] = stages_by_block.get(b)
 
                 output_history.append(history_entry)
 
@@ -207,6 +219,8 @@ def compute_postprocess(payload: Dict) -> Dict:
                 "name": r.get("name"),
                 "resident_year": current_year,
                 "career_blocks_completed": career_blocks_completed,
+                "career_stage": r.get("career_stage"),
+                "stages_by_block": r.get("stages_by_block", {}),
                 "core_blocks_completed": core_blocks_completed,
                 "unique_electives_completed": unique_electives_completed,
                 "violations": violations,
@@ -296,14 +310,6 @@ def compute_postprocess(payload: Dict) -> Dict:
         "posting_util": posting_util,
     }
 
-    # DEBUG: explain OFF (unassigned) blocks heuristically
-    off_explanations_by_resident = compute_off_explanations(
-        residents=residents,
-        output_history=output_history,
-        posting_info=posting_info,
-        cap_fill=cap_fill,
-    )
-
     return {
         "success": True,
         "residents": output_residents,
@@ -317,107 +323,7 @@ def compute_postprocess(payload: Dict) -> Dict:
             "total_residents": len(residents),
             "cohort": cohort_statistics,
         },
-        "diagnostics": {
-            "off_explanations_by_resident": off_explanations_by_resident,
-        },
     }
-
-
-def compute_off_explanations(
-    *,
-    residents: List[Dict],
-    output_history: List[Dict],
-    posting_info: Dict[str, Dict],
-    cap_fill: Dict[str, Dict[int, int]],
-) -> Dict[str, List[Dict]]:
-    """
-    Build a heuristic explanation for why certain current-year blocks remain OFF
-    (unassigned). For each resident and each unfilled block, list postings that
-    are feasible and reasons why others are not (capacity, start rules, etc.).
-    """
-    quarter_starts = {1, 4, 7, 10}
-    off_explanations_by_resident: Dict[str, List[Dict]] = {}
-
-    # Build per-resident current-year map for quick lookup
-    cy_by_mcr: Dict[str, Dict[int, str]] = {}
-    for h in output_history:
-        if not h.get("is_current_year"):
-            continue
-        mcr = h.get("mcr")
-        b = int(h.get("month_block", 0))
-        if not mcr or b <= 0:
-            continue
-        cy_by_mcr.setdefault(mcr, {})[b] = h.get("posting_code")
-
-    for r in residents:
-        mcr = r.get("mcr")
-        if not mcr:
-            continue
-        cy_blocks = cy_by_mcr.get(mcr, {})
-        # resident progress incl. all years
-        progress = get_posting_progress(output_history, posting_info).get(mcr, {})
-        completed_electives = set(
-            p.split(" (")[0]
-            for p in get_unique_electives_completed(progress, posting_info)
-        )
-
-        entries: List[Dict] = []
-        for b in range(1, 13):
-            if b in cy_blocks:
-                continue  # already assigned
-            reasons_by_posting: Dict[str, List[str]] = {}
-            feasible: List[str] = []
-
-            for p, pinfo in posting_info.items():
-                reasons: List[str] = []
-                # 1) capacity at this block
-                cap_map = cap_fill.get(p, {})
-                cap = int(pinfo.get("max_residents", 0))
-                filled_b = int(cap_map.get(b, 0))
-                if filled_b >= cap:
-                    reasons.append("capacity_full")
-
-                # 2) start rules
-                dur = int(pinfo.get("required_block_duration", 1))
-                # quarter starts for 3-month runs
-                if dur == 3 and b not in quarter_starts:
-                    reasons.append("start_month_disallowed_for_3m")
-                # GRM must start on odd block numbers
-                if str(p).startswith("GRM (") and b % 2 == 0:
-                    reasons.append("grm_even_start_disallowed")
-                # cannot cross Dec(6) - Jan(7)
-                if dur > 1:
-                    end_b = b + dur - 1
-                    if b <= 6 and end_b >= 7:
-                        reasons.append("crosses_dec_jan_boundary")
-                    # capacity across full run
-                    for t in range(b, min(end_b, 12) + 1):
-                        if int(cap_map.get(t, 0)) >= cap:
-                            reasons.append(f"capacity_full_at_{t}")
-
-                # 3) elective base uniqueness
-                if pinfo.get("posting_type") == "elective":
-                    base = str(p).split(" (")[0]
-                    if base in completed_electives:
-                        reasons.append("elective_base_already_completed")
-
-                if not reasons:
-                    feasible.append(p)
-                reasons_by_posting[p] = reasons
-
-            if feasible or any(reasons_by_posting.values()):
-                entries.append(
-                    {
-                        "month_block": b,
-                        "feasible_postings": feasible,
-                        "reasons_by_posting": reasons_by_posting,
-                    }
-                )
-
-        if entries:
-            off_explanations_by_resident[mcr] = entries
-
-    return off_explanations_by_resident
 
 
 def main():

@@ -1,5 +1,5 @@
 import sys, json, os
-from typing import List, Dict, Optional, Set, Tuple
+from typing import List, Dict, Optional, Set, Tuple, Any
 import logging
 
 from ortools.sat.python import cp_model
@@ -52,16 +52,18 @@ def allocate_timetable(
     # DEFINE HELPERS
     ###########################################################################
 
-    # create and register assumption literals (for infeasible outcomes)
-    assumption_literals = {}
+    # 1. create map of posting codes to posting info
+    posting_info = {p["posting_code"]: p for p in postings}
 
-    def new_assumption_literal(name: str, description: str) -> cp_model.IntVar:
-        flag = model.NewBoolVar(name)
-        model.AddAssumption(flag)
-        assumption_literals[name] = description
-        return flag
+    # 2. create list of posting codes
+    posting_codes = list(posting_info.keys())
 
-    # define list of all unique elective base codes
+    CORE_POSTINGS = [
+        p for p in posting_codes if posting_info[p]["posting_type"] == "core"
+    ]
+    ELECTIVE_POSTINGS = [
+        p for p in posting_codes if posting_info[p]["posting_type"] == "elective"
+    ]
     ELECTIVE_BASE_CODES = set(
         [
             p["posting_code"].split(" (")[0]
@@ -70,23 +72,10 @@ def allocate_timetable(
         ]
     )
 
-    # 1. create map of posting codes to posting info
-    posting_info = {p["posting_code"]: p for p in postings}
-
-    # 2. create list of posting codes
-    posting_codes = list(posting_info.keys())
-
-    core_postings = [
-        p for p in posting_codes if posting_info[p]["posting_type"] == "core"
-    ]
-    elective_postings = [
-        p for p in posting_codes if posting_info[p]["posting_type"] == "elective"
-    ]
-
-    # 3. create list of blocks
+    # 3. create month block list
     blocks = list(range(1, 13))
 
-    # 4. create map of resident mcr to their preferences
+    # 4. create map of resident mcr to their elective preferences
     pref_map = {}
     for pref in resident_preferences:
         mcr = pref["mcr"]
@@ -94,13 +83,15 @@ def allocate_timetable(
             pref_map[mcr] = {}
         pref_map[mcr][pref["preference_rank"]] = pref["posting_code"]
 
-    # 5. create map of resident mcr to their SR base-code preferences (ranks 1..3)
+    # 5. create map of resident mcr to their SR preferences (base)
     sr_pref_map = {}
     for pref in resident_sr_preferences:
         mcr = pref["mcr"]
         if mcr not in sr_pref_map:
             sr_pref_map[mcr] = {}
-        sr_pref_map[mcr][pref["preference_rank"]] = pref["base_posting"]
+        base_posting = (pref.get("base_posting") or "").strip()
+        if base_posting:
+            sr_pref_map[mcr][pref["preference_rank"]] = base_posting
 
     # 6. get posting progress for each resident
     posting_progress = get_posting_progress(resident_history, posting_info)
@@ -144,22 +135,30 @@ def allocate_timetable(
                 # ignore malformed leave rows
                 continue
 
-    # derive career progress per resident
-    career_progress: Dict[str, Dict[str, int]] = {}
+    # 9. derive career progress per resident
+    def stage_from_blocks(blocks_completed: int) -> int:
+        if blocks_completed < 12:
+            return 1
+        if blocks_completed < 24:
+            return 2
+        return 3
+
+    career_progress: Dict[str, Dict[str, Any]] = {}
     for resident in residents:
         mcr = resident["mcr"]
         completed_blocks = int(resident.get("career_blocks_completed", 0) or 0)
 
-        if completed_blocks < 12:
-            stage = 1
-        elif completed_blocks < 24:
-            stage = 2
-        else:
-            stage = 3
+        stages_by_block: Dict[int, int] = {}
+        progress_counter = completed_blocks
+        for b in blocks:
+            stages_by_block[b] = stage_from_blocks(progress_counter)
+            progress_counter += 1
 
+        stage = stage_from_blocks(completed_blocks)
         career_progress[mcr] = {
             "completed_blocks": completed_blocks,
             "stage": stage,
+            "stages_by_block": stages_by_block,
         }
 
     ###########################################################################
@@ -186,7 +185,7 @@ def allocate_timetable(
                 f"{mcr}_{to_snake_case(p)}_selected"
             )
 
-    # define posting assignment count: number of times a resident gets assigned a posting
+    # define posting assignment count variables
     posting_asgm_count = {}
     for resident in residents:
         mcr = resident["mcr"]
@@ -210,6 +209,10 @@ def allocate_timetable(
             model.Add(count >= 1).OnlyEnforceIf(flag)
             model.Add(count == 0).OnlyEnforceIf(flag.Not())
 
+    ############################################################################
+    # APPLY PINNED ASSIGNMENTS (IF ANY)
+    ############################################################################
+
     # pinned residents: force exact block/posting for selected residents
     if pinned_assignments:
         logger.info(
@@ -225,6 +228,10 @@ def allocate_timetable(
                         model.Add(x[mcr][p][b] == 1)
             except Exception as e:
                 logger.warning("Failed to apply pins for %s: %s", mcr, e)
+
+    ############################################################################
+    # DEFINE SLACK VARIABLES (FOR LEAVES OR DEBUG)
+    ############################################################################
 
     # DEBUG: define per-block slack (OFF) variables
     off = {}
@@ -324,7 +331,9 @@ def allocate_timetable(
     for resident in residents:
         mcr = resident["mcr"]
         resident_progress = posting_progress.get(mcr, {})
-        stage = career_progress[mcr]["stage"]
+        stages_by_block = career_progress[mcr].get("stages_by_block", {})
+        stage1_blocks = [b for b in blocks if stages_by_block.get(b) == 1]
+        stage2_plus_blocks = [b for b in blocks if stages_by_block.get(b, 0) >= 2]
 
         done_ccr = any(
             resident_progress.get(ccr_posting, {}).get("is_completed", False)
@@ -334,12 +343,15 @@ def allocate_timetable(
         # extra protective layer of code to ensure user updates both posting codes and ccr posting codes
         offered = [p for p in CCR_POSTINGS if p in posting_codes]
 
-        if done_ccr or stage == 1:
-            # forbid all CCR blocks entirely
+        if stage1_blocks:
+            for b in stage1_blocks:
+                for p in offered:
+                    model.Add(x[mcr][p][b] == 0)
+
+        if done_ccr or not stage2_plus_blocks:
             for p in offered:
                 model.Add(posting_asgm_count[mcr][p] == 0)
         else:
-            # exactly one run of any CCR posting
             model.Add(sum(posting_asgm_count[mcr][p] for p in offered) == 1)
 
     # Hard Constraint 5: Ensure core postings are not over-assigned to each resident
@@ -503,14 +515,15 @@ def allocate_timetable(
 
     for resident in residents:
         mcr = resident["mcr"]
-        stage = career_progress[mcr]["stage"]
+        stages_by_block = career_progress[mcr].get("stages_by_block", {})
+        stage1_blocks = [b for b in blocks if stages_by_block.get(b) == 1]
 
-        if stage == 1:
+        if stage1_blocks:
             gm_blocks_count = sum(
                 x[mcr][p][b]
                 for p in posting_codes
                 if p.split(" (")[0] == "GM"
-                for b in blocks
+                for b in stage1_blocks
             )
 
             # ensure GM postings are capped at 3 blocks
@@ -518,7 +531,10 @@ def allocate_timetable(
 
             # bonus for assigning `GM (KTPH)`
             ktph_bonus = sum(
-                x[mcr][p][b] for p in posting_codes if p == "GM (KTPH)" for b in blocks
+                x[mcr][p][b]
+                for p in posting_codes
+                if p == "GM (KTPH)"
+                for b in stage1_blocks
             )
             gm_ktph_bonus_terms.append(gm_ktph_bonus_weight * ktph_bonus)
 
@@ -584,21 +600,75 @@ def allocate_timetable(
     for resident in residents:
         mcr = resident["mcr"]
         resident_progress = posting_progress.get(mcr, {})
-        stage = career_progress[mcr]["stage"]
+        stages_by_block = career_progress[mcr].get("stages_by_block", {})
+        stage1_blocks = [b for b in blocks if stages_by_block.get(b) == 1]
+        stage2_blocks = [b for b in blocks if stages_by_block.get(b) == 2]
+        stage3_blocks = [b for b in blocks if stages_by_block.get(b) == 3]
+        stages_present = set(stages_by_block.values())
 
         # count assigned blocks for the current year
-        micu_blocks = sum(
-            x[mcr][p][b]
-            for p in posting_codes
-            if p.startswith("MICU (")
-            for b in blocks
+        micu_stage1 = (
+            sum(
+                x[mcr][p][b]
+                for p in posting_codes
+                if p.startswith("MICU (")
+                for b in stage1_blocks
+            )
+            if stage1_blocks
+            else 0
         )
-        rccm_blocks = sum(
-            x[mcr][p][b]
-            for p in posting_codes
-            if p.startswith("RCCM (")
-            for b in blocks
+        micu_stage2 = (
+            sum(
+                x[mcr][p][b]
+                for p in posting_codes
+                if p.startswith("MICU (")
+                for b in stage2_blocks
+            )
+            if stage2_blocks
+            else 0
         )
+        micu_stage3 = (
+            sum(
+                x[mcr][p][b]
+                for p in posting_codes
+                if p.startswith("MICU (")
+                for b in stage3_blocks
+            )
+            if stage3_blocks
+            else 0
+        )
+        rccm_stage1 = (
+            sum(
+                x[mcr][p][b]
+                for p in posting_codes
+                if p.startswith("RCCM (")
+                for b in stage1_blocks
+            )
+            if stage1_blocks
+            else 0
+        )
+        rccm_stage2 = (
+            sum(
+                x[mcr][p][b]
+                for p in posting_codes
+                if p.startswith("RCCM (")
+                for b in stage2_blocks
+            )
+            if stage2_blocks
+            else 0
+        )
+        rccm_stage3 = (
+            sum(
+                x[mcr][p][b]
+                for p in posting_codes
+                if p.startswith("RCCM (")
+                for b in stage3_blocks
+            )
+            if stage3_blocks
+            else 0
+        )
+        micu_blocks = micu_stage1 + micu_stage2 + micu_stage3
+        rccm_blocks = rccm_stage1 + rccm_stage2 + rccm_stage3
 
         # count completed MICU/RCCM blocks historically
         core_blocks_completed_map = get_core_blocks_completed(
@@ -607,64 +677,32 @@ def allocate_timetable(
         hist_micu = core_blocks_completed_map.get("MICU", 0)
         hist_rccm = core_blocks_completed_map.get("RCCM", 0)
 
-        if stage == 1:
+        if 1 in stages_present and stage1_blocks:
             # by end of 12 months: optionally do first pack (MICU=1 and RCCM=2)
             flag = model.NewBoolVar(f"{mcr}_do_micu_rccm_pack_s1")
-            model.Add(micu_blocks == 1).OnlyEnforceIf(flag)
-            model.Add(rccm_blocks == 2).OnlyEnforceIf(flag)
-            model.Add(micu_blocks == 0).OnlyEnforceIf(flag.Not())
-            model.Add(rccm_blocks == 0).OnlyEnforceIf(flag.Not())
-        elif stage == 2:
+            model.Add(micu_stage1 == 1).OnlyEnforceIf(flag)
+            model.Add(rccm_stage1 == 2).OnlyEnforceIf(flag)
+            model.Add(micu_stage1 == 0).OnlyEnforceIf(flag.Not())
+            model.Add(rccm_stage1 == 0).OnlyEnforceIf(flag.Not())
+        if 2 in stages_present:
             # do second pack (MICU=2, RCCM=1) if first pack done
             # else do first pack if first pack not done
             first_pack_done = (hist_micu == 1) and (hist_rccm == 2)
             if not first_pack_done:
-                model.Add(micu_blocks == 1)
-                model.Add(rccm_blocks == 2)
-            else:
+                model.Add(micu_stage1 + micu_stage2 == 1)
+                model.Add(rccm_stage1 + rccm_stage2 == 2)
+            elif stage2_blocks:
                 flag = model.NewBoolVar(f"{mcr}_do_micu_rccm_pack_s2")
-                model.Add(micu_blocks == 2).OnlyEnforceIf(flag)
-                model.Add(rccm_blocks == 1).OnlyEnforceIf(flag)
-                model.Add(micu_blocks == 0).OnlyEnforceIf(flag.Not())
-                model.Add(rccm_blocks == 0).OnlyEnforceIf(flag.Not())
-        elif stage == 3:
+                model.Add(micu_stage2 == 2).OnlyEnforceIf(flag)
+                model.Add(rccm_stage2 == 1).OnlyEnforceIf(flag)
+                model.Add(micu_stage2 == 0).OnlyEnforceIf(flag.Not())
+                model.Add(rccm_stage2 == 0).OnlyEnforceIf(flag.Not())
+        if 3 in stages_present:
             micu_needed = max(0, 3 - hist_micu)
             rccm_needed = max(0, 3 - hist_rccm)
 
             model.Add(micu_blocks == micu_needed)
             model.Add(rccm_blocks == rccm_needed)
-
-    # Hard Constraint 16: Ban SR posting allocation in the last 3 months of R3
-    for resident in residents:
-        mcr = resident["mcr"]
-        stage = career_progress[mcr]["stage"]
-        sr_prefs = sr_pref_map.get(mcr, {})
-
-        if not sr_prefs:
-            continue
-
-        # get all base variants
-        sr_variants = set()
-        for _, base in sr_prefs.items():
-            for p in variants_for_base(base, posting_codes):
-                sr_variants.add(p)
-        sr_variants = list(sr_variants)
-
-        if not sr_variants:
-            continue
-
-        # build per-block SR indicator
-        Y = []
-        for b in blocks:
-            yb = model.NewBoolVar(f"{mcr}_SR_at_block_{b}")
-            model.Add(sum(x[mcr][p][b] for p in sr_variants) == yb)
-            Y.append(yb)
-
-        # Ban last 3 blocks of Year 3 for SR
-        if stage == 3:
-            for b in [10, 11, 12]:
-                if b in blocks:
-                    model.Add(Y[b - 1] == 0)
 
     ###########################################################################
     # DEFINE SOFT CONSTRAINTS WITH PENALTIES
@@ -679,12 +717,12 @@ def allocate_timetable(
 
     for resident in residents:
         mcr = resident["mcr"]
-        stage = career_progress[mcr]["stage"]
+        stages_present = set(career_progress[mcr].get("stages_by_block", {}).values())
 
         # current-year elective selections count
-        selection_count = sum(selection_flags[mcr][p] for p in elective_postings)
+        selection_count = sum(selection_flags[mcr][p] for p in ELECTIVE_POSTINGS)
 
-        if stage == 2:
+        if 2 in stages_present:
             has_prefs = bool(pref_map.get(mcr, {}))
 
             # goal would be to ensure 5 electives done by s3,
@@ -707,7 +745,7 @@ def allocate_timetable(
                 )
                 s2_elective_bonus_terms.append(s2_elective_bonus_weight * flag)
 
-        elif stage == 3:
+        if 3 in stages_present:
             hist = get_unique_electives_completed(
                 posting_progress.get(mcr, {}), posting_info
             )
@@ -721,7 +759,11 @@ def allocate_timetable(
                 model.Add(hist_count + selection_count <= 4).OnlyEnforceIf(unmet)
 
     # Soft Constraint 2: Shortfall on core requirements
-    s3_residents = [r for r in residents if career_progress[r["mcr"]]["stage"] == 3]
+    s3_residents = [
+        r
+        for r in residents
+        if 3 in set(career_progress[r["mcr"]].get("stages_by_block", {}).values())
+    ]
 
     core_shortfall = {}
     for r in s3_residents:
@@ -753,108 +795,88 @@ def allocate_timetable(
             # Allow shortfall when unmet == 1
             model.Add(hist_done + assigned <= required - 1).OnlyEnforceIf(unmet_flag)
 
-    # Hybrid Constraint: SR preference (bonus and timing penalties)
-    # stage 3: exactly one SR required, big out-of-window penalty if not in blocks 1–6.
-    # stage 2: optional with small penalty if none; still at most one SR; big out-of-window penalty if not in blocks 7–12.
-    # stage 1: no SR allowed.
-    sr_preference_bonus_terms = []
-    sr_preference_bonus_weight = weightages.get("sr_preference")
+    # Soft Constraint 3: SR preference
+    # assignments outside career blocks 19–30 receive an extreme penalty
+    # sr_out_of_window_penalty_terms = []
+    # sr_out_of_window_penalty_weight = 999  # extreme penalty
 
-    sr_not_selected_y2_penalty_terms = []
-    sr_not_selected_y2_penalty_weight = weightages.get("sr_y2_not_selected_penalty")
-
-    sr_out_of_window_penalty_terms = []
-    sr_out_of_window_penalty_weight = 999  # extreme penalty
-
+    sr_bonus_context: Dict[str, Dict] = {}
     for resident in residents:
         mcr = resident["mcr"]
-        stage = career_progress[mcr]["stage"]
+        completed_blocks = career_progress[mcr]["completed_blocks"]
         sr_prefs = sr_pref_map.get(mcr, {})
         if not sr_prefs:
             continue
 
-        # get all base variants
-        sr_variants = set()
-        for _, base in sr_prefs.items():
-            for p in variants_for_base(base, posting_codes):
-                sr_variants.add(p)
-        sr_variants = list(sr_variants)
-        if not sr_variants:
-            continue
+        elective_prefs = pref_map.get(mcr, {})
+        elective_prefs_bases: Set[str] = set()
+        for code in elective_prefs.values():
+            posting_meta = posting_info.get(code)
+            if not posting_meta:
+                continue
+            if posting_meta.get("posting_type") == "elective":
+                elective_prefs_bases.add(code.split(" (")[0])
 
-        # SR selection count and selection flag
-        sr_count = sum(selection_flags[mcr][p] for p in sr_variants)
-        has_sr = model.NewBoolVar(f"{mcr}_has_sr")
-
-        model.Add(sr_count == 1).OnlyEnforceIf(has_sr)
-        model.Add(sr_count == 0).OnlyEnforceIf(has_sr.Not())
-
-        if stage == 3:
-            # exactly one SR in Year 3
-            model.Add(sr_count == 1)
-        elif stage == 2:
-            # at most one SR in Year 2; with small penalty if not selected
-            model.Add(sr_count <= 1)
-            sr_not_selected_y2_penalty_terms.append(
-                sr_not_selected_y2_penalty_weight * (1 - has_sr)
-            )
-        else:
-            # do not allow SR selection for all other years (i.e., year 1)
-            model.Add(sr_count == 0)
-
-        # SR preference bonus
+        # obtain updated SR preferences
+        updated_sr_prefs = {}
+        new_rank = 1
         for rank, base in sr_prefs.items():
             if not base:
                 continue
-            base_vars = variants_for_base(base, posting_codes)
-            if not base_vars:
+
+            curr_base_variants = variants_for_base(base, posting_codes)
+            if not curr_base_variants:
                 continue
 
-            flag = model.NewBoolVar(f"{mcr}_sr_base_{to_snake_case(base)}_selected")
-
-            model.Add(
-                sum(selection_flags[mcr][p] for p in base_vars) == 1
-            ).OnlyEnforceIf(flag)
-            model.Add(
-                sum(selection_flags[mcr][p] for p in base_vars) == 0
-            ).OnlyEnforceIf(flag.Not())
-
-            w = sr_preference_bonus_weight * (4 - rank)
-            sr_preference_bonus_terms.append(w * flag)
-
-        # huge penalisation if SR assigned outside the allowed window
-        if stage in (2, 3):
-            # block-wise SR indicator
-            Y = []
-            for b in blocks:
-                yb = model.NewBoolVar(f"{mcr}_SR_at_block_{b}")
-                model.Add(sum(x[mcr][p][b] for p in sr_variants) == yb)
-                Y.append(yb)
-
-            # define the disallowed indices
-            if stage == 2:
-                disallowed_idx = [b - 1 for b in blocks if b <= 6]
-            elif stage == 3:
-                disallowed_idx = [b - 1 for b in blocks if b >= 7]
-
-            # detect if any SR assigned in disallowed window
-            sr_in_disallowed = model.NewBoolVar(f"{mcr}_sr_in_disallowed")
-            model.Add(sum(Y[i] for i in disallowed_idx) > 0).OnlyEnforceIf(
-                sr_in_disallowed
-            )
-            model.Add(sum(Y[i] for i in disallowed_idx) == 0).OnlyEnforceIf(
-                sr_in_disallowed.Not()
+            is_core_posting = any(
+                posting_info.get(p, {}).get("posting_type") == "core"
+                for p in curr_base_variants
             )
 
-            # penalise if they have SR and it is in disallowed window
-            sr_penalty_flag = model.NewBoolVar(f"{mcr}_sr_out_of_window")
-            model.Add(sr_penalty_flag <= has_sr)
-            model.Add(sr_penalty_flag <= sr_in_disallowed)
-            model.Add(sr_penalty_flag >= has_sr + sr_in_disallowed - 1)
+            if (
+                any(elective_prefs.values())
+                and base not in elective_prefs_bases
+                and not is_core_posting
+            ):
+                continue
 
-            sr_out_of_window_penalty_terms.append(
-                sr_out_of_window_penalty_weight * sr_penalty_flag
-            )
+            updated_sr_prefs[new_rank] = base
+            new_rank += 1
+
+        if not updated_sr_prefs:
+            continue
+
+        # get all base variants
+        sr_variants = set()
+        for _, base in updated_sr_prefs.items():
+            for p in variants_for_base(base, posting_codes):
+                sr_variants.add(p)
+        sr_variants = list(sr_variants)
+
+        if not sr_variants:
+            continue
+
+        # store context for bonus calculation later
+        sr_bonus_context[mcr] = {
+            "updated_sr_prefs": dict(updated_sr_prefs),
+            "elective_pref_bases": set(elective_prefs_bases),
+        }
+
+        # if selected SR, only 1 SR allowed
+        sr_count = sum(selection_flags[mcr][p] for p in sr_variants)
+        model.Add(sr_count <= 1)
+
+        # ban SR posting allocation in the relevant ineligible periods
+        Y = []
+        for b in blocks:
+            yb = model.NewBoolVar(f"{mcr}_SR_at_block_{b}")
+            model.Add(sum(x[mcr][p][b] for p in sr_variants) == yb)
+            Y.append(yb)
+
+        for idx, b in enumerate(blocks):
+            absolute_block = completed_blocks + b
+            if absolute_block < 19 or absolute_block > 30:
+                model.Add(Y[idx] == 0)
 
     ###########################################################################
     # DEFINE BONUSES, PENALTIES AND OBJECTIVE
@@ -876,6 +898,61 @@ def allocate_timetable(
     for mcr, base_map in core_shortfall.items():
         for base, slack in base_map.items():
             core_shortfall_penalty_terms.append(core_shortfall_penalty_weight * slack)
+
+    # SR preference bonus
+    sr_preference_bonus_terms = []
+    sr_preference_bonus_weight = weightages.get("sr_preference")
+
+    if sr_preference_bonus_weight:
+        for resident in residents:
+            mcr = resident["mcr"]
+            context = sr_bonus_context.get(mcr)
+            if not context:
+                continue
+
+            updated_sr_prefs = context.get("updated_sr_prefs", {})
+            if not updated_sr_prefs:
+                continue
+
+            # stash elective base codes to decide if SR electives should count for bonuses
+            elective_pref_bases = context.get("elective_pref_bases", set())
+            max_rank = len(updated_sr_prefs)
+
+            for rank, base in sorted(updated_sr_prefs.items()):
+                variants = variants_for_base(base, posting_codes)
+                if not variants:
+                    continue
+
+                core_sr_variants = [
+                    p
+                    for p in variants
+                    if posting_info.get(p, {}).get("posting_type") == "core"
+                ]
+                elective_sr_variants = [
+                    p
+                    for p in variants
+                    if posting_info.get(p, {}).get("posting_type") == "elective"
+                ]
+
+                # core postings always eligible for SR bonus; electives only if no elective prefs
+                # need not account for electives in elective prefs; let elective pref bonus handle that
+                eligible_variants = list(core_sr_variants)
+                if not elective_pref_bases:
+                    eligible_variants.extend(elective_sr_variants)
+
+                if not eligible_variants:
+                    continue
+
+                # award bonus when any eligible variant is scheduled for the resident
+                base_flag = model.NewBoolVar(f"{mcr}_{to_snake_case(base)}_sr_bonus")
+                model.Add(
+                    sum(selection_flags[mcr][p] for p in eligible_variants) == base_flag
+                )
+
+                bonus_multiplier = max_rank + 1 - rank
+                sr_preference_bonus_terms.append(
+                    sr_preference_bonus_weight * bonus_multiplier * base_flag
+                )
 
     # 3 GMs bonus if ED + GRM present
     three_gm_bonus_terms = []
@@ -933,11 +1010,12 @@ def allocate_timetable(
 
     for resident in residents:
         mcr = resident["mcr"]
-        stage = career_progress[mcr]["stage"]
+        stages_by_block = career_progress[mcr].get("stages_by_block", {})
         for p in posting_codes:
             for b in blocks:
+                stage_value = stages_by_block.get(b, career_progress[mcr]["stage"])
                 seniority_bonus_terms.append(
-                    stage * x[mcr][p][b] * seniority_bonus_weight
+                    stage_value * x[mcr][p][b] * seniority_bonus_weight
                 )
 
     # core prioritisation bonus
@@ -946,7 +1024,7 @@ def allocate_timetable(
 
     for resident in residents:
         mcr = resident["mcr"]
-        for p in core_postings:
+        for p in CORE_POSTINGS:
             core_bonus_terms.append(core_bonus_weight * selection_flags[mcr][p])
 
     # DEBUG: OFF penalty (discourage empty blocks)
@@ -966,8 +1044,7 @@ def allocate_timetable(
         - sum(elective_shortfall_penalty_terms)
         - sum(core_shortfall_penalty_terms)
         + sum(sr_preference_bonus_terms)
-        - sum(sr_not_selected_y2_penalty_terms)
-        - sum(sr_out_of_window_penalty_terms)  # static, extreme penalty 999
+        # - sum(sr_out_of_window_penalty_terms)  # static, extreme penalty 999
         + sum(three_gm_bonus_terms)  # static, 1
         + sum(preference_bonus_terms)
         + sum(seniority_bonus_terms)
@@ -1041,7 +1118,7 @@ def allocate_timetable(
             mcr = resident["mcr"]
             off_blocks = [b for b in blocks if solver.Value(off[mcr][b]) > 0.5]
             if off_blocks:
-                logger.info("[DEBUG] OFF used for %s at blocks: %s", mcr, off_blocks)
+                logger.info("[LEAVE/DEBUG] OFF used for %s at blocks: %s", mcr, off_blocks)
 
         payload = {
             "residents": residents,

@@ -212,9 +212,21 @@ def is_unique_posting_completed(
 
 
 def variants_for_base(base: str, posting_codes: List[Dict[str, Dict]]) -> List[str]:
-    if not base:
+    """
+    Return all posting-code variants that share the same base code.\n
+    E.g. for base "GM", it may return ["GM (NUH)", "GM (SGH)", "GM (CGH)", "GM (SKH)"]
+    """
+
+    cleaned_base = (base or "").strip()
+    if not cleaned_base:
         return []
-    return [p for p in posting_codes if p.split(" (")[0] == base]
+
+    variants: List[str] = []
+    for code in posting_codes:
+        base_code = code.split(" (")[0].strip()
+        if base_code == cleaned_base:
+            variants.append(code)
+    return variants
 
 
 # constants

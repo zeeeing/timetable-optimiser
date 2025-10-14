@@ -33,7 +33,6 @@ import ConstraintsAccordion from "./ConstraintsAccordion";
 import SortableBlockCell from "./SortableBlockCell";
 
 import { Badge } from "./ui/badge";
-import UnfilledMonthsDiagnostics from "./UnfilledMonthsDiagnostics";
 import { Button } from "./ui/button";
 import {
   Card,
@@ -52,7 +51,13 @@ import {
   TableRow,
 } from "./ui/table";
 import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
-import { Info, ChevronLeft, ChevronRight, Loader2Icon } from "lucide-react";
+import {
+  Info,
+  ChevronLeft,
+  ChevronRight,
+  Loader2Icon,
+  InfoIcon,
+} from "lucide-react";
 
 type BlockMap = Record<number, ResidentHistory>;
 
@@ -96,6 +101,8 @@ const ResidentTimetable: React.FC<Props> = ({
     optimisationScoreNormalised,
     residentIndex,
     assignedSrPostingCode,
+    electivePreferenceBases,
+    corePostingBases,
   } = useMemo(() => {
     const postingMap: Record<string, Posting> = (
       apiResponse?.postings ?? []
@@ -144,6 +151,10 @@ const ResidentTimetable: React.FC<Props> = ({
       .map((base) => base?.trim())
       .filter((base): base is string => Boolean(base));
 
+    const electivePreferenceBases = Object.values(preferenceMap)
+      .map((code) => code?.split(" (")[0]?.trim())
+      .filter((base): base is string => Boolean(base));
+
     const assignedSrPostingCode = currentYear
       .filter((h) => !h.is_leave && h.posting_code)
       .map((h) => h.posting_code as string)
@@ -173,6 +184,13 @@ const ResidentTimetable: React.FC<Props> = ({
         residentIndex
       ];
 
+    const corePostingBases = new Set(
+      Object.values(postingMap)
+        .filter((posting) => posting.posting_type === "core")
+        .map((posting) => posting.posting_code.split(" (")[0]?.trim())
+        .filter((base): base is string => Boolean(base))
+    );
+
     return {
       postingMap,
       preferenceMap,
@@ -185,6 +203,8 @@ const ResidentTimetable: React.FC<Props> = ({
       optimisationScoreNormalised,
       residentIndex,
       assignedSrPostingCode,
+      electivePreferenceBases,
+      corePostingBases,
     };
   }, [apiResponse, resident.mcr]);
 
@@ -369,7 +389,7 @@ const ResidentTimetable: React.FC<Props> = ({
             Name: {resident.name} ({resident.mcr})
           </p>
           <p>
-            Current Resident Year:{" "}
+            Current Residency Year:{" "}
             <Badge
               variant="outline"
               className="bg-blue-200 text-blue-800 text-md"
@@ -712,12 +732,22 @@ const ResidentTimetable: React.FC<Props> = ({
                       const trimmedBase = base?.trim() ?? "";
                       const isAssignedSr =
                         assignedSrBase && trimmedBase === assignedSrBase;
+                      const isCoreSrBase =
+                        trimmedBase.length > 0 &&
+                        corePostingBases.has(trimmedBase);
+                      const isNotValidSr =
+                        trimmedBase.length > 0 &&
+                        electivePreferenceBases.length > 0 &&
+                        !electivePreferenceBases.includes(trimmedBase) &&
+                        !isCoreSrBase;
                       return (
                         <TableRow
                           key={rank}
                           className={cn(
                             isAssignedSr &&
-                              "bg-green-50 hover:bg-green-100 font-semibold border border-green-200"
+                              "bg-green-50 hover:bg-green-100 font-semibold",
+                            isNotValidSr &&
+                              "bg-gray-50 hover:bg-gray-100 font-semibold"
                           )}
                         >
                           <TableCell className="text-center align-middle">
@@ -729,6 +759,23 @@ const ResidentTimetable: React.FC<Props> = ({
                               <Badge className="ml-2 text-xs bg-green-200 text-green-900">
                                 Assigned
                               </Badge>
+                            )}
+                            {isNotValidSr && (
+                              <>
+                                <Badge className="ml-2 text-xs bg-gray-200 text-gray-900">
+                                  <p>Invalid</p>
+                                  <Tooltip>
+                                    <TooltipTrigger>
+                                      <InfoIcon size={14} />
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                      <p>
+                                        Not indicated in elective preferences.
+                                      </p>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </Badge>
+                              </>
                             )}
                           </TableCell>
                         </TableRow>
@@ -791,17 +838,6 @@ const ResidentTimetable: React.FC<Props> = ({
           </Card>
         </div>
       </CardContent>
-
-      {/* diagnostics for OFF (unassigned) months */}
-      {apiResponse?.diagnostics && (
-        <CardContent>
-          <UnfilledMonthsDiagnostics
-            apiResponse={apiResponse}
-            residentMcr={resident.mcr}
-            postingMap={postingMap}
-          />
-        </CardContent>
-      )}
     </Card>
   );
 };
