@@ -713,7 +713,6 @@ def allocate_timetable(
     s2_elective_bonus_weight = 1
 
     elective_shortfall_penalty_flags = {}
-    elective_shortfall_penalty_weight = weightages.get("elective_shortfall_penalty")
 
     for resident in residents:
         mcr = resident["mcr"]
@@ -882,28 +881,22 @@ def allocate_timetable(
     # DEFINE BONUSES, PENALTIES AND OBJECTIVE
     ###########################################################################
 
-    # elective shortfall penalty
-    elective_shortfall_penalty_terms = []
-    elective_shortfall_penalty_weight = weightages.get("elective_shortfall_penalty")
+    # preference bonus
+    preference_bonus_terms = []
+    preference_bonus_weight = weightages.get("preference") or 0
 
-    for mcr in elective_shortfall_penalty_flags:
-        elective_shortfall_penalty_terms.append(
-            elective_shortfall_penalty_weight * elective_shortfall_penalty_flags[mcr]
-        )
-
-    # core shortfall penalty
-    core_shortfall_penalty_terms = []
-    core_shortfall_penalty_weight = weightages.get("core_shortfall_penalty")
-
-    for mcr, base_map in core_shortfall.items():
-        for base, slack in base_map.items():
-            core_shortfall_penalty_terms.append(core_shortfall_penalty_weight * slack)
+    for resident in residents:
+        mcr = resident["mcr"]
+        resident_prefs = pref_map.get(mcr, {})
+        for rank, p in resident_prefs.items():
+            w = preference_bonus_weight * (6 - rank)
+            if p:
+                preference_bonus_terms.append(w * selection_flags[mcr][p])
 
     # SR preference bonus
     sr_preference_bonus_terms = []
-    sr_preference_bonus_weight = weightages.get("sr_preference")
 
-    if sr_preference_bonus_weight:
+    if preference_bonus_weight:
         for resident in residents:
             mcr = resident["mcr"]
             context = sr_bonus_context.get(mcr)
@@ -951,8 +944,50 @@ def allocate_timetable(
 
                 bonus_multiplier = max_rank + 1 - rank
                 sr_preference_bonus_terms.append(
-                    sr_preference_bonus_weight * bonus_multiplier * base_flag
+                    preference_bonus_weight * bonus_multiplier * base_flag
                 )
+
+    # seniority bonus
+    seniority_bonus_terms = []
+    seniority_bonus_weight = weightages.get("seniority") or 0
+
+    for resident in residents:
+        mcr = resident["mcr"]
+        stages_by_block = career_progress[mcr].get("stages_by_block", {})
+        for p in posting_codes:
+            for b in blocks:
+                stage_value = stages_by_block.get(b, career_progress[mcr]["stage"])
+                seniority_bonus_terms.append(
+                    stage_value * x[mcr][p][b] * seniority_bonus_weight
+                )
+
+    # elective shortfall penalty
+    elective_shortfall_penalty_terms = []
+    elective_shortfall_penalty_weight = (
+        weightages.get("elective_shortfall_penalty") or 0
+    )
+
+    for mcr in elective_shortfall_penalty_flags:
+        elective_shortfall_penalty_terms.append(
+            elective_shortfall_penalty_weight * elective_shortfall_penalty_flags[mcr]
+        )
+
+    # core shortfall penalty
+    core_shortfall_penalty_terms = []
+    core_shortfall_penalty_weight = weightages.get("core_shortfall_penalty") or 0
+
+    for mcr, base_map in core_shortfall.items():
+        for base, slack in base_map.items():
+            core_shortfall_penalty_terms.append(core_shortfall_penalty_weight * slack)
+
+    # core prioritisation bonus
+    core_bonus_terms = []
+    core_bonus_weight = 5
+
+    for resident in residents:
+        mcr = resident["mcr"]
+        for p in CORE_POSTINGS:
+            core_bonus_terms.append(core_bonus_weight * selection_flags[mcr][p])
 
     # 3 GMs bonus if ED + GRM present
     three_gm_bonus_terms = []
@@ -992,41 +1027,6 @@ def allocate_timetable(
 
         three_gm_bonus_terms.append(three_gm_bonus_weight * flag)
 
-    # preference bonus
-    preference_bonus_terms = []
-    preference_bonus_weight = weightages.get("preference")
-
-    for resident in residents:
-        mcr = resident["mcr"]
-        resident_prefs = pref_map.get(mcr, {})
-        for rank, p in resident_prefs.items():
-            w = preference_bonus_weight * (6 - rank)
-            if p:
-                preference_bonus_terms.append(w * selection_flags[mcr][p])
-
-    # seniority bonus
-    seniority_bonus_terms = []
-    seniority_bonus_weight = weightages.get("seniority")
-
-    for resident in residents:
-        mcr = resident["mcr"]
-        stages_by_block = career_progress[mcr].get("stages_by_block", {})
-        for p in posting_codes:
-            for b in blocks:
-                stage_value = stages_by_block.get(b, career_progress[mcr]["stage"])
-                seniority_bonus_terms.append(
-                    stage_value * x[mcr][p][b] * seniority_bonus_weight
-                )
-
-    # core prioritisation bonus
-    core_bonus_terms = []
-    core_bonus_weight = 5
-
-    for resident in residents:
-        mcr = resident["mcr"]
-        for p in CORE_POSTINGS:
-            core_bonus_terms.append(core_bonus_weight * selection_flags[mcr][p])
-
     # DEBUG: OFF penalty (discourage empty blocks)
     off_penalty_terms = []
     off_penalty_weight = 999
@@ -1041,13 +1041,12 @@ def allocate_timetable(
     model.Maximize(
         sum(gm_ktph_bonus_terms)  # static, 1
         + sum(s2_elective_bonus_terms)  # static, 1
-        - sum(elective_shortfall_penalty_terms)
-        - sum(core_shortfall_penalty_terms)
-        + sum(sr_preference_bonus_terms)
-        # - sum(sr_out_of_window_penalty_terms)  # static, extreme penalty 999
         + sum(three_gm_bonus_terms)  # static, 1
         + sum(preference_bonus_terms)
+        + sum(sr_preference_bonus_terms)
         + sum(seniority_bonus_terms)
+        - sum(elective_shortfall_penalty_terms)
+        - sum(core_shortfall_penalty_terms)
         + sum(core_bonus_terms)  # static, 5
         - sum(off_penalty_terms)  # static, extreme penalty 999
     )
@@ -1118,7 +1117,9 @@ def allocate_timetable(
             mcr = resident["mcr"]
             off_blocks = [b for b in blocks if solver.Value(off[mcr][b]) > 0.5]
             if off_blocks:
-                logger.info("[LEAVE/DEBUG] OFF used for %s at blocks: %s", mcr, off_blocks)
+                logger.info(
+                    "[LEAVE/DEBUG] OFF used for %s at blocks: %s", mcr, off_blocks
+                )
 
         payload = {
             "residents": residents,

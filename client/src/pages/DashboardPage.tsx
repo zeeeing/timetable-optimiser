@@ -39,7 +39,6 @@ const HomePage: React.FC = () => {
   );
   const [weightages, setWeightages] = useState<Weightages>({
     preference: 1,
-    sr_preference: 5,
     seniority: 1,
     elective_shortfall_penalty: 10,
     core_shortfall_penalty: 10,

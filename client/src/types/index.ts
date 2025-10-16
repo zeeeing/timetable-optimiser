@@ -1,7 +1,6 @@
 // input weightages
 export interface Weightages {
   preference: number;
-  sr_preference: number;
   seniority: number;
   elective_shortfall_penalty: number;
   core_shortfall_penalty: number;

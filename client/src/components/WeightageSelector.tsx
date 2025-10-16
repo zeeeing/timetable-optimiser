@@ -18,14 +18,12 @@ import { InfoIcon } from "lucide-react";
 interface WeightageSelectorProps {
   value: {
     preference: number;
-    sr_preference: number;
     seniority: number;
     elective_shortfall_penalty: number;
     core_shortfall_penalty: number;
   };
   setValue: (val: {
     preference: number;
-    sr_preference: number;
     seniority: number;
     elective_shortfall_penalty: number;
     core_shortfall_penalty: number;
@@ -34,7 +32,6 @@ interface WeightageSelectorProps {
 
 const weightageKeys = [
   "preference",
-  "sr_preference",
   "seniority",
   "elective_shortfall_penalty",
   "core_shortfall_penalty",
@@ -44,7 +41,6 @@ type WeightageKey = (typeof weightageKeys)[number];
 
 const DEFAULT_WEIGHTAGES: Record<WeightageKey, number> = {
   preference: 1,
-  sr_preference: 5,
   seniority: 1,
   elective_shortfall_penalty: 10,
   core_shortfall_penalty: 10,
@@ -62,11 +58,6 @@ const WEIGHTAGE_OPTIONS: WeightageOption[] = [
     key: "preference",
     label: "Preference Satisfaction",
     summary: "Bonus when a resident lands one of their top picks.",
-  },
-  {
-    key: "sr_preference",
-    label: "SR Preference Satisfaction",
-    summary: "Rewards residents for matching their preferred SR departments.",
   },
   {
     key: "seniority",
