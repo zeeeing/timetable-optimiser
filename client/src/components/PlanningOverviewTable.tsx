@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   Table,
   TableBody,
@@ -16,7 +16,6 @@ import {
   CardDescription,
 } from "./ui/card";
 import { Badge } from "./ui/badge";
-import type { ApiResponse } from "../types";
 import { Checkbox } from "./ui/checkbox";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -27,6 +26,14 @@ import {
   SelectItem,
   SelectValue,
 } from "./ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuCheckboxItem,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from "./ui/dropdown-menu";
 import {
   useReactTable,
   type ColumnDef,
@@ -43,7 +50,9 @@ import {
   ChevronsUpDownIcon,
   ChevronDownIcon,
   ChevronUpIcon,
+  TrashIcon,
 } from "lucide-react";
+import type { ApiResponse } from "../types";
 
 interface PlanningOverviewTableProps {
   apiResponse: ApiResponse;
@@ -147,12 +156,33 @@ const PlanningOverviewTable: React.FC<PlanningOverviewTableProps> = ({
   // table state
   const [sorting, setSorting] = useState<SortingState>([]);
   const [globalFilter, setGlobalFilter] = useState("");
-  const [postingFilter, setPostingFilter] = useState<string>("all");
+  const [selectedPostings, setSelectedPostings] = useState<string[]>([]);
+
+  const togglePostingSelection = useCallback((code: string) => {
+    setSelectedPostings((prev) =>
+      prev.includes(code)
+        ? prev.filter((item) => item !== code)
+        : [...prev, code]
+    );
+  }, []);
+
+  const clearPostingSelection = useCallback(() => {
+    setSelectedPostings([]);
+  }, []);
+
+  const postingFilterLabel = useMemo(() => {
+    if (selectedPostings.length === 0) return "Filter by department(s)";
+    if (selectedPostings.length === 1) return selectedPostings[0];
+    return `${selectedPostings.length} selected`;
+  }, [selectedPostings]);
 
   const filteredResidents = useMemo(() => {
-    if (!postingFilter || postingFilter === "all") return residents;
-    return residents.filter((r) => codeSetByMcr[r.mcr]?.has(postingFilter));
-  }, [residents, codeSetByMcr, postingFilter]);
+    if (!selectedPostings.length) return residents;
+    return residents.filter((r) => {
+      const codes = codeSetByMcr[r.mcr];
+      return selectedPostings.some((code) => codes?.has(code));
+    });
+  }, [residents, codeSetByMcr, selectedPostings]);
 
   // columns
   const columns = useMemo<ColumnDef<(typeof residents)[number]>[]>(() => {
@@ -289,14 +319,16 @@ const PlanningOverviewTable: React.FC<PlanningOverviewTableProps> = ({
       </CardHeader>
 
       <CardContent className="space-y-4">
-        {/* Pin By Year (toggle) */}
+        {/* top table controls */}
         <div className="flex justify-between items-center gap-4 flex-wrap">
+          {/* left controls */}
           <div className="flex items-center gap-2">
             {years.map((yr) => {
               const list = residents.filter((r) => r.resident_year === yr);
               const allPinned =
                 list.length > 0 && list.every((r) => pinnedMcrs?.has(r.mcr));
               return (
+                // pin by specific year
                 <div key={yr} className="flex items-center gap-2">
                   <Button
                     size="sm"
@@ -311,10 +343,15 @@ const PlanningOverviewTable: React.FC<PlanningOverviewTableProps> = ({
               );
             })}
           </div>
+
+          {/* right controls */}
           <div className="flex gap-2 items-center">
+            {/* show current pin size */}
             <span className="text-sm text-gray-600">
               Selected: {pinnedMcrs?.size}
             </span>
+
+            {/* clear all pins */}
             <Button
               variant="ghost"
               className="cursor-pointer"
@@ -322,22 +359,48 @@ const PlanningOverviewTable: React.FC<PlanningOverviewTableProps> = ({
             >
               Clear All Pins
             </Button>
-            <Select
-              value={postingFilter}
-              onValueChange={(v) => setPostingFilter(v)}
-            >
-              <SelectTrigger size="sm">
-                <SelectValue placeholder="Filter by posting" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Postings</SelectItem>
-                {postingCodes.map((code) => (
-                  <SelectItem key={code} value={code}>
-                    {code}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+
+            {/* filter by department(s) */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm">
+                  {postingFilterLabel}
+                  <ChevronDownIcon />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                className="max-h-72 overflow-y-auto"
+                align="end"
+              >
+                {postingCodes.map((code) => {
+                  const checked = selectedPostings.includes(code);
+                  return (
+                    <DropdownMenuCheckboxItem
+                      key={code}
+                      checked={checked}
+                      onCheckedChange={() => togglePostingSelection(code)}
+                      onSelect={(event) => event.preventDefault()}
+                    >
+                      {code}
+                    </DropdownMenuCheckboxItem>
+                  );
+                })}
+                {postingCodes.length > 0 && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onSelect={clearPostingSelection}
+                      className="justify-center"
+                    >
+                      <TrashIcon color="red" />
+                      <p className="text-destructive">Clear selection</p>
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            {/* search input */}
             <Input
               placeholder="Search by MCR, name, or year"
               value={globalFilter}
@@ -347,6 +410,7 @@ const PlanningOverviewTable: React.FC<PlanningOverviewTableProps> = ({
           </div>
         </div>
 
+        {/* table */}
         <div className="bg-white rounded-md border">
           <Table>
             {/* table headers */}
@@ -392,7 +456,9 @@ const PlanningOverviewTable: React.FC<PlanningOverviewTableProps> = ({
                           monthIndex
                         ];
                       const isPostingMatch =
-                        postingFilter !== "all" && rawCode === postingFilter;
+                        selectedPostings.length > 0 &&
+                        !!rawCode && // true when rawCode is truthy, false otherwise
+                        selectedPostings.includes(rawCode);
                       cellClass = cn(isPostingMatch && "bg-red-200");
                     }
                     return (
