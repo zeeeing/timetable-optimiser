@@ -1,14 +1,24 @@
-import React from "react";
+import React, { useEffect, useRef } from "react";
+
+import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
-import { Info } from "lucide-react";
+import { Popover, PopoverTrigger, PopoverContent } from "./ui/popover";
+import { Switch } from "./ui/switch";
+import {
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemDescription,
+  ItemTitle,
+} from "@/components/ui/item";
 import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
+import { InfoIcon } from "lucide-react";
 
 interface WeightageSelectorProps {
   value: {
     preference: number;
     sr_preference: number;
-    sr_y2_not_selected_penalty: number;
     seniority: number;
     elective_shortfall_penalty: number;
     core_shortfall_penalty: number;
@@ -16,178 +26,208 @@ interface WeightageSelectorProps {
   setValue: (val: {
     preference: number;
     sr_preference: number;
-    sr_y2_not_selected_penalty: number;
     seniority: number;
     elective_shortfall_penalty: number;
     core_shortfall_penalty: number;
   }) => void;
 }
 
+const weightageKeys = [
+  "preference",
+  "sr_preference",
+  "seniority",
+  "elective_shortfall_penalty",
+  "core_shortfall_penalty",
+] as const;
+
+type WeightageKey = (typeof weightageKeys)[number];
+
+const DEFAULT_WEIGHTAGES: Record<WeightageKey, number> = {
+  preference: 1,
+  sr_preference: 5,
+  seniority: 1,
+  elective_shortfall_penalty: 10,
+  core_shortfall_penalty: 10,
+};
+
+interface WeightageOption {
+  key: WeightageKey;
+  label: string;
+  summary: string;
+  tooltip?: React.ReactNode;
+}
+
+const WEIGHTAGE_OPTIONS: WeightageOption[] = [
+  {
+    key: "preference",
+    label: "Preference Satisfaction",
+    summary: "Bonus when a resident lands one of their top picks.",
+  },
+  {
+    key: "sr_preference",
+    label: "SR Preference Satisfaction",
+    summary: "Rewards residents for matching their preferred SR departments.",
+  },
+  {
+    key: "seniority",
+    label: "Seniority Bonus",
+    summary: "Pushes seniors ahead of juniors when slots are contested.",
+  },
+  {
+    key: "elective_shortfall_penalty",
+    label: "Elective Shortfall Penalty",
+    summary: "Penalises residents who fall short of elective requirements.",
+    tooltip: (
+      <div className="space-y-1 text-xs">
+        <p>R1: No specific requirements</p>
+        <p>R2: 1 - 2 electives completed</p>
+        <p>R3: 5 electives completed</p>
+      </div>
+    ),
+  },
+  {
+    key: "core_shortfall_penalty",
+    label: "Core Shortfall Penalty",
+    summary: "Makes missing core postings by year 3 extremely costly.",
+  },
+];
+
 const WeightageSelector: React.FC<WeightageSelectorProps> = ({
   value,
   setValue,
 }) => {
-  const handleChange =
-    (
-      field:
-        | "preference"
-        | "sr_preference"
-        | "sr_y2_not_selected_penalty"
-        | "seniority"
-        | "elective_shortfall_penalty"
-        | "core_shortfall_penalty"
-    ) =>
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      setValue({ ...value, [field]: Number(e.target.value) });
+  const lastNonZeroRef = useRef<Record<WeightageKey, number>>(
+    (() => {
+      const base = { ...DEFAULT_WEIGHTAGES };
+      weightageKeys.forEach((key) => {
+        if (value[key] > 0) {
+          base[key] = value[key];
+        }
+      });
+      return base;
+    })()
+  );
+
+  useEffect(() => {
+    weightageKeys.forEach((key) => {
+      if (value[key] > 0) {
+        lastNonZeroRef.current[key] = value[key];
+      }
+    });
+  }, [value]);
+
+  const toggleWeightage =
+    (field: WeightageKey) =>
+    (checked: boolean): void => {
+      if (checked) {
+        const restored =
+          lastNonZeroRef.current[field] > 0
+            ? lastNonZeroRef.current[field]
+            : DEFAULT_WEIGHTAGES[field];
+        setValue({ ...value, [field]: restored });
+        return;
+      }
+
+      if (value[field] > 0) {
+        lastNonZeroRef.current[field] = value[field];
+      }
+      setValue({ ...value, [field]: 0 });
+    };
+
+  const handleAdvancedChange =
+    (field: WeightageKey) =>
+    (event: React.ChangeEvent<HTMLInputElement>): void => {
+      const rawValue = Number(event.target.value);
+      const sanitized = Number.isFinite(rawValue) ? Math.max(0, rawValue) : 0;
+      setValue({ ...value, [field]: sanitized });
     };
 
   return (
-    <div className="flex flex-col gap-3">
-      <h2 className="text-lg font-semibold">Weightages</h2>
-      <p className="text-sm text-gray-500">
-        Adjust the weightages to determine how much weight the different factors
-        can contribute and influence the optimal timetable solution. The
-        weightage selectors below are non-exhaustive.
-      </p>
-      <div className="grid grid-cols-3 md:grid-cols-6 gap-4 items-end">
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex flex-col gap-2">
-          <Label htmlFor="preference">
-            Preference Satisfaction
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="cursor-pointer">
-                  <Info size={16} />
-                </span>
-              </TooltipTrigger>
-              <TooltipContent side="top">
-                Gives extra points when a resident gets one of their top picks.
-              </TooltipContent>
-            </Tooltip>
-          </Label>
-          <Input
-            id="preference"
-            type="number"
-            value={value.preference}
-            onChange={handleChange("preference")}
-          />
+          <h2 className="text-lg font-semibold">Weightages</h2>
+          <p className="text-sm text-gray-500">
+            Toggle the scoring factors that should influence the optimisation.
+            Use advanced settings to fine-tune the underlying weightage values.
+          </p>
         </div>
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="sr_preference">
-            SR Preference Satisfaction
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="cursor-pointer">
-                  <Info size={16} />
-                </span>
-              </TooltipTrigger>
-              <TooltipContent side="top">
-                Rewards residents for landing their preferred SR departments.
-              </TooltipContent>
-            </Tooltip>
-          </Label>
-          <Input
-            id="sr_preference"
-            type="number"
-            value={value.sr_preference}
-            onChange={handleChange("sr_preference")}
-          />
-        </div>
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="sr_y2_not_selected_penalty">
-            SR not given in Y2 Penalty
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="cursor-pointer">
-                  <Info size={16} />
-                </span>
-              </TooltipTrigger>
-              <TooltipContent side="top">
-                Takes away points if a Year 2 resident ends up without any SR
-                within the stipulated window.
-                <br />
-                <br />
-                Window: 2nd half of R2 - 1st half of R3
-              </TooltipContent>
-            </Tooltip>
-          </Label>
-          <Input
-            id="sr_y2_not_selected_penalty"
-            type="number"
-            value={value.sr_y2_not_selected_penalty}
-            onChange={handleChange("sr_y2_not_selected_penalty")}
-          />
-        </div>
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="seniority">
-            Seniority Bonus
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="cursor-pointer">
-                  <Info size={16} />
-                </span>
-              </TooltipTrigger>
-              <TooltipContent side="top">
-                Pushes seniors ahead of juniors when they compete for a slot.
-              </TooltipContent>
-            </Tooltip>
-          </Label>
-          <Input
-            id="seniority"
-            type="number"
-            value={value.seniority}
-            onChange={handleChange("seniority")}
-          />
-        </div>
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="elective_shortfall_penalty">
-            Elective Shortfall Penalty
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="cursor-pointer">
-                  <Info size={16} />
-                </span>
-              </TooltipTrigger>
-              <TooltipContent side="top">
-                Deducts points when a resident falls short on elective counts.
-                <br />
-                <br />
-                R1: No specific requirements
-                <br />
-                R2: 1 - 2 electives completed
-                <br />
-                R3: 5 electives completed
-              </TooltipContent>
-            </Tooltip>
-          </Label>
-          <Input
-            id="elective_shortfall_penalty"
-            type="number"
-            value={value.elective_shortfall_penalty}
-            onChange={handleChange("elective_shortfall_penalty")}
-          />
-        </div>
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="core_shortfall_penalty">
-            Core Shortfall Penalty
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="cursor-pointer">
-                  <Info size={16} />
-                </span>
-              </TooltipTrigger>
-              <TooltipContent side="top">
-                Makes missing core postings by the end of their 3rd year very
-                costly so the solver fills those first.
-              </TooltipContent>
-            </Tooltip>
-          </Label>
-          <Input
-            id="core_shortfall_penalty"
-            type="number"
-            value={value.core_shortfall_penalty}
-            onChange={handleChange("core_shortfall_penalty")}
-          />
-        </div>
+
+        {/* advanced settings */}
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button variant="outline" size="sm">
+              Advanced settings
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-80" side="bottom" align="end">
+            <div className="flex flex-col gap-4">
+              <div className="space-y-1">
+                <h3 className="text-sm font-medium">Adjust weightage values</h3>
+                <p className="text-xs text-muted-foreground">
+                  Values greater than zero keep the factor enabled. Set to zero
+                  to turn it off.
+                </p>
+              </div>
+              {WEIGHTAGE_OPTIONS.map((option) => {
+                const inputId = `advanced-${option.key}`;
+                return (
+                  <div key={option.key} className="flex flex-col gap-2">
+                    <Label htmlFor={inputId}>{option.label}</Label>
+                    <Input
+                      id={inputId}
+                      type="number"
+                      min={0}
+                      step="0.1"
+                      value={value[option.key]}
+                      onChange={handleAdvancedChange(option.key)}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          </PopoverContent>
+        </Popover>
+      </div>
+
+      {/* switch toggles */}
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {WEIGHTAGE_OPTIONS.map((option) => {
+          const switchId = `weightage-${option.key}`;
+          return (
+            <Item className="border-md">
+              <ItemContent>
+                <ItemTitle>
+                  {option.label}
+                  <span>
+                    {option.tooltip && (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span>
+                            <InfoIcon size={16} />
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent side="top">
+                          {option.tooltip}
+                        </TooltipContent>
+                      </Tooltip>
+                    )}
+                  </span>
+                </ItemTitle>
+                <ItemDescription className="text-xs">
+                  {option.summary}
+                </ItemDescription>
+              </ItemContent>
+              <ItemActions>
+                <Switch
+                  id={switchId}
+                  checked={value[option.key] > 0}
+                  onCheckedChange={toggleWeightage(option.key)}
+                />
+              </ItemActions>
+            </Item>
+          );
+        })}
       </div>
     </div>
   );
