@@ -74,6 +74,8 @@ def allocate_timetable(
 
     # 3. create month block list
     blocks = list(range(1, 13))
+    early_blocks = blocks[:6]
+    late_blocks = blocks[6:]
 
     # 4. create map of resident mcr to their elective preferences
     pref_map = {}
@@ -1027,7 +1029,71 @@ def allocate_timetable(
 
         three_gm_bonus_terms.append(three_gm_bonus_weight * flag)
 
-    # DEBUG: OFF penalty (discourage empty blocks)
+    # ED + GRM + GM fully within blocks 1-6
+    early_bundle_bonus_terms = []
+    early_bundle_bonus_weight = 5
+
+    for resident in residents:
+        mcr = resident["mcr"]
+        flag = model.NewBoolVar(f"{mcr}_early_bundle_bonus")
+
+        # detect ED presence
+        hasED = model.NewBoolVar(f"{mcr}_hasED_early_bundle")
+        model.Add(sum(selection_flags[mcr][p] for p in ED_codes) >= 1).OnlyEnforceIf(
+            hasED
+        )
+        model.Add(sum(selection_flags[mcr][p] for p in ED_codes) == 0).OnlyEnforceIf(
+            hasED.Not()
+        )
+
+        # detect GRM presence
+        hasGRM = model.NewBoolVar(f"{mcr}_hasGRM_early_bundle")
+        model.Add(sum(selection_flags[mcr][p] for p in GRM_codes) >= 1).OnlyEnforceIf(
+            hasGRM
+        )
+        model.Add(sum(selection_flags[mcr][p] for p in GRM_codes) == 0).OnlyEnforceIf(
+            hasGRM.Not()
+        )
+
+        # detect GM presence
+        hasGM = model.NewBoolVar(f"{mcr}_hasGM_early_bundle")
+        model.Add(sum(selection_flags[mcr][p] for p in GM_codes) >= 1).OnlyEnforceIf(
+            hasGM
+        )
+        model.Add(sum(selection_flags[mcr][p] for p in GM_codes) == 0).OnlyEnforceIf(
+            hasGM.Not()
+        )
+
+        # check if bundle spans both halves of the year (crosses Dec-Jan boundary)
+        pre_blocks = sum(
+            x[mcr][p][b] for p in ED_codes + GRM_codes + GM_codes for b in early_blocks
+        )
+        post_blocks = sum(
+            x[mcr][p][b] for p in ED_codes + GRM_codes + GM_codes for b in late_blocks
+        )
+
+        pre_positive = model.NewBoolVar(f"{mcr}_bundle_pre_half")
+        model.Add(pre_blocks >= 1).OnlyEnforceIf(pre_positive)
+        model.Add(pre_blocks == 0).OnlyEnforceIf(pre_positive.Not())
+
+        post_positive = model.NewBoolVar(f"{mcr}_bundle_post_half")
+        model.Add(post_blocks >= 1).OnlyEnforceIf(post_positive)
+        model.Add(post_blocks == 0).OnlyEnforceIf(post_positive.Not())
+
+        crosses = model.NewBoolVar(f"{mcr}_bundle_crosses_boundary")
+        model.Add(pre_positive + post_positive == 2).OnlyEnforceIf(crosses)
+        model.Add(pre_positive + post_positive <= 1).OnlyEnforceIf(crosses.Not())
+
+        # award bonus only if all three postings present and bundle stays within one half
+        model.Add(flag == 1).OnlyEnforceIf([hasED, hasGRM, hasGM, crosses.Not()])
+        model.Add(flag == 0).OnlyEnforceIf(hasED.Not())
+        model.Add(flag == 0).OnlyEnforceIf(hasGRM.Not())
+        model.Add(flag == 0).OnlyEnforceIf(hasGM.Not())
+        model.Add(flag == 0).OnlyEnforceIf(crosses)
+
+        early_bundle_bonus_terms.append(early_bundle_bonus_weight * flag)
+
+    # discourage empty blocks (OFF) unless on leave
     off_penalty_terms = []
     off_penalty_weight = 999
     for resident in residents:
@@ -1041,13 +1107,14 @@ def allocate_timetable(
     model.Maximize(
         sum(gm_ktph_bonus_terms)  # static, 1
         + sum(s2_elective_bonus_terms)  # static, 1
-        + sum(three_gm_bonus_terms)  # static, 1
         + sum(preference_bonus_terms)
         + sum(sr_preference_bonus_terms)
         + sum(seniority_bonus_terms)
         - sum(elective_shortfall_penalty_terms)
         - sum(core_shortfall_penalty_terms)
         + sum(core_bonus_terms)  # static, 5
+        + sum(three_gm_bonus_terms)  # static, 1
+        + sum(early_bundle_bonus_terms)  # static, 5
         - sum(off_penalty_terms)  # static, extreme penalty 999
     )
 
