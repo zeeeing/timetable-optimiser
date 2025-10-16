@@ -13,6 +13,6 @@ const monthLabels = [
   "Jun",
 ];
 
-export default {
+module.exports = {
   monthLabels,
 };
