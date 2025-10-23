@@ -1,4 +1,10 @@
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, {
+  useState,
+  useEffect,
+  useMemo,
+  useRef,
+  useCallback,
+} from "react";
 import {
   DndContext,
   type DragEndEvent,
@@ -23,10 +29,16 @@ import {
   ELECTIVE_REQUIREMENT,
   CCR_POSTINGS,
 } from "@/lib/constants";
-import { areSchedulesEqual, moveByInsert } from "@/lib/utils";
+import {
+  cn,
+  areSchedulesEqual,
+  moveByInsert,
+  formatAcademicYearLabel,
+} from "@/lib/utils";
+import type { AcademicYearRange } from "@/lib/utils";
+
 import { useApiResponseContext } from "@/context/ApiResponseContext";
 import { validateSchedule, saveSchedule } from "@/api/api";
-import { cn } from "@/lib/utils";
 
 import ErrorAlert from "./ErrorAlert";
 import ConstraintsAccordion from "./ConstraintsAccordion";
@@ -67,6 +79,7 @@ interface Props {
   onNext: () => void;
   disablePrev: boolean;
   disableNext: boolean;
+  academicYearRange: AcademicYearRange | null;
 }
 
 const ResidentTimetable: React.FC<Props> = ({
@@ -75,6 +88,7 @@ const ResidentTimetable: React.FC<Props> = ({
   onNext,
   disablePrev,
   disableNext,
+  academicYearRange,
 }) => {
   const { apiResponse, setApiResponse } = useApiResponseContext();
   const [isSaving, setIsSaving] = useState(false);
@@ -207,6 +221,28 @@ const ResidentTimetable: React.FC<Props> = ({
       corePostingBases,
     };
   }, [apiResponse, resident.mcr]);
+
+  // define formatted year label for current year row
+  const currentYearLabel = useMemo(
+    () =>
+      formatAcademicYearLabel(
+        resident.resident_year,
+        resident.resident_year,
+        academicYearRange
+      ),
+    [academicYearRange, resident.resident_year]
+  );
+
+  // define callback to pass past year labels into formatter
+  const formatYearLabel = useCallback(
+    (targetYear: number) =>
+      formatAcademicYearLabel(
+        targetYear,
+        resident.resident_year,
+        academicYearRange
+      ),
+    [academicYearRange, resident.resident_year]
+  );
 
   const coreRequirementEntries = useMemo(
     () => Object.entries(CORE_REQUIREMENTS) as [string, number][],
@@ -462,7 +498,7 @@ const ResidentTimetable: React.FC<Props> = ({
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="text-left">Year</TableHead>
+                  <TableHead className="text-left">Academic Year</TableHead>
                   {monthLabels.map((month) => (
                     <TableHead key={month} className="text-center">
                       {month}
@@ -473,13 +509,17 @@ const ResidentTimetable: React.FC<Props> = ({
               <TableBody>
                 {/* Past years */}
                 {Object.keys(pastYearBlockPostings)
-                  .sort((a, b) => parseInt(a) - parseInt(b))
-                  .map((year) => {
-                    const yearPostings = pastYearBlockPostings[parseInt(year)];
+                  .sort(
+                    (a, b) => Number.parseInt(a, 10) - Number.parseInt(b, 10)
+                  )
+                  .map((yearKey) => {
+                    const numericYear = Number.parseInt(yearKey, 10);
+                    const yearPostings =
+                      pastYearBlockPostings[numericYear] ?? {};
                     return (
-                      <TableRow key={`year-${year}`}>
+                      <TableRow key={`year-${yearKey}`}>
                         <TableCell className="font-medium text-gray-600">
-                          Year {year}
+                          {formatYearLabel(numericYear)}
                         </TableCell>
                         {monthLabels.map((month, index) => {
                           const blockNumber = index + 1;
@@ -555,7 +595,7 @@ const ResidentTimetable: React.FC<Props> = ({
                 >
                   <TableRow>
                     <TableCell className="bg-blue-100 font-semibold">
-                      Current Year
+                      {currentYearLabel}
                     </TableCell>
                     {monthLabels.map((month, index) => {
                       const blockNumber = index + 1;

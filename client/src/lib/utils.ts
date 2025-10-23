@@ -1,12 +1,67 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
-import type { ResidentHistory } from "@/types";
 import { arrayMove } from "@dnd-kit/sortable";
+import type { ResidentHistory } from "@/types";
 
 type BlockMap = Record<number, ResidentHistory>;
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
+}
+
+const ACADEMIC_YEAR_PATTERN = /^(\d{4})\s*\/\s*(\d{4})$/;
+
+export interface AcademicYearRange {
+  start: number;
+  end: number;
+}
+
+export function parseAcademicYearInput(
+  input: string
+): AcademicYearRange | null {
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+
+  const match = trimmed.match(ACADEMIC_YEAR_PATTERN);
+  if (!match) return null;
+
+  // match returns an array where the first element is the full match
+  // and subsequent elements are the captured groups
+  if (match.length < 3) return null;
+  const start = Number.parseInt(match[1], 10);
+  const end = Number.parseInt(match[2], 10);
+
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
+
+  return { start, end };
+}
+
+export function formatAcademicYearLabel(
+  targetYear: number,
+  currentResidentYear: number,
+  anchor: AcademicYearRange | null
+): string {
+  if (!Number.isFinite(targetYear)) {
+    return "Year";
+  }
+
+  if (!anchor || !Number.isFinite(currentResidentYear)) {
+    return targetYear === currentResidentYear
+      ? "Current Year"
+      : `Year ${targetYear}`;
+  }
+
+  const offset = currentResidentYear - targetYear;
+  const start = anchor.start - offset;
+  const end = anchor.end - offset;
+
+  if (!Number.isFinite(start) || !Number.isFinite(end)) {
+    return targetYear === currentResidentYear
+      ? "Current Year"
+      : `Year ${targetYear}`;
+  }
+
+  return `${start}/${end}`;
 }
 
 // compares only posting code across the 12 blocks

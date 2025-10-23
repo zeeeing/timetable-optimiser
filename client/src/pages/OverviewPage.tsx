@@ -4,7 +4,7 @@ import { downloadCsv } from "@/api/api";
 import { groupResidentsByYear } from "@/lib/residentOrdering";
 import type { Resident } from "@/types";
 
-import PostingOverviewTable from "../components/PlanningOverviewTable";
+import PlanningOverviewTable from "../components/PlanningOverviewTable";
 import ErrorAlert from "../components/ErrorAlert";
 import { Button } from "@/components/ui/button";
 import { Loader2Icon } from "lucide-react";
@@ -108,7 +108,7 @@ const OverviewPage: React.FC = () => {
       {error && <ErrorAlert message={error} />}
 
       {apiResponse && (
-        <PostingOverviewTable
+        <PlanningOverviewTable
           apiResponse={apiResponse}
           pinnedMcrs={pinnedMcrs}
           setPinnedMcrs={setPinnedMcrs}

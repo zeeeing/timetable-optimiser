@@ -347,9 +347,11 @@ const PlanningOverviewTable: React.FC<PlanningOverviewTableProps> = ({
           {/* right controls */}
           <div className="flex gap-2 items-center">
             {/* show current pin size */}
-            <span className="text-sm text-gray-600">
-              Selected: {pinnedMcrs?.size}
-            </span>
+            <div className="text-sm text-gray-600 space-x-3">
+              <span>Total results: {filteredResidents.length}</span>
+              <span>Showing: {table.getRowModel().rows.length}</span>
+              <span>Selected: {pinnedMcrs?.size ?? 0}</span>
+            </div>
 
             {/* clear all pins */}
             <Button

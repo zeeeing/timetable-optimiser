@@ -19,8 +19,15 @@ import CohortStatistics from "../components/CohortStatistics";
 import PostingUtilTable from "../components/PostingUtilTable";
 
 import { Button } from "../components/ui/button";
+import { Input } from "../components/ui/input";
+import { Label } from "../components/ui/label";
 import { Separator } from "../components/ui/separator";
 import { Loader2Icon, PinIcon, PinOffIcon } from "lucide-react";
+import {
+  cn,
+  parseAcademicYearInput,
+  type AcademicYearRange,
+} from "@/lib/utils";
 
 const HomePage: React.FC = () => {
   const { apiResponse, setApiResponse } = useApiResponseContext();
@@ -53,6 +60,14 @@ const HomePage: React.FC = () => {
       return new Set<string>();
     }
   });
+  const [currentAcademicYearInput, setCurrentAcademicYearInput] =
+    useState<string>(() => {
+      try {
+        return localStorage.getItem("planningAcademicYear") ?? "";
+      } catch {
+        return "";
+      }
+    });
 
   const handleFileUpload =
     (fileType: keyof typeof csvFiles) =>
@@ -145,6 +160,13 @@ const HomePage: React.FC = () => {
   const disableNext =
     currentIndex === -1 || currentIndex >= orderedResidentMcrs.length - 1;
 
+  const parsedAcademicYear = useMemo<AcademicYearRange | null>(
+    () => parseAcademicYearInput(currentAcademicYearInput),
+    [currentAcademicYearInput]
+  );
+  const hasAcademicYearInputError =
+    Boolean(currentAcademicYearInput.trim()) && !parsedAcademicYear;
+
   // select first resident if there is no currently selected resident
   useEffect(() => {
     if (!selectedResidentMcr && orderedResidentMcrs.length > 0) {
@@ -166,6 +188,12 @@ const HomePage: React.FC = () => {
       );
     } catch {}
   }, [pinnedMcrs]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("planningAcademicYear", currentAcademicYearInput);
+    } catch {}
+  }, [currentAcademicYearInput]);
 
   const togglePin = (mcr: string) => {
     setPinnedMcrs((prev) => {
@@ -212,6 +240,34 @@ const HomePage: React.FC = () => {
 
       {/* weightage selector */}
       <WeightageSelector value={weightages} setValue={setWeightages} />
+
+      <div className="flex flex-col gap-1 max-w-xs">
+        <Label htmlFor="current-academic-year">
+          Planning for Academic Year:
+        </Label>
+        <Input
+          id="current-academic-year"
+          value={currentAcademicYearInput}
+          onChange={(event) => setCurrentAcademicYearInput(event.target.value)}
+          placeholder="2025/2026"
+          className={cn(
+            "max-w-xs",
+            hasAcademicYearInputError && "border-red-500 visible:ring-red-500"
+          )}
+        />
+        {hasAcademicYearInputError ? (
+          <span className="text-xs text-red-600">
+            Please use the format &quot;YYYY/YYYY&quot;.
+          </span>
+        ) : (
+          currentAcademicYearInput && (
+            <span className="text-xs text-gray-600">
+              Current year planning will align with AY
+              {currentAcademicYearInput.trim()}.
+            </span>
+          )
+        )}
+      </div>
 
       {/* Buttons */}
       <div className="flex flex-col gap-2 sm:flex-row sm:gap-4 justify-center items-center">
@@ -294,6 +350,7 @@ const HomePage: React.FC = () => {
               onNext={goNext}
               disablePrev={disablePrev}
               disableNext={disableNext}
+              academicYearRange={parsedAcademicYear}
             />
           )}
           <CohortStatistics
