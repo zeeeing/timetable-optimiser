@@ -787,23 +787,40 @@ const ResidentTimetable: React.FC<Props> = ({
                             isAssignedSr &&
                               "bg-green-50 hover:bg-green-100 font-semibold",
                             isNotValidSr &&
-                              "bg-gray-50 hover:bg-gray-100 font-semibold"
+                              "bg-gray-100 hover:bg-gray-200 font-semibold"
                           )}
                         >
-                          <TableCell className="text-center align-middle">
-                            {rank}
-                          </TableCell>
-                          <TableCell className="text-center align-middle">
+                          <TableCell className="text-center">{rank}</TableCell>
+                          <TableCell className="flex justify-center text-center">
                             {trimmedBase.length > 0 ? trimmedBase : "-"}
                             {isAssignedSr && (
                               <Badge className="ml-2 text-xs bg-green-200 text-green-900">
-                                Assigned
+                                <Tooltip>
+                                  <TooltipTrigger>
+                                    <InfoIcon size={14} />
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p>
+                                      Assigned at month{" "}
+                                      {currentYearBlockPostings &&
+                                        Object.entries(currentYearBlockPostings)
+                                          .filter(
+                                            ([, assignment]) =>
+                                              assignment &&
+                                              assignment.posting_code
+                                                .split(" (")[0]
+                                                .trim() === trimmedBase
+                                          )
+                                          .map(([block]) => block)
+                                          .join(", ")}
+                                    </p>
+                                  </TooltipContent>
+                                </Tooltip>
                               </Badge>
                             )}
                             {isNotValidSr && (
                               <>
-                                <Badge className="ml-2 text-xs bg-gray-200 text-gray-900">
-                                  <p>Invalid</p>
+                                <Badge className="ml-2 text-xs bg-gray-300 text-gray-900">
                                   <Tooltip>
                                     <TooltipTrigger>
                                       <InfoIcon size={14} />
