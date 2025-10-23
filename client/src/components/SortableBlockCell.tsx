@@ -44,7 +44,7 @@ const SortableBlockCell: React.FC<SortableBlockCellProps> = ({
   const code = posting?.posting_code;
   const isLeave = postingAssignment?.is_leave;
   const leaveType = postingAssignment?.leave_type;
-  const leavePosting = isLeave && postingAssignment?.posting_code || "-";
+  const leavePosting = (isLeave && postingAssignment?.posting_code) || "-";
 
   const {
     attributes,

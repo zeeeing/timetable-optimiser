@@ -95,10 +95,39 @@ export function moveByInsert(
   // Move the item and shift others
   const nextSlots = arrayMove(slots, from - 1, to - 1);
 
-  // rebuild BlockMap with corrected month_block indices
+  // derive the starting career block so we can reindex sequentially
+  const baseCandidates = Object.values(prev)
+    .map((entry) => {
+      if (!entry) return undefined;
+      if (!Number.isFinite(entry.career_block)) return undefined;
+      if (!Number.isFinite(entry.month_block)) return undefined;
+      return entry.career_block - (entry.month_block - 1);
+    })
+    .filter((value): value is number => Number.isFinite(value));
+
+  const inferredBaseCareerBlock =
+    baseCandidates.length > 0 ? Math.min(...baseCandidates) : undefined;
+
+  // rebuild BlockMap with corrected month_block and career_block indices
   const next: BlockMap = {};
   nextSlots.forEach((a, idx) => {
-    if (a) next[idx + 1] = { ...a, month_block: idx + 1 };
+    if (!a) return;
+    const monthIndex = idx + 1;
+    const currentCareer = Number.isFinite(a.career_block)
+      ? (a.career_block as number)
+      : undefined;
+    const careerBlock =
+      inferredBaseCareerBlock !== undefined
+        ? inferredBaseCareerBlock + idx
+        : currentCareer !== undefined
+        ? currentCareer
+        : monthIndex;
+
+    next[monthIndex] = {
+      ...a,
+      month_block: monthIndex,
+      career_block: careerBlock,
+    };
   });
   return next;
 }
