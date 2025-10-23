@@ -53,6 +53,7 @@ import {
   TrashIcon,
 } from "lucide-react";
 import type { ApiResponse } from "../types";
+import type { CheckedState } from "@radix-ui/react-checkbox";
 
 interface PlanningOverviewTableProps {
   apiResponse: ApiResponse;
@@ -189,7 +190,42 @@ const PlanningOverviewTable: React.FC<PlanningOverviewTableProps> = ({
     return [
       {
         id: "pin",
-        header: () => "Pin",
+        header: ({ table }) => {
+          const pageRows = table.getRowModel().rows;
+          const totalRows = pageRows.length;
+          const pinnedCount = pageRows.filter((row) =>
+            pinnedMcrs?.has(row.original.mcr)
+          ).length;
+
+          const checkboxState: CheckedState =
+            totalRows > 0 && pinnedCount === totalRows
+              ? true
+              : pinnedCount > 0
+              ? "indeterminate"
+              : false;
+
+          const handleCheckedChange = (value: CheckedState) => {
+            const shouldPin = value === true;
+            const nextSet = new Set(pinnedMcrs);
+
+            pageRows.forEach((row) => {
+              if (shouldPin) {
+                nextSet.add(row.original.mcr);
+              } else {
+                nextSet.delete(row.original.mcr);
+              }
+            });
+
+            setPinnedMcrs(nextSet);
+          };
+
+          return (
+            <Checkbox
+              checked={checkboxState}
+              onCheckedChange={handleCheckedChange}
+            />
+          );
+        },
         cell: ({ row }) => (
           <Checkbox
             checked={pinnedMcrs?.has(row.original.mcr) ?? false}
@@ -289,7 +325,7 @@ const PlanningOverviewTable: React.FC<PlanningOverviewTableProps> = ({
         enableGlobalFilter: false,
       },
     ];
-  }, [pinnedMcrs, onTogglePin, residentPostings, scoreByMcr]);
+  }, [pinnedMcrs, residentPostings, scoreByMcr, setPinnedMcrs, onTogglePin]);
 
   // table properties
   const table = useReactTable({
