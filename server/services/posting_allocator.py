@@ -598,7 +598,7 @@ def allocate_timetable(
             model.Add(sum(selection_flags[mcr][p] for p in ED_codes) == 1)
             model.Add(sum(selection_flags[mcr][p] for p in GRM_codes) == 1)
 
-    # Hard Constraint 15: Enforce MICU/RCCM minimum requirements by career stage
+    # Hard Constraint 15: enforce MICU/RCCM minimum requirements by career stage
     for resident in residents:
         mcr = resident["mcr"]
         resident_progress = posting_progress.get(mcr, {})
@@ -705,6 +705,43 @@ def allocate_timetable(
 
             model.Add(micu_blocks == micu_needed)
             model.Add(rccm_blocks == rccm_needed)
+
+    # Hard Constraint 16: ensure postings are not too imbalanced within each half of the year
+    for p in posting_codes:
+        # omit GM and ED from balancing constraint
+        base_posting_code = p.split(" (")[0]
+        if base_posting_code in ["GM", "ED"]:
+            continue
+
+        # number of residents assigned per month should be balanced across the months it is active in
+        # handled independently for each half of the year
+
+        # Define variables for the number of residents in posting p for each block b
+        assignments_per_block = {}
+        for b in blocks:
+            num_assigned = model.NewIntVar(
+                0, len(residents), f"num_assigned_{to_snake_case(p)}_{b}"
+            )
+            model.Add(num_assigned == sum(x[r["mcr"]][p][b] for r in residents))
+            assignments_per_block[b] = num_assigned
+
+        # First half of the year (blocks 1-6)
+        first_half_assignments = [assignments_per_block[b] for b in early_blocks]
+        if first_half_assignments:
+            min_h1 = model.NewIntVar(0, len(residents), f"min_h1_{to_snake_case(p)}")
+            max_h1 = model.NewIntVar(0, len(residents), f"max_h1_{to_snake_case(p)}")
+            model.AddMinEquality(min_h1, first_half_assignments)
+            model.AddMaxEquality(max_h1, first_half_assignments)
+            model.Add(max_h1 <= min_h1 + 4)
+
+        # Second half of the year (blocks 7-12)
+        second_half_assignments = [assignments_per_block[b] for b in late_blocks]
+        if second_half_assignments:
+            min_h2 = model.NewIntVar(0, len(residents), f"min_h2_{to_snake_case(p)}")
+            max_h2 = model.NewIntVar(0, len(residents), f"max_h2_{to_snake_case(p)}")
+            model.AddMinEquality(min_h2, second_half_assignments)
+            model.AddMaxEquality(max_h2, second_half_assignments)
+            model.Add(max_h2 <= min_h2 + 4)
 
     ###########################################################################
     # DEFINE SOFT CONSTRAINTS WITH PENALTIES
@@ -1126,7 +1163,7 @@ def allocate_timetable(
     solver = cp_model.CpSolver()
 
     # solver settings
-    solver.parameters.max_time_in_seconds = 60 * 5  # max 5 minutes run time
+    solver.parameters.max_time_in_seconds = 15  # max 15 minutes run time
     solver.parameters.cp_model_presolve = True  # enable presolve for better performance
     solver.parameters.log_search_progress = False  # log solver progress to stderr (will be captured as [PYTHON LOG] by Node.js backend)
     solver.parameters.enumerate_all_solutions = False
