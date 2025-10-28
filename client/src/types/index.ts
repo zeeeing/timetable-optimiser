@@ -75,7 +75,18 @@ export interface Statistics {
     optimisation_scores: number[];
     optimisation_scores_normalised: number[];
     posting_util: PostingUtil[];
+    elective_preference_satisfaction: ElectivePreferenceSatisfaction;
   };
+}
+
+export interface ElectivePreferenceSatisfaction {
+  "1st_choice": number;
+  "2nd_choice": number;
+  "3rd_choice": number;
+  "4th_choice": number;
+  "5th_choice": number;
+  none_met: number;
+  no_preference: number;
 }
 
 export interface PostingUtil {

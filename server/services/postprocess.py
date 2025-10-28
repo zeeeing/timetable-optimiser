@@ -33,9 +33,12 @@ def compute_postprocess(payload: Dict) -> Dict:
         mcr = pref.get("mcr")
         if not mcr:
             continue
-        pref_map.setdefault(mcr, {})[int(pref.get("preference_rank", 0))] = pref.get(
-            "posting_code"
-        )
+        rank = int(pref.get("preference_rank"))
+        posting_code = pref.get("posting_code")
+        if posting_code:
+            if mcr not in pref_map:
+                pref_map[mcr] = {}
+            pref_map[mcr][rank] = posting_code
 
     # sanitise resident history entries
     output_history: List[Dict] = []
@@ -273,6 +276,49 @@ def compute_postprocess(payload: Dict) -> Dict:
         for s in optimisation_scores
     ]
 
+    # calculate elective preference satisfaction
+    elective_preference_satisfaction = {
+        "1st_choice": 0,
+        "2nd_choice": 0,
+        "3rd_choice": 0,
+        "4th_choice": 0,
+        "5th_choice": 0,
+        "none_met": 0,
+        "no_preference": 0,
+    }
+
+    for r in residents:
+        mcr = r.get("mcr")
+        if not mcr:
+            continue
+
+        resident_prefs = pref_map.get(mcr, {})
+        if not resident_prefs:
+            elective_preference_satisfaction["no_preference"] += 1
+            continue
+
+        assigned_postings = [
+            h.get("posting_code")
+            for h in output_history
+            if h.get("mcr") == mcr
+            and h.get("is_current_year")
+            and h.get("posting_code")
+            and not h.get("is_leave")
+        ]
+
+        if not any(
+            resident_prefs[rank] in assigned_postings for rank in resident_prefs
+        ):
+            elective_preference_satisfaction["none_met"] += 1
+            continue
+
+        for rank in sorted(resident_prefs.keys()):
+            if resident_prefs[rank] in assigned_postings:
+                if 1 <= rank <= 5:
+                    choice_key = f"{rank}{'st' if rank == 1 else 'nd' if rank == 2 else 'rd' if rank == 3 else 'th'}_choice"
+                    elective_preference_satisfaction[choice_key] += 1
+                    break  # count only the highest-ranking preference met
+
     # calculate posting utilisation by block
     # precompute capacity fill for diagnostics
     posting_util: List[Dict] = []
@@ -308,6 +354,7 @@ def compute_postprocess(payload: Dict) -> Dict:
         "optimisation_scores": optimisation_scores,
         "optimisation_scores_normalised": optimisation_scores_normalised,
         "posting_util": posting_util,
+        "elective_preference_satisfaction": elective_preference_satisfaction,
     }
 
     return {

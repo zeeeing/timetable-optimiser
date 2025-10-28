@@ -1,5 +1,5 @@
 import type { Statistics } from "../types";
-// import OptimisationScoreHistogram from "./OptimisationScoreHistogram";
+import ElectivePreferenceSatisfactionChart from "./ElectivePreferenceSatisfactionChart";
 import OptimisationScoreTable from "./OptimisationScoreTable";
 import {
   Card,
@@ -19,7 +19,7 @@ type Props = {
 
 const CohortStatistics: React.FC<Props> = ({ residents, statistics }) => {
   const { total_residents, cohort } = statistics;
-  const { optimisation_scores } = cohort;
+  const { optimisation_scores, elective_preference_satisfaction } = cohort;
 
   // Map optimisation scores to resident scores with actual names
   const mappedScores = optimisation_scores.map((score, index) => {
@@ -38,11 +38,13 @@ const CohortStatistics: React.FC<Props> = ({ residents, statistics }) => {
       </CardHeader>
 
       {/* histogram of optimisation scores */}
-      <CardContent>
-        {/* <OptimisationScoreHistogram
-          optimisationScores={mappedScores.map((r) => r.score)}
-        /> */}
+      <CardContent className="space-y-4">
+        <p className="text-sm font-medium">Optimisation Scores</p>
         <OptimisationScoreTable scores={mappedScores} />
+        <p className="text-sm font-medium">Elective Preference Satisfaction</p>
+        <ElectivePreferenceSatisfactionChart
+          data={elective_preference_satisfaction}
+        />
       </CardContent>
     </Card>
   );
