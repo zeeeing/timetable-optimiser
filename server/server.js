@@ -16,6 +16,27 @@ app.use(cors());
 app.use(express.json());
 const upload = multer({ storage: multer.memoryStorage() });
 
+const parseBooleanFlag = (value) => {
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (value === null || value === undefined) {
+    return false;
+  }
+  const str = String(value).trim().toLowerCase();
+  if (!str) {
+    return false;
+  }
+  if (["1", "true", "yes", "y"].includes(str)) {
+    return true;
+  }
+  if (["0", "false", "no", "n"].includes(str)) {
+    return false;
+  }
+  const num = Number(str);
+  return Number.isFinite(num) ? num !== 0 : false;
+};
+
 // in-memory store (per-process) for latest dataset and response
 app.locals.store = {
   latestInputs: null, // dataset uploaded via /api/solve
@@ -235,12 +256,10 @@ app.post(
           const careerBlock = parseInt(String(h.career_block ?? "").trim(), 10);
           const year = parseInt(String(h.year ?? "").trim(), 10);
           if (!Number.isFinite(year)) return null;
-          const isCurrentYear = Boolean(
-            parseInt(String(h.is_current_year ?? h.isCurrentYear ?? 0), 10)
+          const isCurrentYear = parseBooleanFlag(
+            h.is_current_year ?? h.isCurrentYear ?? 0
           );
-          const isLeave = Boolean(
-            parseInt(String(h.is_leave ?? h.isLeave ?? 0), 10)
-          );
+          const isLeave = parseBooleanFlag(h.is_leave ?? h.isLeave ?? 0);
 
           return {
             mcr: String(h.mcr).trim(),

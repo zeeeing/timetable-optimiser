@@ -15,6 +15,8 @@ from utils import (
     get_unique_electives_completed,
     to_snake_case,
     variants_for_base,
+    _normalize_block,
+    _truthy,
     CORE_REQUIREMENTS,
     CCR_POSTINGS,
 )
@@ -95,15 +97,93 @@ def allocate_timetable(
         if base_posting:
             sr_pref_map[mcr][pref["preference_rank"]] = base_posting
 
-    # 6. get posting progress for each resident
+    # 6. derive pinned assignments from resident history current year flags
+    pins_by_resident: Dict[str, Dict[int, str]] = {}
+
+    # helper to add pinned assignment to map
+    def _record_pin(mcr: str, block: int, posting: str) -> None:
+        if not mcr or posting not in posting_info or block not in blocks:
+            return
+        pins_by_resident.setdefault(mcr, {})[block] = posting
+
+    # merge explicit pinned assignments (existing ones, if any)
+    if pinned_assignments:
+        for mcr, entries in pinned_assignments.items():
+            if not entries:
+                continue
+            for entry in entries:
+                try:
+                    block = _normalize_block(entry.get("month_block"))
+                    posting_code = (entry.get("posting_code") or "").strip()
+                except AttributeError:
+                    continue
+                if block is None or not posting_code:
+                    continue
+                if posting_code not in posting_info or block not in blocks:
+                    logger.warning(
+                        "Ignoring invalid pinned assignment (%s, %s, %s)",
+                        mcr,
+                        posting_code,
+                        block,
+                    )
+                    continue
+                _record_pin(mcr, block, posting_code)
+
+    # merge pinned assignments from resident history current year flags
+    filtered_resident_history: List[Dict] = []
+    for row in resident_history or []:
+        if not isinstance(row, dict):
+            continue
+        current_row = dict(row)
+        mcr = str(current_row.get("mcr") or "").strip()
+        month_block = _normalize_block(current_row.get("month_block"))
+        posting_code = str(current_row.get("posting_code") or "").strip()
+        is_current_year = _truthy(current_row.get("is_current_year"))
+        is_leave = _truthy(current_row.get("is_leave"))
+
+        if (
+            is_current_year
+            and not is_leave
+            and mcr
+            and month_block is not None
+            and posting_code
+        ):
+            if posting_code not in posting_info or month_block not in blocks:
+                logger.warning(
+                    "Skipping pinned history row with unknown posting/block: %s %s %s",
+                    mcr,
+                    posting_code,
+                    month_block,
+                )
+            else:
+                _record_pin(mcr, month_block, posting_code)
+            continue
+
+        filtered_resident_history.append(current_row)
+
+    # normalise pinned assignments for downstream use
+    if pins_by_resident:
+        pinned_assignments = {
+            mcr: [
+                {"month_block": b, "posting_code": posting}
+                for b, posting in sorted(block_map.items())
+            ]
+            for mcr, block_map in pins_by_resident.items()
+        }
+    else:
+        pinned_assignments = {}
+
+    resident_history = filtered_resident_history
+
+    # 7. get posting progress for each resident
     posting_progress = get_posting_progress(resident_history, posting_info)
 
-    # 7. create lists of ED, GRM, GM postings
+    # 8. create lists of ED, GRM, GM postings
     ED_codes = [p for p in posting_codes if p.startswith("ED")]
     GRM_codes = [p for p in posting_codes if p.startswith("GRM")]
     GM_codes = [p for p in posting_codes if p.startswith("GM")]
 
-    # 8. create map of resident leaves
+    # 9. create map of resident leaves
     leave_map: Dict[str, Dict[int, Dict]] = {}
     leave_off_blocks: Set[Tuple[str, int]] = set()
     leave_quota_usage: Dict[str, Dict[int, int]] = {}
@@ -137,7 +217,7 @@ def allocate_timetable(
                 # ignore malformed leave rows
                 continue
 
-    # 9. derive career progress per resident
+    # 10. derive career progress per resident
     def stage_from_blocks(blocks_completed: int) -> int:
         if blocks_completed < 12:
             return 1

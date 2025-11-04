@@ -1,4 +1,4 @@
-from typing import List, Dict, Set
+from typing import List, Dict, Set, Optional
 
 
 def get_completed_postings(
@@ -157,6 +157,7 @@ def get_ccr_postings_completed(
     return completed_postings
 
 
+# helpers
 def to_snake_case(posting_code: str) -> str:
     return (
         posting_code.lower()
@@ -167,7 +168,6 @@ def to_snake_case(posting_code: str) -> str:
     )
 
 
-# helpers
 def parse_resident_history(resident_history: List[Dict]) -> Dict[str, Dict[str, int]]:
     """
     Returns a dictionary mapping each resident to a dictionary of posting codes. This dictionary maps each posting code to the number of blocks completed.
@@ -227,6 +227,36 @@ def variants_for_base(base: str, posting_codes: List[Dict[str, Dict]]) -> List[s
         if base_code == cleaned_base:
             variants.append(code)
     return variants
+
+
+def _normalize_block(value) -> Optional[int]:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _truthy(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    if isinstance(value, (int, float)):
+        return value != 0
+    try:
+        value_str = str(value).strip().lower()
+    except Exception:
+        return False
+    if not value_str:
+        return False
+    if value_str in {"1", "true", "yes", "y"}:
+        return True
+    if value_str in {"0", "false", "no", "n"}:
+        return False
+    try:
+        return float(value_str) != 0
+    except (TypeError, ValueError):
+        return False
 
 
 # constants
