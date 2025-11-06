@@ -750,19 +750,19 @@ def allocate_timetable(
         ]
         model.AddAutomaton(B, 0, [0, 1, 2], transitions)
 
-    # Hard Constraint 14: enforce 1 ED and 1 GRM SELECTION if BOTH not done before
-    for resident in residents:
-        mcr = resident["mcr"]
-        progress = get_core_blocks_completed(
-            posting_progress.get(mcr, {}), posting_info
-        )
-        # have they already finished either ED or GRM?
-        done_ED = progress.get("ED", 0) >= CORE_REQUIREMENTS.get("ED", 0)
-        done_GRM = progress.get("GRM", 0) >= CORE_REQUIREMENTS.get("GRM", 0)
+    # # Hard Constraint 14: enforce 1 ED and 1 GRM SELECTION if BOTH not done before
+    # for resident in residents:
+    #     mcr = resident["mcr"]
+    #     progress = get_core_blocks_completed(
+    #         posting_progress.get(mcr, {}), posting_info
+    #     )
+    #     # have they already finished either ED or GRM?
+    #     done_ED = progress.get("ED", 0) >= CORE_REQUIREMENTS.get("ED", 0)
+    #     done_GRM = progress.get("GRM", 0) >= CORE_REQUIREMENTS.get("GRM", 0)
 
-        if not (done_ED or done_GRM):
-            model.Add(sum(selection_flags[mcr][p] for p in ED_codes) == 1)
-            model.Add(sum(selection_flags[mcr][p] for p in GRM_codes) == 1)
+    #     if not (done_ED or done_GRM):
+    #         model.Add(sum(selection_flags[mcr][p] for p in ED_codes) == 1)
+    #         model.Add(sum(selection_flags[mcr][p] for p in GRM_codes) == 1)
 
     # Hard Constraint 15: enforce MICU/RCCM minimum requirements by career stage
     for resident in residents:
@@ -898,7 +898,7 @@ def allocate_timetable(
             max_h1 = model.NewIntVar(0, len(residents), f"max_h1_{to_snake_case(p)}")
             model.AddMinEquality(min_h1, first_half_assignments)
             model.AddMaxEquality(max_h1, first_half_assignments)
-            model.Add(max_h1 <= min_h1 + 4)
+            model.Add(max_h1 <= min_h1 + 1)
 
         # Second half of the year (blocks 7-12)
         second_half_assignments = [assignments_per_block[b] for b in late_blocks]
@@ -907,7 +907,7 @@ def allocate_timetable(
             max_h2 = model.NewIntVar(0, len(residents), f"max_h2_{to_snake_case(p)}")
             model.AddMinEquality(min_h2, second_half_assignments)
             model.AddMaxEquality(max_h2, second_half_assignments)
-            model.Add(max_h2 <= min_h2 + 4)
+            model.Add(max_h2 <= min_h2 + 1)
 
     ###########################################################################
     # DEFINE SOFT CONSTRAINTS WITH PENALTIES
@@ -1329,7 +1329,7 @@ def allocate_timetable(
     solver = cp_model.CpSolver()
 
     # solver settings
-    solver.parameters.max_time_in_seconds = 60 * 15 # max 15 minutes run time
+    solver.parameters.max_time_in_seconds = 60 * 2  # max 15 minutes run time
     solver.parameters.cp_model_presolve = True  # enable presolve for better performance
     solver.parameters.log_search_progress = False  # log solver progress to stderr (will be captured as [PYTHON LOG] by Node.js backend)
     solver.parameters.enumerate_all_solutions = False
