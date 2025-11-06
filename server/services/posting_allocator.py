@@ -22,6 +22,8 @@ from utils import (
 )
 from postprocess import compute_postprocess
 
+SharedGroupKey = Tuple[str, Tuple[str, ...]]
+
 
 def allocate_timetable(
     residents: List[Dict],
@@ -217,6 +219,73 @@ def allocate_timetable(
                 # ignore malformed leave rows
                 continue
 
+    # 9b. computer shared quota groups for selected base postings that share quotas at the same institution
+    SHARED_BASE_GROUPS = [
+        {"GRM", "MEDCOMM"},
+        {"MICU", "RCCM"},
+    ]
+
+    def _extract_institution(posting_code: str) -> str:
+        if "(" not in posting_code or ")" not in posting_code:
+            return ""
+        return posting_code.split("(", 1)[1].rstrip(")").strip()
+
+    institution_base_map: Dict[str, Dict[str, List[str]]] = {}
+    for code in posting_codes:
+        base = code.split(" (")[0].strip().upper()
+        if not base:
+            continue
+        institution = _extract_institution(code)
+        if not institution:
+            continue
+        institution_base_map.setdefault(institution, {}).setdefault(base, []).append(
+            code
+        )
+
+    shared_quota_groups: Dict[SharedGroupKey, List[str]] = {}
+    posting_to_shared_group: Dict[str, SharedGroupKey] = {}
+
+    for institution, base_map in institution_base_map.items():
+        for base_group in SHARED_BASE_GROUPS:
+            if not all(base in base_map for base in base_group):
+                continue
+            ordered_bases = tuple(sorted(base_group))
+            group_key: SharedGroupKey = (institution, ordered_bases)
+            codes: List[str] = []
+            for base in ordered_bases:
+                codes.extend(base_map[base])
+            codes = sorted(codes)
+            shared_quota_groups[group_key] = codes
+            for code in codes:
+                posting_to_shared_group[code] = group_key
+
+    shared_group_totals: Dict[SharedGroupKey, int] = {
+        group_key: sum(posting_info[code]["max_residents"] for code in codes)
+        for group_key, codes in shared_quota_groups.items()
+    }
+
+    shared_group_available: Dict[SharedGroupKey, Dict[int, int]] = {}
+    for group_key, codes in shared_quota_groups.items():
+        total_quota = shared_group_totals[group_key]
+        block_availability: Dict[int, int] = {}
+        for b in blocks:
+            reserved_sum = sum(
+                leave_quota_usage.get(code, {}).get(b, 0) for code in codes
+            )
+            available = total_quota - reserved_sum
+            if available < 0:
+                institution, bases = group_key
+                logger.warning(
+                    "Leave reservations (%d) exceed combined capacity for %s group at %s block %s; capping at 0",
+                    reserved_sum,
+                    "/".join(bases),
+                    institution,
+                    b,
+                )
+                available = 0
+            block_availability[b] = available
+        shared_group_available[group_key] = block_availability
+
     # 10. derive career progress per resident
     def stage_from_blocks(blocks_completed: int) -> int:
         if blocks_completed < 12:
@@ -359,22 +428,39 @@ def allocate_timetable(
             leave_off_blocks.add((mcr, b))
 
     # Hard Constraint 2: Each posting cannot exceed max residents per block
+    # for shared quota pairs, allow pooled capacity
     for p in posting_codes:
+        group_key = posting_to_shared_group.get(p)
         max_residents = posting_info[p]["max_residents"]
 
         for b in blocks:
-            reserved = leave_quota_usage.get(p, {}).get(b, 0)
-            available_capacity = max_residents - reserved
-            if available_capacity < 0:
-                logger.warning(
-                    "Leave reservations (%d) exceed capacity for posting %s at block %s; capping available slots at 0",
-                    reserved,
-                    p,
-                    b,
-                )
-                available_capacity = 0
+            if group_key:
+                available_capacity = shared_group_available[group_key][b]
+            else:
+                reserved = leave_quota_usage.get(p, {}).get(b, 0)
+                available_capacity = max_residents - reserved
+                if available_capacity < 0:
+                    logger.warning(
+                        "Leave reservations (%d) exceed capacity for posting %s at block %s; capping available slots at 0",
+                        reserved,
+                        p,
+                        b,
+                    )
+                    available_capacity = 0
 
             model.Add(sum(x[r["mcr"]][p][b] for r in residents) <= available_capacity)
+
+    # ensure the combined usage does not exceed the pooled manpower
+    for group_key, codes in shared_quota_groups.items():
+        block_capacities = shared_group_available.get(group_key, {})
+        for b in blocks:
+            pooled_capacity = block_capacities.get(b, 0)
+            if not codes:
+                continue
+            model.Add(
+                sum(x[r["mcr"]][posting][b] for posting in codes for r in residents)
+                <= pooled_capacity
+            )
 
     # Hard Constraint 3: Enforce required_block_duration happens in consecutive blocks
     for resident in residents:
