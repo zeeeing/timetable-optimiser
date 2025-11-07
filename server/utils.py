@@ -229,6 +229,31 @@ def variants_for_base(base: str, posting_codes: List[Dict[str, Dict]]) -> List[s
     return variants
 
 
+def extract_institution(posting_code: str) -> str:
+    """
+    Extract the institution name from a posting code of the form `Base (Institution)`.
+    Returns an empty string if the format is unexpected.
+    """
+    try:
+        if "(" not in posting_code or ")" not in posting_code:
+            return ""
+        return posting_code.split("(", 1)[1].rstrip(")").strip()
+    except Exception:
+        return ""
+
+
+def group_codes_by_institution(codes: List[str]) -> Dict[str, List[str]]:
+    """
+    Group posting codes by their institution. Codes with no detectable institution
+    are grouped under an empty-string key so callers can decide how to handle them.
+    """
+    grouped: Dict[str, List[str]] = {}
+    for code in codes or []:
+        institution = extract_institution(code)
+        grouped.setdefault(institution, []).append(code)
+    return grouped
+
+
 def _normalize_block(value) -> Optional[int]:
     try:
         return int(value)
