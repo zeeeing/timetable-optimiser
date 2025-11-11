@@ -869,7 +869,7 @@ def allocate_timetable(
             model.Add(micu_blocks == micu_needed)
             model.Add(rccm_blocks == rccm_needed)
 
-    # Hard Constraint 16: ensure postings are not too imbalanced within each half of the year
+    # Hard Constraint 16: ensure postings are not imbalanced within each half of the year
     for p in posting_codes:
         # omit GM and ED from balancing constraint
         base_posting_code = p.split(" (")[0]
@@ -1326,7 +1326,7 @@ def allocate_timetable(
     solver = cp_model.CpSolver()
 
     # solver settings
-    solver.parameters.max_time_in_seconds = 60 * 2  # max 15 minutes run time
+    solver.parameters.max_time_in_seconds = 60 * 20  # max 20 minutes run time
     solver.parameters.cp_model_presolve = True  # enable presolve for better performance
     solver.parameters.log_search_progress = False  # log solver progress to stderr (will be captured as [PYTHON LOG] by Node.js backend)
     solver.parameters.enumerate_all_solutions = False
