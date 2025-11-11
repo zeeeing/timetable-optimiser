@@ -4,13 +4,6 @@ import "./index.css";
 import App from "./App.tsx";
 import { ApiResponseProvider } from "./context/ApiResponseContext.tsx";
 
-try {
-  localStorage.removeItem("pinnedMcrs");
-} catch {}
-try {
-  localStorage.removeItem("selectedResidentMcr");
-} catch {}
-
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ApiResponseProvider>

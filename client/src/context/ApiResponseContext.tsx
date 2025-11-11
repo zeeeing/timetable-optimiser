@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState } from "react";
+import React, { createContext, useContext, useEffect, useState } from "react";
 import type { ApiResponse } from "../types";
 
 // define context type
@@ -16,7 +16,28 @@ export const ApiResponseContext = createContext<
 export const ApiResponseProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
-  const [apiResponse, setApiResponse] = useState<ApiResponse | null>(null);
+  const [apiResponse, setApiResponse] = useState<ApiResponse | null>(() => {
+    if (typeof window === "undefined") return null;
+    try {
+      const stored = window.localStorage.getItem("apiResponse");
+      return stored ? (JSON.parse(stored) as ApiResponse) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      if (apiResponse) {
+        window.localStorage.setItem("apiResponse", JSON.stringify(apiResponse));
+      } else {
+        window.localStorage.removeItem("apiResponse");
+      }
+    } catch {
+      // swallow storage errors so the UI keeps working
+    }
+  }, [apiResponse]);
 
   return (
     <ApiResponseContext.Provider value={{ apiResponse, setApiResponse }}>
