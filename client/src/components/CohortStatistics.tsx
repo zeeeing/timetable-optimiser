@@ -8,6 +8,7 @@ import {
   CardTitle,
   CardDescription,
 } from "./ui/card";
+import { Separator } from "./ui/separator";
 
 type Props = {
   statistics: Statistics;
@@ -38,9 +39,10 @@ const CohortStatistics: React.FC<Props> = ({ residents, statistics }) => {
       </CardHeader>
 
       {/* histogram of optimisation scores */}
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-6">
         <p className="text-sm font-medium">Optimisation Scores</p>
         <OptimisationScoreTable scores={mappedScores} />
+        <Separator />
         <p className="text-sm font-medium">Elective Preference Satisfaction</p>
         <ElectivePreferenceSatisfactionChart
           data={elective_preference_satisfaction}
