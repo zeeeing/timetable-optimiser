@@ -221,7 +221,7 @@ def allocate_timetable(
                 # ignore malformed leave rows
                 continue
 
-    # 9b. computer shared quota groups for selected base postings that share quotas at the same institution
+    # 9b. compute shared posting quota for selected groups
     SHARED_BASE_GROUPS = [
         {"GRM", "MEDCOMM"},
         {"MICU", "RCCM"},
@@ -757,7 +757,7 @@ def allocate_timetable(
     #     done_ED = progress.get("ED", 0) >= CORE_REQUIREMENTS.get("ED", 0)
     #     done_GRM = progress.get("GRM", 0) >= CORE_REQUIREMENTS.get("GRM", 0)
 
-    #     if not (done_ED or done_GRM):
+    #     if not done_ED and not done_GRM:
     #         model.Add(sum(selection_flags[mcr][p] for p in ED_codes) == 1)
     #         model.Add(sum(selection_flags[mcr][p] for p in GRM_codes) == 1)
 
@@ -1191,9 +1191,39 @@ def allocate_timetable(
         for p in CORE_POSTINGS:
             core_bonus_terms.append(core_bonus_weight * selection_flags[mcr][p])
 
+    # ED + GRM pairing bonus
+    ed_grm_pair_bonus_terms = []
+    ed_grm_pair_bonus_weight = 5
+
+    for resident in residents:
+        mcr = resident["mcr"]
+        flag = model.NewBoolVar(f"{mcr}_ed_grm_pair_bonus")
+
+        hasED = model.NewBoolVar(f"{mcr}_hasED_pair_bonus")
+        model.Add(sum(selection_flags[mcr][p] for p in ED_codes) >= 1).OnlyEnforceIf(
+            hasED
+        )
+        model.Add(sum(selection_flags[mcr][p] for p in ED_codes) == 0).OnlyEnforceIf(
+            hasED.Not()
+        )
+
+        hasGRM = model.NewBoolVar(f"{mcr}_hasGRM_pair_bonus")
+        model.Add(sum(selection_flags[mcr][p] for p in GRM_codes) >= 1).OnlyEnforceIf(
+            hasGRM
+        )
+        model.Add(sum(selection_flags[mcr][p] for p in GRM_codes) == 0).OnlyEnforceIf(
+            hasGRM.Not()
+        )
+
+        model.Add(flag == 1).OnlyEnforceIf([hasED, hasGRM])
+        model.Add(flag == 0).OnlyEnforceIf(hasED.Not())
+        model.Add(flag == 0).OnlyEnforceIf(hasGRM.Not())
+
+        ed_grm_pair_bonus_terms.append(ed_grm_pair_bonus_weight * flag)
+
     # 3 GMs bonus if ED + GRM present
     three_gm_bonus_terms = []
-    three_gm_bonus_weight = 1
+    three_gm_bonus_weight = 5
 
     for resident in residents:
         mcr = resident["mcr"]
@@ -1229,9 +1259,9 @@ def allocate_timetable(
 
         three_gm_bonus_terms.append(three_gm_bonus_weight * flag)
 
-    # ED + GRM + GM fully within blocks 1-6
-    early_bundle_bonus_terms = []
-    early_bundle_bonus_weight = 5
+    # ED + GRM + GM spans within first/last half of year bonus
+    ed_grm_gm_bundle_bonus_terms = []
+    ed_grm_gm_bundle_bonus_weight = 10
 
     for resident in residents:
         mcr = resident["mcr"]
@@ -1291,11 +1321,11 @@ def allocate_timetable(
         model.Add(flag == 0).OnlyEnforceIf(hasGM.Not())
         model.Add(flag == 0).OnlyEnforceIf(crosses)
 
-        early_bundle_bonus_terms.append(early_bundle_bonus_weight * flag)
+        ed_grm_gm_bundle_bonus_terms.append(ed_grm_gm_bundle_bonus_weight * flag)
 
     # discourage empty blocks (OFF) unless on leave
     off_penalty_terms = []
-    off_penalty_weight = 999
+    off_penalty_weight = 99
     for resident in residents:
         mcr = resident["mcr"]
         for b in blocks:
@@ -1313,9 +1343,10 @@ def allocate_timetable(
         - sum(elective_shortfall_penalty_terms)
         - sum(core_shortfall_penalty_terms)
         + sum(core_bonus_terms)  # static, 5
-        + sum(three_gm_bonus_terms)  # static, 1
-        + sum(early_bundle_bonus_terms)  # static, 5
-        - sum(off_penalty_terms)  # static, extreme penalty 999
+        + sum(ed_grm_pair_bonus_terms)  # static, 5
+        + sum(three_gm_bonus_terms)  # static, 5
+        + sum(ed_grm_gm_bundle_bonus_terms)  # static, 10
+        - sum(off_penalty_terms)  # static, extreme penalty 99
     )
 
     ###########################################################################
@@ -1326,7 +1357,7 @@ def allocate_timetable(
     solver = cp_model.CpSolver()
 
     # solver settings
-    solver.parameters.max_time_in_seconds = 60 * 20  # max 20 minutes run time
+    # solver.parameters.max_time_in_seconds = 60 * 2  # max 20 minutes run time
     solver.parameters.cp_model_presolve = True  # enable presolve for better performance
     solver.parameters.log_search_progress = False  # log solver progress to stderr (will be captured as [PYTHON LOG] by Node.js backend)
     solver.parameters.enumerate_all_solutions = False
