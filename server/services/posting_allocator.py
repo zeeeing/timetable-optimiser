@@ -186,7 +186,6 @@ def allocate_timetable(
     ED_codes = [p for p in posting_codes if p.startswith("ED")]
     GRM_codes = [p for p in posting_codes if p.startswith("GRM")]
     GM_codes = [p for p in posting_codes if p.startswith("GM")]
-    MEDCOMM_codes = [p for p in posting_codes if p.startswith("MedComm")]
 
     # 9. create map of resident leaves
     leave_map: Dict[str, Dict[int, Dict]] = {}
@@ -283,10 +282,6 @@ def allocate_timetable(
                 available = 0
             block_availability[b] = available
         shared_group_available[group_key] = block_availability
-
-    MEDCOMM_CODES_BY_INSTITUTION = group_codes_by_institution(MEDCOMM_codes)
-    GRM_CODES_BY_INSTITUTION = group_codes_by_institution(GRM_codes)
-    GM_CODES_BY_INSTITUTION = group_codes_by_institution(GM_codes)
 
     # 10. derive career progress per resident
     def stage_from_blocks(blocks_completed: int) -> int:
@@ -900,7 +895,7 @@ def allocate_timetable(
             max_h1 = model.NewIntVar(0, len(residents), f"max_h1_{to_snake_case(p)}")
             model.AddMinEquality(min_h1, first_half_assignments)
             model.AddMaxEquality(max_h1, first_half_assignments)
-            model.Add(max_h1 <= min_h1 + 1)
+            model.Add(max_h1 <= min_h1 + 0)
 
         # Second half of the year (blocks 7-12)
         second_half_assignments = [assignments_per_block[b] for b in late_blocks]
@@ -909,7 +904,7 @@ def allocate_timetable(
             max_h2 = model.NewIntVar(0, len(residents), f"max_h2_{to_snake_case(p)}")
             model.AddMinEquality(min_h2, second_half_assignments)
             model.AddMaxEquality(max_h2, second_half_assignments)
-            model.Add(max_h2 <= min_h2 + 1)
+            model.Add(max_h2 <= min_h2 + 0)
 
     ###########################################################################
     # DEFINE SOFT CONSTRAINTS WITH PENALTIES
