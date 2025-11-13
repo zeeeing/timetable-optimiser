@@ -1,9 +1,7 @@
 import axios from "axios";
 import type { ApiResponse } from "../types";
-import { toMessage } from "./utils";
 
-const baseURL =
-  import.meta.env.API_BASE_URL || "http://127.0.0.1:8000/api";
+const baseURL = import.meta.env.API_BASE_URL || "http://127.0.0.1:8000/api";
 
 export const api = axios.create({
   baseURL,
@@ -16,12 +14,12 @@ export type SaveSchedulePayload = {
 };
 
 // routes
-export const uploadCsv = async (formData: FormData): Promise<ApiResponse> => {
+export const solve = async (formData: FormData): Promise<ApiResponse> => {
   try {
     const { data } = await api.post<ApiResponse>("/solve", formData);
     return data;
-  } catch (err) {
-    throw new Error(toMessage(err));
+  } catch (err: any) {
+    throw err;
   }
 };
 
@@ -31,8 +29,8 @@ export const saveSchedule = async (
   try {
     const { data } = await api.post<ApiResponse>("/save", payload);
     return data;
-  } catch (err) {
-    throw new Error(toMessage(err));
+  } catch (err: any) {
+    throw err;
   }
 };
 
@@ -54,7 +52,7 @@ export const downloadCsv = async (apiResponse: ApiResponse): Promise<Blob> => {
       headers: { "Content-Type": "application/json" },
     });
     return data as Blob;
-  } catch (err) {
-    throw new Error(toMessage(err));
+  } catch (err: any) {
+    throw err;
   }
 };

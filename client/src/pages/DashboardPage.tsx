@@ -1,33 +1,33 @@
-import React, { useState, useEffect, useMemo } from "react";
 import { useApiResponseContext } from "@/context/ApiResponseContext";
+import { groupResidentsByYear } from "@/lib/residentOrdering";
+import React, { useEffect, useMemo, useState } from "react";
+import { solve } from "../api/api";
 import type {
-  Resident,
   ApiResponse,
   CsvFilesState,
+  Resident,
   Weightages,
 } from "../types";
-import { uploadCsv } from "../api/api";
-import { groupResidentsByYear } from "@/lib/residentOrdering";
 
-import FileUpload from "../components/FileUpload";
-import WeightageSelector from "../components/WeightageSelector";
-import { generateSampleCSV } from "../lib/generateSampleCSV";
+import CohortStatistics from "../components/CohortStatistics";
 import ErrorAlert from "../components/ErrorAlert";
+import FileUpload from "../components/FileUpload";
+import PostingUtilTable from "../components/PostingUtilTable";
 import ResidentDropdown from "../components/ResidentDropdown";
 import ResidentTimetable from "../components/ResidentTimetable";
-import CohortStatistics from "../components/CohortStatistics";
-import PostingUtilTable from "../components/PostingUtilTable";
+import WeightageSelector from "../components/WeightageSelector";
+import { generateSampleCSV } from "../lib/generateSampleCSV";
 
-import { Button } from "../components/ui/button";
-import { Input } from "../components/ui/input";
-import { Label } from "../components/ui/label";
-import { Separator } from "../components/ui/separator";
-import { Loader2Icon, PinIcon, PinOffIcon } from "lucide-react";
 import {
   cn,
   parseAcademicYearInput,
   type AcademicYearRange,
 } from "@/lib/utils";
+import { Loader2Icon, PinIcon, PinOffIcon } from "lucide-react";
+import { Button } from "../components/ui/button";
+import { Input } from "../components/ui/input";
+import { Label } from "../components/ui/label";
+import { Separator } from "../components/ui/separator";
 
 const HomePage: React.FC = () => {
   const { apiResponse, setApiResponse } = useApiResponseContext();
@@ -101,18 +101,15 @@ const HomePage: React.FC = () => {
     formData.append("pinned_mcrs", JSON.stringify(Array.from(pinnedMcrs.values())));
 
     try {
-      const json: ApiResponse = await uploadCsv(formData);
+      const json: ApiResponse = await solve(formData);
       if (json.success && json.residents) {
         setApiResponse(json);
-      } else {
-        throw new Error("Failed to retrieve api response.");
       }
-    } catch (err: unknown) {
-      if (err instanceof Error) {
-        setError(err.message);
-      } else {
-        setError("An unknown error occurred.");
-      }
+    } catch (err: any) {
+      setError(
+        err?.response?.data?.detail ||
+          "An error occurred while processing the files."
+      );
     } finally {
       setIsProcessing(false);
     }

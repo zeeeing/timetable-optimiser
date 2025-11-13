@@ -386,8 +386,7 @@ const ResidentTimetable: React.FC<Props> = ({
         current_year,
       });
       setApiResponse(updatedApi);
-      // clear alerts on successful save
-      setViolations([]);
+      setViolations([]); // clear alerts on successful save
     } catch (err: any) {
       const validationViolations = err?.response?.data?.violations;
       if (
@@ -397,12 +396,9 @@ const ResidentTimetable: React.FC<Props> = ({
         setViolations(validationViolations);
         return;
       }
-      const msg =
-        err?.response?.data?.errors?.join(", ") ||
-        err?.response?.data?.error ||
-        err?.message ||
-        "Validation failed";
-      console.error(msg);
+      const statusCode = err?.response?.status;
+      const msg = err?.response?.data?.detail || "An error occurred while saving.";
+      setViolations([{ code: `ERR ${statusCode}`, description: msg }]);
     } finally {
       setIsSaving(false);
     }

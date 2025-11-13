@@ -92,15 +92,13 @@ async def solve(request: Request):
         if not allocator_result.get("success"):
             raise HTTPException(
                 status_code=500,
-                detail=allocator_result.get("error", "Posting allocator failed"),
+                detail=allocator_result.get(
+                    "error", "Posting allocator service failed unexpectedly."
+                ),
             )
 
         # extract solver solution
         solver_solution = allocator_result.get("solver_solution")
-        if not solver_solution:
-            raise HTTPException(
-                status_code=500, detail="Posting allocator returned no solution."
-            )
 
         # build postprocess payload
         postprocess_payload = _build_postprocess_payload(solver_input, solver_solution)
