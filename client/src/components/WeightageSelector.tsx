@@ -186,7 +186,7 @@ const WeightageSelector: React.FC<WeightageSelectorProps> = ({
         {WEIGHTAGE_OPTIONS.map((option) => {
           const switchId = `weightage-${option.key}`;
           return (
-            <Item className="border-md">
+            <Item className="border-md" key={option.key}>
               <ItemContent>
                 <ItemTitle>
                   {option.label}
