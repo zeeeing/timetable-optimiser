@@ -205,25 +205,6 @@ def allocate_timetable(
             "stages_by_block": stages_by_block,
         }
 
-    # 11. compute per-posting capacity per block (accounting for reserved leaves)
-    posting_block_capacity: Dict[str, Dict[int, int]] = {}
-    for p in posting_codes:
-        posting_block_capacity[p] = {}
-        max_residents = posting_info[p]["max_residents"]
-        posting_leave_usage = leave_quota_usage.get(p, {})
-        for b in blocks:
-            reserved = posting_leave_usage.get(b, 0)
-            available_capacity = max_residents - reserved
-            if available_capacity < 0:
-                logger.warning(
-                    "Leave reservations (%d) exceed capacity for posting %s at block %s; capping available slots at 0",
-                    reserved,
-                    p,
-                    b,
-                )
-                available_capacity = 0
-            posting_block_capacity[p][b] = available_capacity
-
     ###########################################################################
     # CREATE DECISION VARIABLES
     ###########################################################################
@@ -304,31 +285,34 @@ def allocate_timetable(
     ###########################################################################
 
     # Hard Constraint 1: Each resident must be assigned to exactly one posting
-    # DEBUG: OFF per block if constraint leads to infeasibility
+    # Leave blocks are forced to OFF so residents cannot be scheduled elsewhere
     for resident in residents:
         mcr = resident["mcr"]
+        leave_blocks = set(leave_map.get(mcr, {}).keys())
 
         for b in blocks:
             model.AddExactlyOne([x[mcr][p][b] for p in posting_codes] + [off[mcr][b]])
+            if b in leave_blocks:
+                model.Add(off[mcr][b] == 1)
+                leave_off_blocks.add((mcr, b))
 
-    # Hard Constraint: honour declared leave blocks by forcing OFF slots
-    for resident in residents:
-        mcr = resident["mcr"]
-        resident_leaves_for_blocks = leave_map.get(mcr, {})
-        if not resident_leaves_for_blocks:
-            continue
-
-        for b in resident_leaves_for_blocks:
-            # mark block as OFF so resident cannot be scheduled elsewhere
-            model.Add(off[mcr][b] == 1)
-            leave_off_blocks.add((mcr, b))
-
-    # Hard Constraint 2: Enforce posting quotas per block
+    # Hard Constraint 2: Enforce posting quotas per block (accounting for reserved leaves)
     for p in posting_codes:
-        cap_by_block = posting_block_capacity[p]
+        max_residents = posting_info[p]["max_residents"]
+        posting_leave_usage = leave_quota_usage.get(p, {})
 
         for b in blocks:
-            available_capacity = cap_by_block[b]
+            reserved = posting_leave_usage.get(b, 0)
+            available_capacity = max_residents - reserved
+            if available_capacity < 0:
+                logger.warning(
+                    "Leave reservations (%d) exceed capacity for posting %s at block %s; capping available slots at 0",
+                    reserved,
+                    p,
+                    b,
+                )
+                available_capacity = 0
+
             lhs = sum(x[r["mcr"]][p][b] for r in residents)
             model.Add(lhs <= available_capacity)
 
@@ -620,7 +604,7 @@ def allocate_timetable(
         ]
         model.AddAutomaton(B, 0, [0, 1, 2], transitions)
 
-    # # Hard Constraint 14: enforce 1 ED and 1 GRM SELECTION if BOTH not done before
+    # Hard Constraint 14: enforce 1 ED and 1 GRM SELECTION if BOTH not done before
     # for resident in residents:
     #     mcr = resident["mcr"]
     #     progress = get_core_blocks_completed(
@@ -1254,6 +1238,10 @@ def allocate_timetable(
             for lit in solver.SufficientAssumptionsForInfeasibility()
         ]
         logger.info("Unsat core: %s", ", ".join(core_names))
+        return {
+            "success": False,
+            "error": "Solver could not find a solution.",
+        }
 
     # FEASIBLE
     if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
@@ -1283,14 +1271,23 @@ def allocate_timetable(
                     }
                 )
 
-        # DEBUG: log OFF usage per resident (helps pinpoint why blocks aren't filled)
+        # log OFF usage per resident
         for resident in residents:
             mcr = resident["mcr"]
             off_blocks = [b for b in blocks if solver.Value(off[mcr][b]) > 0.5]
             if off_blocks:
-                logger.info(
-                    "[LEAVE/DEBUG] OFF used for %s at blocks: %s", mcr, off_blocks
-                )
+                if mcr in leave_map:
+                    logger.info(
+                        "[LEAVE] OFF used for %s at blocks: %s",
+                        mcr,
+                        off_blocks,
+                    )
+                else:
+                    logger.info(
+                        "[DEBUG] OFF used for %s at blocks: %s",
+                        mcr,
+                        off_blocks,
+                    )
 
         payload = {
             "residents": residents,
@@ -1310,6 +1307,10 @@ def allocate_timetable(
         payload["success"] = True
         logger.info("Posting allocation service completed successfully.")
         return payload
-    else:
-        logger.error("Posting allocation service failed")
-        return {"success": False, "error": "Posting allocation service failed"}
+
+    # INVALID MODEL
+    if status == cp_model.MODEL_INVALID:
+        logger.error("Posting allocation service failed: Model is invalid")
+        return {"success": False, "error": "Solver reported the model as invalid."}
+
+    return {"success": False, "error": "Solver returned an unknown status."}
