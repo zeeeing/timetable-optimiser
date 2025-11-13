@@ -1,0 +1,353 @@
+import copy
+import csv
+import io
+import json
+from typing import Any, Dict, List, Optional, Tuple
+
+from fastapi import HTTPException
+from starlette.datastructures import FormData, UploadFile
+
+
+def parse_boolean_flag(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    if isinstance(value, (int, float)):
+        return value != 0
+    try:
+        value_str = str(value).strip().lower()
+    except Exception:
+        return False
+    if not value_str:
+        return False
+    if value_str in {"1", "true", "yes", "y"}:
+        return True
+    if value_str in {"0", "false", "no", "n"}:
+        return False
+    try:
+        return float(value_str) != 0
+    except (TypeError, ValueError):
+        return False
+
+
+def parse_int(value: Any) -> Optional[int]:
+    try:
+        result = int(str(value).strip())
+    except (TypeError, ValueError, AttributeError):
+        return None
+    return result
+
+
+def parse_weightages(
+    raw: Any, fallback: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    fallback = {**(fallback or {})}
+    if raw is None:
+        return fallback
+    try:
+        if isinstance(raw, str) and raw.strip():
+            data = json.loads(raw)
+        elif isinstance(raw, dict):
+            data = raw
+        else:
+            data = {}
+    except json.JSONDecodeError:
+        data = {}
+    merged = fallback.copy()
+    merged.update(data or {})
+    return merged
+
+
+def parse_pinned_list(raw: Any) -> List[str]:
+    if raw is None:
+        return []
+    if isinstance(raw, list):
+        return [str(item).strip() for item in raw if str(item).strip()]
+    try:
+        parsed = json.loads(raw) if isinstance(raw, str) else raw
+    except (TypeError, json.JSONDecodeError):
+        return []
+    if not isinstance(parsed, list):
+        return []
+    return [str(item).strip() for item in parsed if str(item).strip()]
+
+
+async def _read_csv_upload(upload: UploadFile) -> List[Dict[str, Any]]:
+    content = await upload.read()
+    text = content.decode("utf-8")
+    reader = csv.DictReader(io.StringIO(text))
+    return [dict(row) for row in reader]
+
+
+########################################################################
+# Formatting functions for each CSV type
+########################################################################
+
+
+def _format_residents(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    formatted = []
+    for row in records:
+        career_blocks = parse_int(
+            row.get("career_blocks_completed") or row.get("careerBlocksCompleted")
+        )
+        resident_year = parse_int(row.get("resident_year")) or 0
+        formatted.append(
+            {
+                "mcr": str(row.get("mcr") or "").strip(),
+                "name": str(row.get("name") or "").strip(),
+                "resident_year": resident_year,
+                "career_blocks_completed": career_blocks,
+            }
+        )
+    return formatted
+
+
+def _format_resident_history(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    formatted: List[Dict[str, Any]] = []
+    for row in records:
+        month_block = parse_int(row.get("month_block") or row.get("block"))
+        if month_block is None:
+            continue
+        year = parse_int(row.get("year"))
+        if year is None:
+            continue
+        career_block = parse_int(row.get("career_block"))
+        formatted.append(
+            {
+                "mcr": str(row.get("mcr") or "").strip(),
+                "year": year,
+                "month_block": month_block,
+                "career_block": career_block,
+                "posting_code": str(row.get("posting_code") or "").strip(),
+                "is_current_year": parse_boolean_flag(
+                    row.get("is_current_year") or row.get("isCurrentYear")
+                ),
+                "is_leave": parse_boolean_flag(
+                    row.get("is_leave") or row.get("isLeave")
+                ),
+                "leave_type": str(row.get("leave_type") or "").strip(),
+            }
+        )
+    return formatted
+
+
+def _format_preferences(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    formatted = []
+    for row in records:
+        formatted.append(
+            {
+                "mcr": str(row.get("mcr") or "").strip(),
+                "preference_rank": parse_int(row.get("preference_rank")) or 0,
+                "posting_code": str(row.get("posting_code") or "").strip(),
+            }
+        )
+    return formatted
+
+
+def _format_sr_preferences(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    formatted = []
+    for row in records:
+        formatted.append(
+            {
+                "mcr": str(row.get("mcr") or "").strip(),
+                "preference_rank": parse_int(row.get("preference_rank")) or 0,
+                "base_posting": str(row.get("base_posting") or "").strip(),
+            }
+        )
+    return formatted
+
+
+def _format_postings(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    formatted = []
+    for row in records:
+        formatted.append(
+            {
+                "posting_code": str(row.get("posting_code") or "").strip(),
+                "posting_name": str(row.get("posting_name") or "").strip(),
+                "posting_type": str(row.get("posting_type") or "").strip(),
+                "max_residents": parse_int(row.get("max_residents")) or 0,
+                "required_block_duration": parse_int(row.get("required_block_duration"))
+                or 1,
+            }
+        )
+    return formatted
+
+
+def _format_resident_leaves(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    formatted: List[Dict[str, Any]] = []
+    for row in records:
+        month_block = parse_int(row.get("month_block") or row.get("block"))
+        if month_block is None:
+            continue
+        formatted.append(
+            {
+                "mcr": str(row.get("mcr") or "").strip(),
+                "month_block": month_block,
+                "leave_type": str(row.get("leave_type") or "").strip(),
+                "posting_code": str(row.get("posting_code") or "").strip(),
+            }
+        )
+    return formatted
+
+
+async def preprocess_initial_upload(form: FormData) -> Dict[str, Any]:
+    def require_upload(key: str, optional: bool = False) -> Optional[UploadFile]:
+        value = form.get(key)
+        if isinstance(value, UploadFile):
+            return value
+        if optional:
+            return None
+        available_keys = list(form.keys())
+        value_type = type(value).__name__ if value is not None else "None"
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Missing required file '{key}'. "
+                f"Received type '{value_type}'. "
+                f"Available keys: {available_keys}"
+            ),
+        )
+
+    residents_upload = require_upload("residents")
+    history_upload = require_upload("resident_history")
+    prefs_upload = require_upload("resident_preferences")
+    sr_prefs_upload = require_upload("resident_sr_preferences")
+    postings_upload = require_upload("postings")
+    leaves_upload = require_upload("resident_leaves", optional=True)
+
+    residents_csv = await _read_csv_upload(residents_upload)
+    history_csv = await _read_csv_upload(history_upload)
+    prefs_csv = await _read_csv_upload(prefs_upload)
+    sr_prefs_csv = await _read_csv_upload(sr_prefs_upload) if sr_prefs_upload else []
+    postings_csv = await _read_csv_upload(postings_upload)
+    leaves_csv = await _read_csv_upload(leaves_upload) if leaves_upload else []
+
+    weightages = parse_weightages(form.get("weightages"), {})
+
+    return {
+        "residents": _format_residents(residents_csv),
+        "resident_history": _format_resident_history(history_csv),
+        "resident_preferences": _format_preferences(prefs_csv),
+        "resident_sr_preferences": _format_sr_preferences(sr_prefs_csv),
+        "postings": _format_postings(postings_csv),
+        "weightages": weightages,
+        "resident_leaves": _format_resident_leaves(leaves_csv),
+    }
+
+
+async def prepare_solver_input(
+    form: FormData,
+    latest_inputs: Optional[Dict[str, Any]],
+    latest_api_response: Optional[Dict[str, Any]],
+) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]]]:
+    """
+    Build the solver input payload based on uploaded files and/or pinned selections.
+    Returns the payload plus an optional deep copy to refresh the cached latest_inputs.
+    """
+
+    pinned_mcrs = parse_pinned_list(form.get("pinned_mcrs"))
+    has_pinned = bool(pinned_mcrs)
+    has_cached_run = bool(latest_api_response)
+
+    if has_pinned and has_cached_run:
+        solver_input = build_pinned_run_input(
+            latest_inputs=latest_inputs,
+            latest_api_response=latest_api_response,
+            pinned_mcrs=pinned_mcrs,
+            weightages_override=form.get("weightages"),
+        )
+        latest_inputs_snapshot: Optional[Dict[str, Any]] = None
+    else:
+        solver_input = await preprocess_initial_upload(form)
+        latest_inputs_snapshot = copy.deepcopy(solver_input)
+
+    return solver_input, latest_inputs_snapshot
+
+
+def build_pinned_run_input(
+    latest_inputs: Optional[Dict[str, Any]],
+    latest_api_response: Optional[Dict[str, Any]],
+    pinned_mcrs: List[str],
+    weightages_override: Any = None,
+) -> Dict[str, Any]:
+    if not latest_api_response:
+        raise HTTPException(
+            status_code=400,
+            detail="No existing timetable found. Upload CSV files before pinning residents.",
+        )
+
+    pinned_set = {mcr for mcr in pinned_mcrs if mcr}
+    history = latest_api_response.get("resident_history") or []
+    resident_history = [
+        copy.deepcopy(row)
+        for row in history
+        if not parse_boolean_flag(row.get("is_current_year"))
+    ]
+
+    pinned_assignments: Dict[str, List[Dict[str, Any]]] = {}
+    for row in history:
+        if not parse_boolean_flag(row.get("is_current_year")):
+            continue
+        if parse_boolean_flag(row.get("is_leave")):
+            continue
+        mcr = str(row.get("mcr") or "").strip()
+        if not mcr or mcr not in pinned_set:
+            continue
+        month_block = parse_int(row.get("month_block") or row.get("block"))
+        posting_code = str(row.get("posting_code") or "").strip()
+        if month_block is None or not posting_code:
+            continue
+        pinned_assignments.setdefault(mcr, []).append(
+            {"month_block": month_block, "posting_code": posting_code}
+        )
+
+    for assignments in pinned_assignments.values():
+        assignments.sort(key=lambda item: item["month_block"])
+
+    base_weightages = (
+        (latest_api_response.get("weightages") or {})
+        or (latest_inputs.get("weightages") if latest_inputs else {})
+        or {}
+    )
+    weightages = parse_weightages(weightages_override, base_weightages)
+
+    def merged(key: str) -> List[Dict[str, Any]]:
+        if latest_api_response and key in latest_api_response:
+            return copy.deepcopy(latest_api_response.get(key) or [])
+        if latest_inputs and key in latest_inputs:
+            return copy.deepcopy(latest_inputs.get(key) or [])
+        return []
+
+    return {
+        "residents": merged("residents"),
+        "resident_history": resident_history,
+        "resident_preferences": merged("resident_preferences"),
+        "resident_sr_preferences": merged("resident_sr_preferences"),
+        "postings": merged("postings"),
+        "weightages": weightages,
+        "resident_leaves": merged("resident_leaves"),
+        "pinned_assignments": pinned_assignments,
+    }
+
+
+def normalise_current_year_entries(entries: Any) -> List[Dict[str, Any]]:
+    normalised: List[Dict[str, Any]] = []
+    if not isinstance(entries, list):
+        return normalised
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        month_block = parse_int(entry.get("month_block") or entry.get("block"))
+        posting_code = str(entry.get("posting_code") or "").strip()
+        if month_block is None or not posting_code:
+            continue
+        career_block = parse_int(entry.get("career_block"))
+        normalised.append(
+            {
+                "month_block": month_block,
+                "posting_code": posting_code,
+                "career_block": career_block,
+            }
+        )
+    return normalised

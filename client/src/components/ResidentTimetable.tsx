@@ -38,7 +38,7 @@ import {
 import type { AcademicYearRange } from "@/lib/utils";
 
 import { useApiResponseContext } from "@/context/ApiResponseContext";
-import { validateSchedule, saveSchedule } from "@/api/api";
+import { saveSchedule } from "@/api/api";
 
 import ErrorAlert from "./ErrorAlert";
 import ConstraintsAccordion from "./ConstraintsAccordion";
@@ -381,15 +381,6 @@ const ResidentTimetable: React.FC<Props> = ({
           : null;
       }).filter(Boolean) as { month_block: number; posting_code: string }[];
 
-      // 1. validate
-      const validated = await validateSchedule({
-        resident_mcr: resident.mcr,
-        current_year,
-      });
-      setViolations(validated.success ? [] : validated.violations || []);
-      if (!validated.success) return; // show violations, abort save
-
-      // 2. save response if validated
       const updatedApi = await saveSchedule({
         resident_mcr: resident.mcr,
         current_year,
@@ -398,6 +389,14 @@ const ResidentTimetable: React.FC<Props> = ({
       // clear alerts on successful save
       setViolations([]);
     } catch (err: any) {
+      const validationViolations = err?.response?.data?.violations;
+      if (
+        Array.isArray(validationViolations) &&
+        validationViolations.length > 0
+      ) {
+        setViolations(validationViolations);
+        return;
+      }
       const msg =
         err?.response?.data?.errors?.join(", ") ||
         err?.response?.data?.error ||

@@ -3,43 +3,22 @@ import type { ApiResponse } from "../types";
 import { toMessage } from "./utils";
 
 const baseURL =
-  import.meta.env.VITE_API_BASE_URL || "http://localhost:3001/api";
+  import.meta.env.API_BASE_URL || "http://127.0.0.1:8000/api";
 
 export const api = axios.create({
   baseURL,
 });
 
 // types
-export type ValidateSchedulePayload = {
+export type SaveSchedulePayload = {
   resident_mcr: string;
   current_year: { month_block: number; posting_code: string }[];
-};
-
-export type ValidateScheduleResponse = {
-  success: boolean;
-  violations: { code: string; description: string }[];
 };
 
 // routes
 export const uploadCsv = async (formData: FormData): Promise<ApiResponse> => {
   try {
-    const { data } = await api.post<ApiResponse>("/solve", formData, {
-      headers: { "Content-Type": "multipart/form-data" },
-    });
-    return data;
-  } catch (err) {
-    throw new Error(toMessage(err));
-  }
-};
-
-export const validateSchedule = async (
-  payload: ValidateSchedulePayload
-): Promise<ValidateScheduleResponse> => {
-  try {
-    const { data } = await api.post<ValidateScheduleResponse>(
-      "/validate",
-      payload
-    );
+    const { data } = await api.post<ApiResponse>("/solve", formData);
     return data;
   } catch (err) {
     throw new Error(toMessage(err));
@@ -47,13 +26,10 @@ export const validateSchedule = async (
 };
 
 export const saveSchedule = async (
-  payload: ValidateSchedulePayload
+  payload: SaveSchedulePayload
 ): Promise<ApiResponse> => {
   try {
     const { data } = await api.post<ApiResponse>("/save", payload);
-    if (!data?.success) {
-      throw new Error("Save failed");
-    }
     return data;
   } catch (err) {
     throw new Error(toMessage(err));

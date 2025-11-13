@@ -1,30 +1,18 @@
-import sys, json, os
+import sys, json
 from typing import List, Dict, Optional, Set, Tuple, Any
 import logging
 
 from ortools.sat.python import cp_model
 
-# prepend the base directory to sys.path
-BASE_DIR = os.path.dirname(os.path.dirname(__file__))
-if BASE_DIR not in sys.path:
-    sys.path.insert(0, BASE_DIR)
-
-from utils import (
+from server.utils import (
     get_posting_progress,
     get_core_blocks_completed,
     get_unique_electives_completed,
     to_snake_case,
     variants_for_base,
-    extract_institution,
-    group_codes_by_institution,
-    _normalize_block,
-    _truthy,
     CORE_REQUIREMENTS,
     CCR_POSTINGS,
 )
-from postprocess import compute_postprocess
-
-SharedGroupKey = Tuple[str, Tuple[str, ...]]
 
 
 def allocate_timetable(
@@ -97,53 +85,37 @@ def allocate_timetable(
         mcr = pref["mcr"]
         if mcr not in sr_pref_map:
             sr_pref_map[mcr] = {}
-        base_posting = (pref.get("base_posting") or "").strip()
+        base_posting = pref.get("base_posting")
         if base_posting:
             sr_pref_map[mcr][pref["preference_rank"]] = base_posting
 
     # 6. derive pinned assignments from resident history current year flags
     pins_by_resident: Dict[str, Dict[int, str]] = {}
 
-    # helper to add pinned assignment to map
     def _record_pin(mcr: str, block: int, posting: str) -> None:
-        if not mcr or posting not in posting_info or block not in blocks:
+        if posting not in posting_info or block not in blocks:
+            logger.warning(
+                "Ignoring invalid pinned assignment (%s, %s, %s)", mcr, posting, block
+            )
             return
         pins_by_resident.setdefault(mcr, {})[block] = posting
 
     # merge explicit pinned assignments (existing ones, if any)
-    if pinned_assignments:
-        for mcr, entries in pinned_assignments.items():
-            if not entries:
-                continue
-            for entry in entries:
-                try:
-                    block = _normalize_block(entry.get("month_block"))
-                    posting_code = (entry.get("posting_code") or "").strip()
-                except AttributeError:
-                    continue
-                if block is None or not posting_code:
-                    continue
-                if posting_code not in posting_info or block not in blocks:
-                    logger.warning(
-                        "Ignoring invalid pinned assignment (%s, %s, %s)",
-                        mcr,
-                        posting_code,
-                        block,
-                    )
-                    continue
-                _record_pin(mcr, block, posting_code)
+    for mcr, entries in (pinned_assignments or {}).items():
+        for entry in entries or []:
+            block = entry.get("month_block")
+            posting_code = entry.get("posting_code")
+            _record_pin(mcr, block, posting_code)
 
     # merge pinned assignments from resident history current year flags
     filtered_resident_history: List[Dict] = []
     for row in resident_history or []:
-        if not isinstance(row, dict):
-            continue
         current_row = dict(row)
-        mcr = str(current_row.get("mcr") or "").strip()
-        month_block = _normalize_block(current_row.get("month_block"))
-        posting_code = str(current_row.get("posting_code") or "").strip()
-        is_current_year = _truthy(current_row.get("is_current_year"))
-        is_leave = _truthy(current_row.get("is_leave"))
+        mcr = current_row.get("mcr")
+        month_block = current_row.get("month_block")
+        posting_code = current_row.get("posting_code")
+        is_current_year = current_row.get("is_current_year")
+        is_leave = current_row.get("is_leave")
 
         if (
             is_current_year
@@ -188,100 +160,24 @@ def allocate_timetable(
     GM_codes = [p for p in posting_codes if p.startswith("GM")]
 
     # 9. create map of resident leaves
-    leave_map: Dict[str, Dict[int, Dict]] = {}
     leave_off_blocks: Set[Tuple[str, int]] = set()
+    leave_map: Dict[str, Dict[int, Dict]] = {}
     leave_quota_usage: Dict[str, Dict[int, int]] = {}
     if resident_leaves:
         for row in resident_leaves:
-            try:
-                m = str(row.get("mcr", "")).strip()
-                b = int(row.get("month_block"))
-                if not m or b not in blocks:
-                    continue
-                leave_type = str(row.get("leave_type", "") or "").strip()
-                leave_posting_code = str(row.get("posting_code", "") or "").strip()
-                if leave_posting_code and leave_posting_code not in posting_info:
-                    logger.warning(
-                        "Ignoring unknown leave posting_code %s for resident %s block %s",
-                        leave_posting_code,
-                        m,
-                        b,
-                    )
-                    leave_posting_code = ""
-                leave_map.setdefault(m, {})[b] = {
-                    "leave_type": leave_type,
-                    "posting_code": leave_posting_code,
-                }
-                if leave_posting_code:
-                    quota_by_block = leave_quota_usage.setdefault(
-                        leave_posting_code, {}
-                    )
-                    quota_by_block[b] = quota_by_block.get(b, 0) + 1
-            except Exception:
-                # ignore malformed leave rows
-                continue
-
-    # 9b. compute shared posting quota for selected groups
-    SHARED_BASE_GROUPS = [
-        {"GRM", "MEDCOMM"},
-        {"MICU", "RCCM"},
-    ]
-
-    institution_base_map: Dict[str, Dict[str, List[str]]] = {}
-    for code in posting_codes:
-        base = code.split(" (")[0].strip().upper()
-        if not base:
-            continue
-        institution = extract_institution(code)
-        if not institution:
-            continue
-        institution_base_map.setdefault(institution, {}).setdefault(base, []).append(
-            code
-        )
-
-    shared_quota_groups: Dict[SharedGroupKey, List[str]] = {}
-    posting_to_shared_group: Dict[str, SharedGroupKey] = {}
-
-    for institution, base_map in institution_base_map.items():
-        for base_group in SHARED_BASE_GROUPS:
-            if not all(base in base_map for base in base_group):
-                continue
-            ordered_bases = tuple(sorted(base_group))
-            group_key: SharedGroupKey = (institution, ordered_bases)
-            codes: List[str] = []
-            for base in ordered_bases:
-                codes.extend(base_map[base])
-            codes = sorted(codes)
-            shared_quota_groups[group_key] = codes
-            for code in codes:
-                posting_to_shared_group[code] = group_key
-
-    shared_group_totals: Dict[SharedGroupKey, int] = {
-        group_key: sum(posting_info[code]["max_residents"] for code in codes)
-        for group_key, codes in shared_quota_groups.items()
-    }
-
-    shared_group_available: Dict[SharedGroupKey, Dict[int, int]] = {}
-    for group_key, codes in shared_quota_groups.items():
-        total_quota = shared_group_totals[group_key]
-        block_availability: Dict[int, int] = {}
-        for b in blocks:
-            reserved_sum = sum(
-                leave_quota_usage.get(code, {}).get(b, 0) for code in codes
-            )
-            available = total_quota - reserved_sum
-            if available < 0:
-                institution, bases = group_key
-                logger.warning(
-                    "Leave reservations (%d) exceed combined capacity for %s group at %s block %s; capping at 0",
-                    reserved_sum,
-                    "/".join(bases),
-                    institution,
-                    b,
-                )
-                available = 0
-            block_availability[b] = available
-        shared_group_available[group_key] = block_availability
+            m = row.get("mcr")
+            b = row.get("month_block")
+            leave_type = row.get("leave_type")
+            leave_posting_code = row.get("posting_code")
+            if leave_posting_code and leave_posting_code not in posting_info:
+                leave_posting_code = ""
+            leave_map.setdefault(m, {})[b] = {
+                "leave_type": leave_type,
+                "posting_code": leave_posting_code,
+            }
+            if leave_posting_code:
+                quota_by_block = leave_quota_usage.setdefault(leave_posting_code, {})
+                quota_by_block[b] = quota_by_block.get(b, 0) + 1
 
     # 10. derive career progress per resident
     def stage_from_blocks(blocks_completed: int) -> int:
@@ -294,7 +190,7 @@ def allocate_timetable(
     career_progress: Dict[str, Dict[str, Any]] = {}
     for resident in residents:
         mcr = resident["mcr"]
-        completed_blocks = int(resident.get("career_blocks_completed", 0) or 0)
+        completed_blocks = resident.get("career_blocks_completed", 0)
 
         stages_by_block: Dict[int, int] = {}
         progress_counter = completed_blocks
@@ -308,6 +204,25 @@ def allocate_timetable(
             "stage": stage,
             "stages_by_block": stages_by_block,
         }
+
+    # 11. compute per-posting capacity per block (accounting for reserved leaves)
+    posting_block_capacity: Dict[str, Dict[int, int]] = {}
+    for p in posting_codes:
+        posting_block_capacity[p] = {}
+        max_residents = posting_info[p]["max_residents"]
+        posting_leave_usage = leave_quota_usage.get(p, {})
+        for b in blocks:
+            reserved = posting_leave_usage.get(b, 0)
+            available_capacity = max_residents - reserved
+            if available_capacity < 0:
+                logger.warning(
+                    "Leave reservations (%d) exceed capacity for posting %s at block %s; capping available slots at 0",
+                    reserved,
+                    p,
+                    b,
+                )
+                available_capacity = 0
+            posting_block_capacity[p][b] = available_capacity
 
     ###########################################################################
     # CREATE DECISION VARIABLES
@@ -367,15 +282,10 @@ def allocate_timetable(
             "Applying pinned assignments for %d residents", len(pinned_assignments)
         )
         for mcr, entries in pinned_assignments.items():
-            try:
-                for entry in entries or []:
-                    b = int(entry.get("month_block") or entry.get("block"))
-                    p = entry.get("posting_code")
-                    if p in posting_info and b in blocks:
-                        # Force that resident to take posting p at block b
-                        model.Add(x[mcr][p][b] == 1)
-            except Exception as e:
-                logger.warning("Failed to apply pins for %s: %s", mcr, e)
+            for entry in entries or []:
+                b = entry.get("month_block")
+                p = entry.get("posting_code")
+                model.Add(x[mcr][p][b] == 1)
 
     ############################################################################
     # DEFINE SLACK VARIABLES (FOR LEAVES OR DEBUG)
@@ -408,56 +318,19 @@ def allocate_timetable(
         if not resident_leaves_for_blocks:
             continue
 
-        for b, meta in resident_leaves_for_blocks.items():
-            posting_code = (meta.get("posting_code", "") or "").strip()
-            if posting_code and posting_code not in posting_info:
-                logger.warning(
-                    "Ignoring leave posting_code %s for resident %s block %s because it is not in postings",
-                    posting_code,
-                    mcr,
-                    b,
-                )
-                posting_code = ""
-                meta["posting_code"] = ""
-
+        for b in resident_leaves_for_blocks:
             # mark block as OFF so resident cannot be scheduled elsewhere
             model.Add(off[mcr][b] == 1)
             leave_off_blocks.add((mcr, b))
 
-    # Hard Constraint 2: Each posting cannot exceed max residents per block
-    # for shared quota pairs, allow pooled capacity
+    # Hard Constraint 2: Enforce posting quotas per block
     for p in posting_codes:
-        group_key = posting_to_shared_group.get(p)
-        max_residents = posting_info[p]["max_residents"]
+        cap_by_block = posting_block_capacity[p]
 
         for b in blocks:
-            if group_key:
-                available_capacity = shared_group_available[group_key][b]
-            else:
-                reserved = leave_quota_usage.get(p, {}).get(b, 0)
-                available_capacity = max_residents - reserved
-                if available_capacity < 0:
-                    logger.warning(
-                        "Leave reservations (%d) exceed capacity for posting %s at block %s; capping available slots at 0",
-                        reserved,
-                        p,
-                        b,
-                    )
-                    available_capacity = 0
-
-            model.Add(sum(x[r["mcr"]][p][b] for r in residents) <= available_capacity)
-
-    # ensure the combined usage does not exceed the pooled manpower
-    for group_key, codes in shared_quota_groups.items():
-        block_capacities = shared_group_available.get(group_key, {})
-        for b in blocks:
-            pooled_capacity = block_capacities.get(b, 0)
-            if not codes:
-                continue
-            model.Add(
-                sum(x[r["mcr"]][posting][b] for posting in codes for r in residents)
-                <= pooled_capacity
-            )
+            available_capacity = cap_by_block[b]
+            lhs = sum(x[r["mcr"]][p][b] for r in residents)
+            model.Add(lhs <= available_capacity)
 
     # Hard Constraint 3: Enforce required_block_duration happens in consecutive blocks
     for resident in residents:
@@ -1357,7 +1230,7 @@ def allocate_timetable(
     solver = cp_model.CpSolver()
 
     # solver settings
-    # solver.parameters.max_time_in_seconds = 60 * 2  # max 20 minutes run time
+    solver.parameters.max_time_in_seconds = 60 * 20  # max 20 minutes run time
     solver.parameters.cp_model_presolve = True  # enable presolve for better performance
     solver.parameters.log_search_progress = False  # log solver progress to stderr (will be captured as [PYTHON LOG] by Node.js backend)
     solver.parameters.enumerate_all_solutions = False
@@ -1434,74 +1307,9 @@ def allocate_timetable(
             },
         }
 
-        # post-processing
-        logger.info("Calling postprocess service...")
-        result = compute_postprocess(payload)
-
+        payload["success"] = True
         logger.info("Posting allocation service completed successfully.")
-        return result
+        return payload
     else:
         logger.error("Posting allocation service failed")
         return {"success": False, "error": "Posting allocation service failed"}
-
-
-def main():
-    if len(sys.argv) != 2:
-        print(
-            json.dumps(
-                {
-                    "success": False,
-                    "error": f"Usage: python posting_allocator.py <input_json_file>",
-                }
-            )
-        )
-        sys.exit(1)
-    try:
-        with open(sys.argv[1], "r") as f:
-            input_data = json.load(f)
-        result = allocate_timetable(
-            residents=input_data["residents"],
-            resident_history=input_data["resident_history"],
-            resident_preferences=input_data["resident_preferences"],
-            resident_sr_preferences=input_data.get("resident_sr_preferences", []),
-            postings=input_data["postings"],
-            weightages=input_data["weightages"],
-            resident_leaves=input_data.get("resident_leaves", []),
-            pinned_assignments=input_data.get("pinned_assignments", {}),
-        )
-        # needs to be printed to stdout for server.js to read
-        print(json.dumps(result, indent=2))
-    except FileNotFoundError:
-        print(
-            json.dumps(
-                {"success": False, "error": f"Input file '{sys.argv[1]}' not found"}
-            )
-        )
-        sys.exit(1)
-    except json.JSONDecodeError:
-        print(
-            json.dumps(
-                {
-                    "success": False,
-                    "error": f"Invalid JSON in input file '{sys.argv[1]}'",
-                }
-            )
-        )
-        sys.exit(1)
-    except KeyError as e:
-        print(
-            json.dumps(
-                {
-                    "success": False,
-                    "error": f"Missing required field in input data: {e}",
-                }
-            )
-        )
-        sys.exit(1)
-    except Exception as e:
-        print(json.dumps({"success": False, "error": str(e)}))
-        sys.exit(1)
-
-
-if __name__ == "__main__":
-    main()

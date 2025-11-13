@@ -1,13 +1,6 @@
-import sys, os
-import json
 from typing import Dict, List
 
-# prepend the base directory to sys.path
-BASE_DIR = os.path.dirname(os.path.dirname(__file__))
-if BASE_DIR not in sys.path:
-    sys.path.insert(0, BASE_DIR)
-
-from utils import (
+from server.utils import (
     get_posting_progress,
     get_core_blocks_completed,
     get_unique_electives_completed,
@@ -23,6 +16,8 @@ def compute_postprocess(payload: Dict) -> Dict:
     postings: List[Dict] = payload.get("postings", [])
     weightages: Dict = dict(payload.get("weightages", {}) or {})
     resident_leaves: List[Dict] = payload.get("resident_leaves", [])
+
+    solver_solution: Dict = dict(payload.get("solver_solution", {}) or {})
 
     # clone resident entries for mutation
     residents: List[Dict] = [dict(item) for item in residents_input]
@@ -49,7 +44,6 @@ def compute_postprocess(payload: Dict) -> Dict:
         entry["leave_type"] = entry.get("leave_type", "")
         output_history.append(entry)
 
-    solver_solution: Dict = dict(payload.get("solver_solution", {}) or {})
     if solver_solution:
         entries: List[Dict] = list(solver_solution.get("entries", []) or [])
         leave_map: Dict[str, Dict[int, Dict]] = solver_solution.get("leave_map", {})
@@ -371,27 +365,3 @@ def compute_postprocess(payload: Dict) -> Dict:
             "cohort": cohort_statistics,
         },
     }
-
-
-def main():
-    try:
-        if len(sys.argv) != 2:
-            print(
-                json.dumps(
-                    {
-                        "success": False,
-                        "error": "Usage: python postprocess.py <input_json_file>",
-                    }
-                )
-            )
-            return
-        with open(sys.argv[1], "r") as f:
-            payload = json.load(f)
-        result = compute_postprocess(payload)
-        print(json.dumps(result))
-    except Exception as e:
-        print(json.dumps({"success": False, "error": str(e)}))
-
-
-if __name__ == "__main__":
-    main()

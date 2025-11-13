@@ -1,4 +1,4 @@
-from typing import List, Dict, Set, Optional
+from typing import List, Dict, Set
 
 
 def get_completed_postings(
@@ -254,36 +254,6 @@ def group_codes_by_institution(codes: List[str]) -> Dict[str, List[str]]:
     return grouped
 
 
-def _normalize_block(value) -> Optional[int]:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _truthy(value) -> bool:
-    if isinstance(value, bool):
-        return value
-    if value is None:
-        return False
-    if isinstance(value, (int, float)):
-        return value != 0
-    try:
-        value_str = str(value).strip().lower()
-    except Exception:
-        return False
-    if not value_str:
-        return False
-    if value_str in {"1", "true", "yes", "y"}:
-        return True
-    if value_str in {"0", "false", "no", "n"}:
-        return False
-    try:
-        return float(value_str) != 0
-    except (TypeError, ValueError):
-        return False
-
-
 # constants
 CORE_REQUIREMENTS = {
     # total blocks required for each core posting
@@ -297,3 +267,18 @@ CORE_REQUIREMENTS = {
 }
 
 CCR_POSTINGS = ["GM (NUH)", "GM (SGH)", "GM (CGH)", "GM (SKH)"]
+
+MONTH_LABELS = [
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+]
