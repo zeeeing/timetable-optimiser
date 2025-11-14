@@ -9,6 +9,10 @@ from server.utils import (
 
 
 def compute_postprocess(payload: Dict) -> Dict:
+    ########################################################################
+    # INPUT NORMALISATION
+    ########################################################################
+
     residents_input: List[Dict] = payload.get("residents", [])
     resident_history_input: List[Dict] = payload.get("resident_history", [])
     resident_preferences: List[Dict] = payload.get("resident_preferences", [])
@@ -19,8 +23,9 @@ def compute_postprocess(payload: Dict) -> Dict:
 
     solver_solution: Dict = dict(payload.get("solver_solution", {}) or {})
 
-    # clone resident entries for mutation
+    # clone resident and history entries for mutation
     residents: List[Dict] = [dict(item) for item in residents_input]
+    output_history: List[Dict] = [dict(item) for item in resident_history_input]
 
     posting_info = {p["posting_code"]: p for p in postings}
     pref_map: Dict[str, Dict[int, str]] = {}
@@ -35,14 +40,9 @@ def compute_postprocess(payload: Dict) -> Dict:
                 pref_map[mcr] = {}
             pref_map[mcr][rank] = posting_code
 
-    # sanitise resident history entries
-    output_history: List[Dict] = []
-    for h in resident_history_input:
-        entry = dict(h)
-        entry.setdefault("is_current_year", False)
-        entry["is_leave"] = bool(entry.get("is_leave"))
-        entry["leave_type"] = entry.get("leave_type", "")
-        output_history.append(entry)
+    ########################################################################
+    # SOLVER SOLUTION INTEGRATION
+    ########################################################################
 
     if solver_solution:
         entries: List[Dict] = list(solver_solution.get("entries", []) or [])
@@ -52,8 +52,8 @@ def compute_postprocess(payload: Dict) -> Dict:
         entries_by_resident: Dict[str, List[Dict]] = {}
         for entry in entries:
             mcr = entry.get("mcr")
-            b = entry.get("month_block")
-            if not mcr or not isinstance(b, int):
+            b = int(entry.get("month_block"))
+            if not mcr:
                 continue
             entries_by_resident.setdefault(mcr, []).append(
                 {
@@ -74,12 +74,13 @@ def compute_postprocess(payload: Dict) -> Dict:
             current_year = resident.get("resident_year")
             res_entries = entries_by_resident.get(mcr, [])
             resident_career_progress = career_progress.get(mcr, {}) or {}
-            stages_by_block = {
-                int(k): v
-                for k, v in (
-                    resident_career_progress.get("stages_by_block", {}) or {}
-                ).items()
-            }
+            raw_stages = resident_career_progress.get("stages_by_block", {}) or {}
+            stages_by_block = {}
+            for k, v in raw_stages.items():
+                try:
+                    stages_by_block[int(k)] = v
+                except (TypeError, ValueError):
+                    continue
             resident_stage = resident_career_progress.get("stage")
             if resident_stage is not None:
                 resident["career_stage"] = resident_stage
@@ -158,15 +159,10 @@ def compute_postprocess(payload: Dict) -> Dict:
 
             resident["career_blocks_completed"] = career_counter
 
-    # ensure career blocks are canonical integers
-    for resident in residents:
-        try:
-            value = resident.get("career_blocks_completed")
-            resident["career_blocks_completed"] = int(value)
-        except (TypeError, ValueError):
-            resident["career_blocks_completed"] = 0
+    ########################################################################
+    # PER-RESIDENT DETAILS
+    ########################################################################
 
-    # per-resident details
     output_residents: List[Dict] = []
     for r in residents:
         mcr = r.get("mcr")
@@ -201,7 +197,7 @@ def compute_postprocess(payload: Dict) -> Dict:
         else:
             ccr_status = {"completed": False, "posting_code": "-"}
 
-        violations = []
+        warnings = []
 
         career_blocks_completed = r.get("career_blocks_completed")
         try:
@@ -220,12 +216,15 @@ def compute_postprocess(payload: Dict) -> Dict:
                 "stages_by_block": r.get("stages_by_block", {}),
                 "core_blocks_completed": core_blocks_completed,
                 "unique_electives_completed": unique_electives_completed,
-                "violations": violations,
+                "warnings": warnings,
                 "ccr_status": ccr_status,
             }
         )
 
-    # cohort statistics: optimisation scores and posting utilisation
+    ########################################################################
+    # COHORT STATISTICS
+    ########################################################################
+
     preference_bonus_weight = float(weightages.get("preference", 0) or 0)
     seniority_bonus_weight = float(weightages.get("seniority", 0) or 0)
 
@@ -350,6 +349,10 @@ def compute_postprocess(payload: Dict) -> Dict:
         "posting_util": posting_util,
         "elective_preference_satisfaction": elective_preference_satisfaction,
     }
+
+    ########################################################################
+    # RESPONSE PAYLOAD
+    ########################################################################
 
     return {
         "success": True,

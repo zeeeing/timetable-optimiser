@@ -7,6 +7,7 @@ from server.utils import (
     get_ccr_postings_completed,
     CORE_REQUIREMENTS,
     CCR_POSTINGS,
+    MONTH_LABELS,
 )
 
 
@@ -30,13 +31,13 @@ def validate_assignment(payload: Dict[str, Any]) -> Dict[str, Any]:
     resident_history = payload.get("resident_history") or []
     postings = payload.get("postings") or []
 
-    violations: List[Dict[str, str]] = []
+    warnings: List[Dict[str, str]] = []
 
-    def add_violation(code: str, msg: str):
-        violations.append({"code": code, "description": msg})
+    def add_warning(code: str, msg: str):
+        warnings.append({"code": code, "description": msg})
 
     if not mcr:
-        add_violation("INPUT", "missing resident_mcr")
+        add_warning("INPUT", "missing resident_mcr")
 
     posting_info: Dict[str, Dict] = {p.get("posting_code"): p for p in postings}
 
@@ -49,24 +50,30 @@ def validate_assignment(payload: Dict[str, Any]) -> Dict[str, Any]:
             b = 0
         code = r.get("posting_code")
         if b < 1 or b > 12:
-            add_violation("INPUT", f"invalid month_block {b}")
+            add_warning("INPUT", f"invalid month_block {b}")
             continue
         if not code:
-            add_violation("INPUT", f"missing posting_code for month_block {b}")
+            add_warning("INPUT", f"missing posting_code for month_block {b}")
             continue
         if b in seen_blocks:
-            add_violation("INPUT", f"duplicate month_block {b}")
+            add_warning("INPUT", f"duplicate month_block {b}")
             continue
         seen_blocks.add(b)
         by_block[b] = code
 
-    if violations:
-        return {"success": False, "violations": violations}
+    if warnings:
+        return {"success": False, "warnings": warnings}
 
     def occurrences(code: str) -> List[int]:
         return sorted([b for b, c in by_block.items() if c == code])
 
+    def idxToMonth(idx: int) -> str:
+        if 1 <= idx <= 12:
+            return MONTH_LABELS[idx - 1]
+        return f"Month {idx}"
+
     quarter_starts = {1, 4, 7, 10}
+    # HC3/HC8/HC9/HC10: duration, boundary, start-month, and GRM odd-block checks
     for code in set(by_block.values()):
         dur = int(posting_info.get(code, {}).get("required_block_duration", 1))
         occ = occurrences(code)
@@ -85,25 +92,30 @@ def validate_assignment(payload: Dict[str, Any]) -> Dict[str, Any]:
 
         for s, L in runs:
             if dur > 1 and (s <= 6 and s + L - 1 >= 7):
-                add_violation(
-                    "HC8", f"{code}: run starting at {s} crosses Dec–Jan boundary"
+                add_warning(
+                    "HC8",
+                    f"{code}: Posting starting on {idxToMonth(s)} crosses Dec–Jan boundary",
                 )
             if dur == 3 and s not in quarter_starts:
-                add_violation(
+                add_warning(
                     "HC10",
-                    f"{code}: 3-month run must start at 1, 4, 7, or 10 (got {s})",
+                    f"{code}: 3-month posting must start at Jul, Oct, Jan, or Apr (currently starts on {idxToMonth(s)})",
                 )
             if dur > 1 and L != dur:
-                add_violation(
+                add_warning(
                     "HC3",
-                    f"{code}: run length {L} does not match required duration {dur}",
+                    f"{code}: Posting length of {L} month(s) does not match required duration of {dur} months (must be contiguous)",
                 )
 
         if str(code).startswith("GRM ("):
             for s, _L in runs:
                 if s % 2 == 0:
-                    add_violation("HC9", f"GRM must start on odd blocks (got {s})")
+                    add_warning(
+                        "HC9",
+                        f"GRM can only start on alternating months, starting from Jul (currently starts on {idxToMonth(s)})",
+                    )
 
+    # HC8/HC12: ED and GRM must be contiguous and cannot cross half-year boundary
     ed_grm_blocks = sorted(
         [
             b
@@ -113,12 +125,13 @@ def validate_assignment(payload: Dict[str, Any]) -> Dict[str, Any]:
     )
     if ed_grm_blocks:
         if 6 in ed_grm_blocks and 7 in ed_grm_blocks:
-            add_violation("HC8", "ED/GRM cannot cross Dec–Jan boundary (6→7)")
+            add_warning("HC8", "ED/GRM cannot cross Dec–Jan boundary (6→7)")
         for i in range(1, len(ed_grm_blocks)):
             if ed_grm_blocks[i] != ed_grm_blocks[i - 1] + 1:
-                add_violation("HC12", "ED/GRM months must be contiguous (single run)")
+                add_warning("HC12", "ED/GRM postings must be contiguous (single run)")
                 break
 
+    # HC7a/HC7b/HC8: MICU + RCCM contiguous, same institution, stay within half-year boundary
     micu_blocks = sorted(
         [b for b, c in by_block.items() if str(c).startswith("MICU (")]
     )
@@ -128,11 +141,11 @@ def validate_assignment(payload: Dict[str, Any]) -> Dict[str, Any]:
     comb_blocks = sorted(micu_blocks + rccm_blocks)
     if comb_blocks:
         if 6 in comb_blocks and 7 in comb_blocks:
-            add_violation("HC8", "MICU/RCCM cannot cross Dec–Jan boundary (6→7)")
+            add_warning("HC8", "MICU/RCCM cannot cross Dec–Jan boundary (6→7)")
         for i in range(1, len(comb_blocks)):
             if comb_blocks[i] != comb_blocks[i - 1] + 1:
-                add_violation(
-                    "HC7b", "MICU/RCCM months must be contiguous (single run)"
+                add_warning(
+                    "HC7b", "MICU/RCCM postings must be contiguous (single run)"
                 )
                 break
         if micu_blocks and rccm_blocks:
@@ -143,12 +156,14 @@ def validate_assignment(payload: Dict[str, Any]) -> Dict[str, Any]:
                 _inst_of(c) for b, c in by_block.items() if str(c).startswith("RCCM (")
             }
             if not micu_insts or not rccm_insts or len(micu_insts | rccm_insts) != 1:
-                add_violation(
+                add_warning(
                     "HC7a",
                     "MICU and RCCM must be assigned from the same institution",
                 )
 
+    # KIV; might set to turn off later
     if residents and resident_history and postings:
+        # HC5: core blocks cannot exceed required total
         rmap = {r.get("mcr"): r for r in residents}
         resident = rmap.get(mcr)
         resident_year = int(resident.get("resident_year", 0)) if resident else 0
@@ -170,11 +185,12 @@ def validate_assignment(payload: Dict[str, Any]) -> Dict[str, Any]:
             hist_done = int(core_completed_hist.get(base, 0))
             cy = int(base_counts_cy.get(base, 0))
             if hist_done + cy > int(required):
-                add_violation(
+                add_warning(
                     "HC5",
-                    f"{base}: exceeds required total blocks ({hist_done}+{cy}>{required})",
+                    f"{base}: exceeds total month requirement (completed: {hist_done} + assigned: {cy} > required: {required})",
                 )
 
+        # HC6: electives cannot repeat by base posting
         completed_elective_bases = {
             _base_of(p) for p in get_unique_electives_completed(past_prog, posting_info)
         }
@@ -182,11 +198,12 @@ def validate_assignment(payload: Dict[str, Any]) -> Dict[str, Any]:
             if posting_info.get(code, {}).get("posting_type") == "elective":
                 base = _base_of(code)
                 if base in completed_elective_bases:
-                    add_violation(
+                    add_warning(
                         "HC6",
-                        f"Elective base '{base}' already completed historically; cannot repeat",
+                        f"Elective '{base}' already assigned before; cannot repeat",
                     )
 
+        # HC4: CCR permitted exactly once (unless already completed or Y1)
         done_ccr = bool(get_ccr_postings_completed(past_prog, posting_info))
         offered = [p for p in CCR_POSTINGS if p in posting_info]
         ccr_blocks = sorted([b for b, c in by_block.items() if c in offered])
@@ -200,19 +217,31 @@ def validate_assignment(payload: Dict[str, Any]) -> Dict[str, Any]:
             i = j + 1
         if done_ccr or resident_year == 1:
             if runs > 0:
-                add_violation(
-                    "HC4", "CCR is already fulfilled or Y1; CCR assignments not allowed"
-                )
+                if resident_year == 1:
+                    add_warning("HC4", "CCR assignments not allowed in Y1")
+                else:
+                    add_warning(
+                        "HC4",
+                        "CCR is already fulfilled",
+                    )
         else:
             if runs != 1:
-                add_violation("HC4", "Exactly one contiguous CCR run is required")
+                add_warning(
+                    "HC4",
+                    "Exactly one CCR posting must be assigned during by end of residency year 2",
+                )
 
+        # HC11: Y1 residents limited to 3 GM blocks
         if resident_year == 1:
             gm_cy = sum(1 for _, c in by_block.items() if _base_of(c) == "GM")
             if gm_cy > 3:
-                add_violation("HC11", "Year 1: GM blocks are capped at 3")
+                add_warning(
+                    "HC11", "GM postings are capped at 3 months in Residency Year 1"
+                )
 
+    # KIV; might set to turn off later
     if residents and resident_history and postings:
+        # HC2: enforce per-posting capacity by block
         cur = [h for h in resident_history if h.get("is_current_year")]
         cur = [h for h in cur if h.get("mcr") != mcr]
         for b, code in by_block.items():
@@ -235,9 +264,9 @@ def validate_assignment(payload: Dict[str, Any]) -> Dict[str, Any]:
             max_r = int(posting_info.get(p_code, {}).get("max_residents", 0))
             for b, filled in by_b.items():
                 if filled > max_r:
-                    add_violation(
+                    add_warning(
                         "HC2",
-                        f"Capacity exceeded for {p_code} at month_block {b}: {filled}>{max_r}",
+                        f"Capacity exceeded for {p_code} on {idxToMonth(b)} (current: {filled}, max cap: {max_r})",
                     )
 
-    return {"success": not violations, "violations": violations}
+    return {"success": not warnings, "warnings": warnings}

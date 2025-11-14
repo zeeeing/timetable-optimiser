@@ -1,75 +1,75 @@
-import React, {
-  useState,
-  useEffect,
-  useMemo,
-  useRef,
-  useCallback,
-} from "react";
 import {
-  DndContext,
-  type DragEndEvent,
-  PointerSensor,
-  useSensor,
-  useSensors,
+    DndContext,
+    type DragEndEvent,
+    PointerSensor,
+    useSensor,
+    useSensors,
 } from "@dnd-kit/core";
 import {
-  SortableContext,
-  horizontalListSortingStrategy,
-} from "@dnd-kit/sortable";
-import {
-  restrictToHorizontalAxis,
-  restrictToFirstScrollableAncestor,
-  restrictToWindowEdges,
+    restrictToFirstScrollableAncestor,
+    restrictToHorizontalAxis,
+    restrictToWindowEdges,
 } from "@dnd-kit/modifiers";
-
-import type { Resident, ResidentHistory, Posting, Violation } from "../types";
 import {
-  monthLabels,
-  CORE_REQUIREMENTS,
-  ELECTIVE_REQUIREMENT,
-  CCR_POSTINGS,
+    SortableContext,
+    horizontalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import React, {
+    useCallback,
+    useEffect,
+    useMemo,
+    useRef,
+    useState,
+} from "react";
+
+import {
+    CCR_POSTINGS,
+    CORE_REQUIREMENTS,
+    ELECTIVE_REQUIREMENT,
+    monthLabels,
 } from "@/lib/constants";
-import {
-  cn,
-  areSchedulesEqual,
-  moveByInsert,
-  formatAcademicYearLabel,
-} from "@/lib/utils";
 import type { AcademicYearRange } from "@/lib/utils";
+import {
+    areSchedulesEqual,
+    cn,
+    formatAcademicYearLabel,
+    moveByInsert,
+} from "@/lib/utils";
+import type { Posting, Resident, ResidentHistory, Warning } from "../types";
 
-import { useApiResponseContext } from "@/context/ApiResponseContext";
 import { saveSchedule } from "@/api/api";
+import { useApiResponseContext } from "@/context/ApiResponseContext";
 
-import ErrorAlert from "./ErrorAlert";
 import ConstraintsAccordion from "./ConstraintsAccordion";
+import ErrorAlert from "./ErrorAlert";
 import SortableBlockCell from "./SortableBlockCell";
 
+import {
+    ChevronLeft,
+    ChevronRight,
+    Info,
+    InfoIcon,
+    Loader2Icon,
+} from "lucide-react";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import {
-  Card,
-  CardAction,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
+    Card,
+    CardAction,
+    CardContent,
+    CardDescription,
+    CardHeader,
+    CardTitle,
 } from "./ui/card";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
+    Table,
+    TableBody,
+    TableCell,
+    TableHead,
+    TableHeader,
+    TableRow,
 } from "./ui/table";
-import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
-import {
-  Info,
-  ChevronLeft,
-  ChevronRight,
-  Loader2Icon,
-  InfoIcon,
-} from "lucide-react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 
 type BlockMap = Record<number, ResidentHistory>;
 
@@ -92,7 +92,7 @@ const ResidentTimetable: React.FC<Props> = ({
 }) => {
   const { apiResponse, setApiResponse } = useApiResponseContext();
   const [isSaving, setIsSaving] = useState(false);
-  const [violations, setViolations] = useState<Violation[]>([]);
+  const [warnings, setWarnings] = useState<Warning[]>([]);
 
   // required so that popover does not get "eaten" by the DnD overlay
   const sensors = useSensors(
@@ -315,7 +315,7 @@ const ResidentTimetable: React.FC<Props> = ({
   const handleCancel = () => {
     setCurrentYearBlockPostings(originalBlockPostings.current);
     setEditedBlocks(new Set());
-    setViolations([]);
+    setWarnings([]);
   };
 
   const handleSelectPosting = (monthBlock: number, newPostingCode: string) => {
@@ -386,19 +386,19 @@ const ResidentTimetable: React.FC<Props> = ({
         current_year,
       });
       setApiResponse(updatedApi);
-      setViolations([]); // clear alerts on successful save
+      setWarnings([]); // clear alerts on successful save
     } catch (err: any) {
-      const validationViolations = err?.response?.data?.violations;
+      const validationWarnings = err?.response?.data?.warnings;
       if (
-        Array.isArray(validationViolations) &&
-        validationViolations.length > 0
+        Array.isArray(validationWarnings) &&
+        validationWarnings.length > 0
       ) {
-        setViolations(validationViolations);
+        setWarnings(validationWarnings);
         return;
       }
       const statusCode = err?.response?.status;
       const msg = err?.response?.data?.detail || "An error occurred while saving.";
-      setViolations([{ code: `ERR ${statusCode}`, description: msg }]);
+      setWarnings([{ code: `ERR ${statusCode}`, description: msg }]);
     } finally {
       setIsSaving(false);
     }
@@ -642,26 +642,26 @@ const ResidentTimetable: React.FC<Props> = ({
       {/* validation results */}
       <CardContent className="flex gap-6">
         <div className="flex flex-col gap-2 w-1/2">
-          {violations.length > 0 ? (
+          {warnings.length > 0 ? (
             <ErrorAlert
-              message="Violations"
-              description={violations.map(
+              message="Warnings"
+              description={warnings.map(
                 (v) => `[${v.code}] ${v.description}`
               )}
               variantType="destructive"
             />
           ) : (
             <>
-              {resident.violations && resident.violations.length > 0 && (
+              {resident.warnings && resident.warnings.length > 0 && (
                 <ErrorAlert
-                  message="Violations"
-                  description={resident.violations.map(
+                  message="Warnings"
+                  description={resident.warnings.map(
                     (v) => `[${v.code}] ${v.description}`
                   )}
                 />
               )}
-              {(!resident.violations || resident.violations.length === 0) && (
-                <ErrorAlert message="No violations." />
+              {(!resident.warnings || resident.warnings.length === 0) && (
+                <ErrorAlert message="No warnings." />
               )}
             </>
           )}

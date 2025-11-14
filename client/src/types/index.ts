@@ -30,10 +30,10 @@ export interface Resident {
     completed: boolean;
     posting_code: string;
   };
-  violations: Violation[];
+  warnings: Warning[];
 }
 
-export interface Violation {
+export interface Warning {
   code: string;
   description: string;
 }
