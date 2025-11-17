@@ -67,6 +67,7 @@ export interface Posting {
   posting_type: string;
   max_residents: number;
   required_block_duration: number;
+  hc16_max_deviation?: number;
 }
 
 export interface Statistics {

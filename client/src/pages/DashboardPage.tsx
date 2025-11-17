@@ -28,6 +28,137 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Separator } from "../components/ui/separator";
+import PostingDeviationDrawer, {
+  type PostingPreviewRow,
+} from "../components/PostingDeviationDrawer";
+
+const parseCsvText = (text: string): string[][] => {
+  const rows: string[][] = [];
+  let current = "";
+  let row: string[] = [];
+  let inQuotes = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    if (char === '"') {
+      if (inQuotes && text[i + 1] === '"') {
+        current += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (char === "," && !inQuotes) {
+      row.push(current);
+      current = "";
+    } else if ((char === "\n" || char === "\r") && !inQuotes) {
+      if (char === "\r" && text[i + 1] === "\n") {
+        i++;
+      }
+      row.push(current);
+      rows.push(row);
+      row = [];
+      current = "";
+    } else {
+      current += char;
+    }
+  }
+
+  row.push(current);
+  rows.push(row);
+
+  return rows
+    .map((cols) => cols.map((cell) => (cell ?? "").trim()))
+    .filter((cols) => cols.some((cell) => cell.length > 0));
+};
+
+const buildHeaderIndex = (headers: string[]): Record<string, number> => {
+  const index: Record<string, number> = {};
+  headers.forEach((header, idx) => {
+    const normalized = header.trim().toLowerCase();
+    if (normalized) {
+      index[normalized] = idx;
+    }
+  });
+  return index;
+};
+
+const coerceNumber = (value: string, fallback: number, min = 0): number => {
+  if (value === undefined || value === null || value === "") {
+    return fallback;
+  }
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+  return Math.max(min, Math.floor(parsed));
+};
+
+const parsePostingsFile = async (
+  file: File
+): Promise<PostingPreviewRow[]> => {
+  const text = await file.text();
+  const rows = parseCsvText(text);
+  if (!rows.length) {
+    return [];
+  }
+  const headerIndex = buildHeaderIndex(rows[0]);
+
+  const getValue = (row: string[], ...keys: string[]): string => {
+    for (const key of keys) {
+      const idx = headerIndex[key];
+      if (idx !== undefined) {
+        return row[idx] ?? "";
+      }
+    }
+    return "";
+  };
+
+  const postings: PostingPreviewRow[] = [];
+  for (const row of rows.slice(1)) {
+    const code = getValue(row, "posting_code");
+    if (!code) continue;
+
+    postings.push({
+      posting_code: code,
+      posting_name: getValue(row, "posting_name"),
+      posting_type: getValue(row, "posting_type"),
+      max_residents: coerceNumber(getValue(row, "max_residents"), 0),
+      required_block_duration: Math.max(
+        1,
+        coerceNumber(getValue(row, "required_block_duration"), 1)
+      ),
+      hc16_max_deviation: coerceNumber(
+        getValue(
+          row,
+          "hc16_max_deviation",
+          "hc16 deviation",
+          "hc16maxdeviation",
+          "hc16max_deviation"
+        ),
+        0
+      ),
+    });
+  }
+  return postings;
+};
+
+const buildDeviationMap = (
+  rows: PostingPreviewRow[],
+  overrides?: Record<string, number>
+): Record<string, number> => {
+  const map: Record<string, number> = {};
+  rows.forEach((row) => {
+    const code = row.posting_code;
+    if (!code) return;
+    const overrideValue = overrides?.[code];
+    if (typeof overrideValue === "number" && Number.isFinite(overrideValue)) {
+      map[code] = Math.max(0, Math.floor(overrideValue));
+    } else {
+      map[code] = Math.max(0, Math.floor(row.hc16_max_deviation ?? 0));
+    }
+  });
+  return map;
+};
 
 const HomePage: React.FC = () => {
   const { apiResponse, setApiResponse } = useApiResponseContext();
@@ -50,6 +181,14 @@ const HomePage: React.FC = () => {
     elective_shortfall_penalty: 10,
     core_shortfall_penalty: 10,
   });
+  const [postingPreview, setPostingPreview] = useState<PostingPreviewRow[]>([]);
+  const [postingDeviationOverrides, setPostingDeviationOverrides] = useState<
+    Record<string, number>
+  >({});
+  const [postingDeviationDraft, setPostingDeviationDraft] = useState<
+    Record<string, number>
+  >({});
+  const [isPostingDrawerOpen, setIsPostingDrawerOpen] = useState(false);
   const [pinnedMcrs, setPinnedMcrs] = useState<Set<string>>(() => {
     try {
       const raw = localStorage.getItem("pinnedMcrs");
@@ -71,16 +210,35 @@ const HomePage: React.FC = () => {
 
   const handleFileUpload =
     (fileType: keyof typeof csvFiles) =>
-    (e: React.ChangeEvent<HTMLInputElement>) => {
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file) return;
       if (!file.name.endsWith(".csv")) {
         setError("Please upload a CSV file.");
         return;
       }
+
       setCsvFiles((prev) => ({ ...prev, [fileType]: file }));
       setError(null);
       setApiResponse(null);
+
+      if (fileType === "postings") {
+        try {
+          const parsed = await parsePostingsFile(file);
+          setPostingPreview(parsed);
+          const defaults = buildDeviationMap(parsed);
+          setPostingDeviationOverrides(defaults);
+          setPostingDeviationDraft({ ...defaults });
+          setIsPostingDrawerOpen(parsed.length > 0);
+        } catch (err) {
+          console.error("Failed to parse postings CSV", err);
+          setError("Failed to read postings CSV. Please check the file format.");
+          setPostingPreview([]);
+          setPostingDeviationOverrides({});
+          setPostingDeviationDraft({});
+          setIsPostingDrawerOpen(false);
+        }
+      }
     };
 
   const handleProcessFiles = async () => {
@@ -99,6 +257,12 @@ const HomePage: React.FC = () => {
     // include weightages and pinned residents
     formData.append("weightages", JSON.stringify(weightages));
     formData.append("pinned_mcrs", JSON.stringify(Array.from(pinnedMcrs.values())));
+    if (Object.keys(postingDeviationOverrides).length > 0) {
+      formData.append(
+        "posting_hc16_overrides",
+        JSON.stringify(postingDeviationOverrides)
+      );
+    }
 
     try {
       const json: ApiResponse = await solve(formData);
@@ -118,6 +282,42 @@ const HomePage: React.FC = () => {
   const selectedResidentData = apiResponse?.residents?.find(
     (r: Resident) => r.mcr === selectedResidentMcr
   );
+
+  const handlePostingDrawerOpenChange = (open: boolean) => {
+    if (!open) {
+      setIsPostingDrawerOpen(false);
+    }
+  };
+
+  const handleOpenPostingDrawer = () => {
+    if (!postingPreview.length) return;
+    setPostingDeviationDraft(
+      buildDeviationMap(postingPreview, postingDeviationOverrides)
+    );
+    setIsPostingDrawerOpen(true);
+  };
+
+  const handlePostingDeviationChange = (postingCode: string, value: string) => {
+    const nextValue = Number(value);
+    const sanitized = Number.isFinite(nextValue)
+      ? Math.max(0, Math.floor(nextValue))
+      : 0;
+    setPostingDeviationDraft((prev) => ({
+      ...prev,
+      [postingCode]: sanitized,
+    }));
+  };
+
+  const handlePostingDrawerSave = () => {
+    const normalised = buildDeviationMap(postingPreview, postingDeviationDraft);
+    setPostingDeviationOverrides({ ...normalised });
+    setPostingDeviationDraft({ ...normalised });
+    setIsPostingDrawerOpen(false);
+  };
+
+  const handlePostingDrawerReset = () => {
+    setPostingDeviationDraft(buildDeviationMap(postingPreview));
+  };
 
   // order residents by their resident year
   const groupedResidents = useMemo(
@@ -233,6 +433,17 @@ const HomePage: React.FC = () => {
           label="Leave CSV"
           onChange={handleFileUpload("resident_leaves")}
         />
+      </div>
+      <div className="flex justify-start">
+        <Button
+          type="button"
+          variant="outline"
+          onClick={handleOpenPostingDrawer}
+          disabled={postingPreview.length === 0}
+          className="cursor-pointer"
+        >
+          Adjust posting balance tolerance
+        </Button>
       </div>
 
       {/* weightage selector */}
@@ -359,6 +570,17 @@ const HomePage: React.FC = () => {
           />
         </div>
       )}
+
+      <PostingDeviationDrawer
+        open={isPostingDrawerOpen}
+        postings={postingPreview}
+        draft={postingDeviationDraft}
+        onOpenChange={handlePostingDrawerOpenChange}
+        onCancel={() => setIsPostingDrawerOpen(false)}
+        onSave={handlePostingDrawerSave}
+        onReset={handlePostingDrawerReset}
+        onChange={handlePostingDeviationChange}
+      />
     </div>
   );
 };

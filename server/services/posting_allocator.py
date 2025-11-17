@@ -736,6 +736,13 @@ def allocate_timetable(
         # number of residents assigned per month should be balanced across the months it is active in
         # handled independently for each half of the year
 
+        allowed_deviation = posting_info.get(p, {}).get("hc16_max_deviation")
+        try:
+            allowed_deviation_int = int(allowed_deviation)
+        except (TypeError, ValueError):
+            allowed_deviation_int = 0
+        allowed_deviation_int = max(0, allowed_deviation_int)
+
         # Define variables for the number of residents in posting p for each block b
         assignments_per_block = {}
         for b in blocks:
@@ -752,7 +759,7 @@ def allocate_timetable(
             max_h1 = model.NewIntVar(0, len(residents), f"max_h1_{to_snake_case(p)}")
             model.AddMinEquality(min_h1, first_half_assignments)
             model.AddMaxEquality(max_h1, first_half_assignments)
-            model.Add(max_h1 <= min_h1 + 0)
+            model.Add(max_h1 == min_h1 + allowed_deviation_int)
 
         # Second half of the year (blocks 7-12)
         second_half_assignments = [assignments_per_block[b] for b in late_blocks]
@@ -761,7 +768,7 @@ def allocate_timetable(
             max_h2 = model.NewIntVar(0, len(residents), f"max_h2_{to_snake_case(p)}")
             model.AddMinEquality(min_h2, second_half_assignments)
             model.AddMaxEquality(max_h2, second_half_assignments)
-            model.Add(max_h2 <= min_h2 + 0)
+            model.Add(max_h2 == min_h2 + allowed_deviation_int)
 
     ###########################################################################
     # DEFINE SOFT CONSTRAINTS WITH PENALTIES

@@ -39,6 +39,12 @@ def parse_int(value: Any) -> Optional[int]:
     return result
 
 
+def clamp_non_negative_int(value: Optional[int], default: int = 0) -> int:
+    if value is None:
+        return default
+    return value if value >= 0 else default
+
+
 def parse_weightages(
     raw: Any, fallback: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
@@ -71,6 +77,43 @@ def parse_pinned_list(raw: Any) -> List[str]:
     if not isinstance(parsed, list):
         return []
     return [str(item).strip() for item in parsed if str(item).strip()]
+
+
+def parse_posting_deviation_overrides(raw: Any) -> Dict[str, int]:
+    overrides: Dict[str, int] = {}
+    if raw is None:
+        return overrides
+    if isinstance(raw, dict):
+        items = raw.items()
+    else:
+        try:
+            parsed = json.loads(raw) if isinstance(raw, str) else raw
+        except (TypeError, json.JSONDecodeError):
+            return overrides
+        if not isinstance(parsed, dict):
+            return overrides
+        items = parsed.items()
+    for key, value in items:
+        code = str(key or "").strip()
+        if not code:
+            continue
+        parsed_value = parse_int(value)
+        if parsed_value is None:
+            continue
+        overrides[code] = clamp_non_negative_int(parsed_value, 0)
+    return overrides
+
+
+def apply_posting_deviation_overrides(
+    postings: List[Dict[str, Any]], overrides: Dict[str, int]
+) -> None:
+    if not overrides:
+        return
+    for posting in postings:
+        code = str(posting.get("posting_code") or "").strip()
+        if not code or code not in overrides:
+            continue
+        posting["hc16_max_deviation"] = overrides[code]
 
 
 async def _read_csv_upload(upload: UploadFile) -> List[Dict[str, Any]]:
@@ -161,6 +204,14 @@ def _format_sr_preferences(records: List[Dict[str, Any]]) -> List[Dict[str, Any]
 def _format_postings(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     formatted = []
     for row in records:
+        hc16_default = clamp_non_negative_int(
+            parse_int(
+                row.get("hc16_max_deviation")
+                or row.get("hc16MaxDeviation")
+                or row.get("hc16 deviation")
+            ),
+            0,
+        )
         formatted.append(
             {
                 "posting_code": str(row.get("posting_code") or "").strip(),
@@ -169,6 +220,7 @@ def _format_postings(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 "max_residents": parse_int(row.get("max_residents")) or 0,
                 "required_block_duration": parse_int(row.get("required_block_duration"))
                 or 1,
+                "hc16_max_deviation": hc16_default,
             }
         )
     return formatted
@@ -225,12 +277,20 @@ async def preprocess_initial_upload(form: FormData) -> Dict[str, Any]:
 
     weightages = parse_weightages(form.get("weightages"), {})
 
+    postings = _format_postings(postings_csv)
+
+    posting_overrides = parse_posting_deviation_overrides(
+        form.get("posting_hc16_overrides")
+    )
+    if posting_overrides:
+        apply_posting_deviation_overrides(postings, posting_overrides)
+
     return {
         "residents": _format_residents(residents_csv),
         "resident_history": _format_resident_history(history_csv),
         "resident_preferences": _format_preferences(prefs_csv),
         "resident_sr_preferences": _format_sr_preferences(sr_prefs_csv),
-        "postings": _format_postings(postings_csv),
+        "postings": postings,
         "weightages": weightages,
         "resident_leaves": _format_resident_leaves(leaves_csv),
     }
@@ -250,6 +310,10 @@ async def prepare_solver_input(
     has_pinned = bool(pinned_mcrs)
     has_cached_run = bool(latest_api_response)
 
+    posting_overrides = parse_posting_deviation_overrides(
+        form.get("posting_hc16_overrides")
+    )
+
     if has_pinned and has_cached_run:
         solver_input = build_pinned_run_input(
             latest_inputs=latest_inputs,
@@ -261,6 +325,15 @@ async def prepare_solver_input(
     else:
         solver_input = await preprocess_initial_upload(form)
         latest_inputs_snapshot = copy.deepcopy(solver_input)
+
+    if posting_overrides:
+        apply_posting_deviation_overrides(
+            solver_input.get("postings") or [], posting_overrides
+        )
+        if latest_inputs_snapshot is not None:
+            apply_posting_deviation_overrides(
+                latest_inputs_snapshot.get("postings") or [], posting_overrides
+            )
 
     return solver_input, latest_inputs_snapshot
 
