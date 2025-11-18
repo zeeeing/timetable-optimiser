@@ -1240,7 +1240,7 @@ def allocate_timetable(
     # solver settings
     solver.parameters.max_time_in_seconds = 60 * (max_time_in_minutes or 20)
     solver.parameters.cp_model_presolve = True  # enable presolve for better performance
-    solver.parameters.log_search_progress = True
+    solver.parameters.log_search_progress = False
     solver.parameters.enumerate_all_solutions = False
 
     # solve and retrieve status of model
@@ -1343,4 +1343,7 @@ def allocate_timetable(
         logger.error("Posting allocation service failed: Model is invalid")
         return {"success": False, "error": "Solver reported the model as invalid."}
 
-    return {"success": False, "error": "Solver returned an unknown status."}
+    return {
+        "success": False,
+        "error": "Solver returned the following status: " + solver.StatusName(status),
+    }
