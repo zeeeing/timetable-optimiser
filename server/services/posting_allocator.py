@@ -24,6 +24,7 @@ def allocate_timetable(
     weightages: Dict,
     resident_leaves: Optional[List[Dict]] = None,
     pinned_assignments: Optional[Dict[str, List[Dict]]] = None,
+    max_time_in_minutes: Optional[int] = None,
 ) -> Dict:
 
     ###########################################################################
@@ -1214,7 +1215,7 @@ def allocate_timetable(
     solver = cp_model.CpSolver()
 
     # solver settings
-    solver.parameters.max_time_in_seconds = 60 * 20  # max 20 minutes run time
+    solver.parameters.max_time_in_seconds = 60 * (max_time_in_minutes or 20)
     solver.parameters.cp_model_presolve = True  # enable presolve for better performance
     solver.parameters.log_search_progress = False  # log solver progress to stderr (will be captured as [PYTHON LOG] by Node.js backend)
     solver.parameters.enumerate_all_solutions = False

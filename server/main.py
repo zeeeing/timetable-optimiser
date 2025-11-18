@@ -88,6 +88,7 @@ async def solve(request: Request):
             weightages=solver_payload["weightages"],
             resident_leaves=solver_payload.get("resident_leaves", []),
             pinned_assignments=solver_payload.get("pinned_assignments", []),
+            max_time_in_minutes=solver_payload.get("max_time_in_minutes"),
         )
         if not allocator_result.get("success"):
             raise HTTPException(

@@ -142,6 +142,13 @@ def parse_int(value: Any) -> Optional[int]:
     return result
 
 
+def parse_max_time_in_minutes(raw: Any) -> Optional[int]:
+    value = parse_int(raw)
+    if value is None or value <= 0:
+        return None
+    return value
+
+
 def parse_weightages(
     raw: Any, fallback: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
@@ -192,7 +199,9 @@ async def _read_csv_upload(
         ) from exc
 
     reader = csv.DictReader(io.StringIO(text))
-    _validate_csv_headers(reader.fieldnames, expected_headers, file_label, header_aliases)
+    _validate_csv_headers(
+        reader.fieldnames, expected_headers, file_label, header_aliases
+    )
     try:
         return [dict(row) for row in reader]
     except csv.Error as exc:
@@ -389,6 +398,7 @@ async def preprocess_initial_upload(form: FormData) -> Dict[str, Any]:
     )
 
     weightages = parse_weightages(form.get("weightages"), {})
+    max_time_in_minutes = parse_max_time_in_minutes(form.get("max_time_in_minutes"))
 
     return {
         "residents": _format_residents(residents_csv),
@@ -398,6 +408,7 @@ async def preprocess_initial_upload(form: FormData) -> Dict[str, Any]:
         "postings": _format_postings(postings_csv),
         "weightages": weightages,
         "resident_leaves": _format_resident_leaves(leaves_csv),
+        "max_time_in_minutes": max_time_in_minutes,
     }
 
 
@@ -421,6 +432,7 @@ async def prepare_solver_input(
             latest_api_response=latest_api_response,
             pinned_mcrs=pinned_mcrs,
             weightages_override=form.get("weightages"),
+            max_time_in_minutes=form.get("max_time_in_minutes"),
         )
         latest_inputs_snapshot: Optional[Dict[str, Any]] = None
     else:
@@ -435,6 +447,7 @@ def build_pinned_run_input(
     latest_api_response: Optional[Dict[str, Any]],
     pinned_mcrs: List[str],
     weightages_override: Any = None,
+    max_time_in_minutes: Any = None,
 ) -> Dict[str, Any]:
     if not latest_api_response:
         raise HTTPException(
@@ -493,6 +506,7 @@ def build_pinned_run_input(
         "weightages": weightages,
         "resident_leaves": merged("resident_leaves"),
         "pinned_assignments": pinned_assignments,
+        "max_time_in_minutes": max_time_in_minutes,
     }
 
 
