@@ -229,6 +229,23 @@ def variants_for_base(base: str, posting_codes: List[Dict[str, Dict]]) -> List[s
     return variants
 
 
+def base_key(text: str) -> str:
+    """
+    Normalise a posting base name for comparisons (case-insensitive, trimmed).
+    """
+    return (str(text or "").split(" (")[0].strip()).lower()
+
+
+def variants_for_base_ci(base: str, posting_codes: List[str]) -> List[str]:
+    """
+    Case-insensitive variant lookup for a given base.
+    """
+    key = base_key(base)
+    if not key:
+        return []
+    return [code for code in posting_codes if base_key(code) == key]
+
+
 def extract_institution(posting_code: str) -> str:
     """
     Extract the institution name from a posting code of the form `Base (Institution)`.

@@ -1,4 +1,3 @@
-import sys, json
 from typing import List, Dict, Optional, Set, Tuple, Any
 import logging
 
@@ -9,7 +8,8 @@ from server.utils import (
     get_core_blocks_completed,
     get_unique_electives_completed,
     to_snake_case,
-    variants_for_base,
+    base_key,
+    variants_for_base_ci,
     CORE_REQUIREMENTS,
     CCR_POSTINGS,
 )
@@ -34,7 +34,6 @@ def allocate_timetable(
     # instantiate the logger
     logging.basicConfig(
         level=logging.INFO,
-        stream=sys.stderr,
         format="%(asctime)s %(levelname)s %(message)s",
     )
     logger = logging.getLogger(__name__)
@@ -101,14 +100,14 @@ def allocate_timetable(
             return
         pins_by_resident.setdefault(mcr, {})[block] = posting
 
-    # merge explicit pinned assignments (existing ones, if any)
+    # a. add explicitly defined pinned assignments from user
     for mcr, entries in (pinned_assignments or {}).items():
         for entry in entries or []:
             block = entry.get("month_block")
             posting_code = entry.get("posting_code")
             _record_pin(mcr, block, posting_code)
 
-    # merge pinned assignments from resident history current year flags
+    # b. add current year non-leave postings from resident history
     filtered_resident_history: List[Dict] = []
     for row in resident_history or []:
         current_row = dict(row)
@@ -138,7 +137,7 @@ def allocate_timetable(
 
         filtered_resident_history.append(current_row)
 
-    # normalise pinned assignments for downstream use
+    # shape pinned assignments back to same structure as input pinned assignments
     if pins_by_resident:
         pinned_assignments = {
             mcr: [
@@ -166,16 +165,20 @@ def allocate_timetable(
     leave_quota_usage: Dict[str, Dict[int, int]] = {}
     if resident_leaves:
         for row in resident_leaves:
+            # unpack required fields from the leave row
             m = row.get("mcr")
             b = row.get("month_block")
             leave_type = row.get("leave_type")
             leave_posting_code = row.get("posting_code")
+            # ignore invalid leave posting codes so the solver does not choke on unknown postings
             if leave_posting_code and leave_posting_code not in posting_info:
                 leave_posting_code = ""
+            # record leave details keyed by resident and block for quick lookup later
             leave_map.setdefault(m, {})[b] = {
                 "leave_type": leave_type,
                 "posting_code": leave_posting_code,
             }
+            # track how many times each posting's leave quota is used per block
             if leave_posting_code:
                 quota_by_block = leave_quota_usage.setdefault(leave_posting_code, {})
                 quota_by_block[b] = quota_by_block.get(b, 0) + 1
@@ -254,6 +257,14 @@ def allocate_timetable(
             model.Add(count >= 1).OnlyEnforceIf(flag)
             model.Add(count == 0).OnlyEnforceIf(flag.Not())
 
+    # for leave or debug: define per-block slack (OFF) variables (treated as off_or_leave)
+    off_or_leave = {}
+    for resident in residents:
+        mcr = resident["mcr"]
+        off_or_leave[mcr] = {}
+        for b in blocks:
+            off_or_leave[mcr][b] = model.NewBoolVar(f"{mcr}_OFF_{b}")
+
     ############################################################################
     # APPLY PINNED ASSIGNMENTS (IF ANY)
     ############################################################################
@@ -269,53 +280,63 @@ def allocate_timetable(
                 p = entry.get("posting_code")
                 model.Add(x[mcr][p][b] == 1)
 
-    ############################################################################
-    # DEFINE SLACK VARIABLES (FOR LEAVES OR DEBUG)
-    ############################################################################
-
-    # DEBUG: define per-block slack (OFF) variables
-    off = {}
-    for resident in residents:
-        mcr = resident["mcr"]
-        off[mcr] = {}
-        for b in blocks:
-            off[mcr][b] = model.NewBoolVar(f"{mcr}_OFF_{b}")
-
     ###########################################################################
     # DEFINE HARD CONSTRAINTS
     ###########################################################################
 
     # Hard Constraint 1: Each resident must be assigned to exactly one posting
-    # Leave blocks are forced to OFF so residents cannot be scheduled elsewhere
+    # OFF per block if constraint leads to infeasibility
     for resident in residents:
         mcr = resident["mcr"]
-        leave_blocks = set(leave_map.get(mcr, {}).keys())
 
         for b in blocks:
-            model.AddExactlyOne([x[mcr][p][b] for p in posting_codes] + [off[mcr][b]])
-            if b in leave_blocks:
-                model.Add(off[mcr][b] == 1)
-                leave_off_blocks.add((mcr, b))
+            model.AddExactlyOne(
+                [x[mcr][p][b] for p in posting_codes] + [off_or_leave[mcr][b]]
+            )
+
+    # honour declared leave blocks by forcing OFF slots
+    for resident in residents:
+        mcr = resident["mcr"]
+        resident_leaves_for_blocks = leave_map.get(mcr, {})
+        if not resident_leaves_for_blocks:
+            continue
+
+        for b, meta in resident_leaves_for_blocks.items():
+            posting_code = (meta.get("posting_code", "") or "").strip()
+            if posting_code and posting_code not in posting_info:
+                posting_code = ""
+                meta["posting_code"] = ""
+
+            # mark block as OFF so resident cannot be scheduled a posting here
+            model.Add(off_or_leave[mcr][b] == 1)
+            leave_off_blocks.add((mcr, b))
 
     # Hard Constraint 2: Enforce posting quotas per block (accounting for reserved leaves)
     for p in posting_codes:
         max_residents = posting_info[p]["max_residents"]
-        posting_leave_usage = leave_quota_usage.get(p, {})
 
         for b in blocks:
-            reserved = posting_leave_usage.get(b, 0)
-            available_capacity = max_residents - reserved
+            # leaves with posting_code reserve capacity; available slots shrink by that amount
+            leave_reserved_slots = leave_quota_usage.get(p, {}).get(b, 0)
+            available_capacity = max_residents - leave_reserved_slots
             if available_capacity < 0:
                 logger.warning(
                     "Leave reservations (%d) exceed capacity for posting %s at block %s; capping available slots at 0",
-                    reserved,
+                    leave_reserved_slots,
                     p,
                     b,
                 )
                 available_capacity = 0
+            elif leave_reserved_slots:
+                logger.info(
+                    "Reserving %d slot(s) for leave on posting %s block %s (capacity now %d)",
+                    leave_reserved_slots,
+                    p,
+                    b,
+                    available_capacity,
+                )
 
-            lhs = sum(x[r["mcr"]][p][b] for r in residents)
-            model.Add(lhs <= available_capacity)
+            model.Add(sum(x[r["mcr"]][p][b] for r in residents) <= available_capacity)
 
     # Hard Constraint 3: Enforce required_block_duration happens in consecutive blocks
     for resident in residents:
@@ -615,7 +636,7 @@ def allocate_timetable(
     #     done_ED = progress.get("ED", 0) >= CORE_REQUIREMENTS.get("ED", 0)
     #     done_GRM = progress.get("GRM", 0) >= CORE_REQUIREMENTS.get("GRM", 0)
 
-    #     if not done_ED and not done_GRM:
+    #     if not (done_ED or done_GRM):
     #         model.Add(sum(selection_flags[mcr][p] for p in ED_codes) == 1)
     #         model.Add(sum(selection_flags[mcr][p] for p in GRM_codes) == 1)
 
@@ -753,7 +774,7 @@ def allocate_timetable(
             max_h1 = model.NewIntVar(0, len(residents), f"max_h1_{to_snake_case(p)}")
             model.AddMinEquality(min_h1, first_half_assignments)
             model.AddMaxEquality(max_h1, first_half_assignments)
-            model.Add(max_h1 <= min_h1 + 0)
+            model.Add(max_h1 == min_h1 + 0)
 
         # Second half of the year (blocks 7-12)
         second_half_assignments = [assignments_per_block[b] for b in late_blocks]
@@ -762,7 +783,7 @@ def allocate_timetable(
             max_h2 = model.NewIntVar(0, len(residents), f"max_h2_{to_snake_case(p)}")
             model.AddMinEquality(min_h2, second_half_assignments)
             model.AddMaxEquality(max_h2, second_half_assignments)
-            model.Add(max_h2 <= min_h2 + 0)
+            model.Add(max_h2 == min_h2 + 0)
 
     ###########################################################################
     # DEFINE SOFT CONSTRAINTS WITH PENALTIES
@@ -874,7 +895,7 @@ def allocate_timetable(
             if not posting_meta:
                 continue
             if posting_meta.get("posting_type") == "elective":
-                elective_prefs_bases.add(code.split(" (")[0])
+                elective_prefs_bases.add(base_key(code))
 
         # obtain updated SR preferences
         updated_sr_prefs = {}
@@ -883,7 +904,7 @@ def allocate_timetable(
             if not base:
                 continue
 
-            curr_base_variants = variants_for_base(base, posting_codes)
+            curr_base_variants = variants_for_base_ci(base, posting_codes)
             if not curr_base_variants:
                 continue
 
@@ -891,15 +912,17 @@ def allocate_timetable(
                 posting_info.get(p, {}).get("posting_type") == "core"
                 for p in curr_base_variants
             )
+            canonical_base = curr_base_variants[0].split(" (")[0].strip()
+            base_key_value = base_key(base)
 
             if (
                 any(elective_prefs.values())
-                and base not in elective_prefs_bases
+                and base_key_value not in elective_prefs_bases
                 and not is_core_posting
             ):
                 continue
 
-            updated_sr_prefs[new_rank] = base
+            updated_sr_prefs[new_rank] = canonical_base
             new_rank += 1
 
         if not updated_sr_prefs:
@@ -908,7 +931,7 @@ def allocate_timetable(
         # get all base variants
         sr_variants = set()
         for _, base in updated_sr_prefs.items():
-            for p in variants_for_base(base, posting_codes):
+            for p in variants_for_base_ci(base, posting_codes):
                 sr_variants.add(p)
         sr_variants = list(sr_variants)
 
@@ -972,7 +995,7 @@ def allocate_timetable(
             max_rank = len(updated_sr_prefs)
 
             for rank, base in sorted(updated_sr_prefs.items()):
-                variants = variants_for_base(base, posting_codes)
+                variants = variants_for_base_ci(base, posting_codes)
                 if not variants:
                     continue
 
@@ -1189,7 +1212,7 @@ def allocate_timetable(
         for b in blocks:
             if (mcr, b) in leave_off_blocks:
                 continue
-            off_penalty_terms.append(off_penalty_weight * off[mcr][b])
+            off_penalty_terms.append(off_penalty_weight * off_or_leave[mcr][b])
 
     # Objective
     model.Maximize(
@@ -1217,13 +1240,14 @@ def allocate_timetable(
     # solver settings
     solver.parameters.max_time_in_seconds = 60 * (max_time_in_minutes or 20)
     solver.parameters.cp_model_presolve = True  # enable presolve for better performance
-    solver.parameters.log_search_progress = False  # log solver progress to stderr (will be captured as [PYTHON LOG] by Node.js backend)
+    solver.parameters.log_search_progress = True
     solver.parameters.enumerate_all_solutions = False
 
     # solve and retrieve status of model
+    logger.info("Solving model...")
     status = solver.Solve(model)
     logger.info(
-        f"Solver returned status {solver.StatusName(status)} with objective {solver.ObjectiveValue()}"
+        f"Solver returned a status of '{solver.StatusName(status)}' with an objective value of {solver.ObjectiveValue()}"
     )
 
     ###########################################################################
@@ -1252,9 +1276,10 @@ def allocate_timetable(
         solution_entries = []
         for resident in residents:
             mcr = resident["mcr"]
+            resident_leaves = leave_map.get(mcr, {})
 
             for b in blocks:
-                is_off_block = solver.Value(off[mcr][b]) > 0.5
+                is_off_block = solver.Value(off_or_leave[mcr][b]) > 0.5
                 assigned_posting = ""
 
                 if not is_off_block:
@@ -1262,6 +1287,10 @@ def allocate_timetable(
                         if solver.Value(x[mcr][p][b]) > 0.5:
                             assigned_posting = p
                             break
+                else:
+                    leave_entry = resident_leaves.get(b)
+                    if leave_entry:
+                        assigned_posting = leave_entry.get("posting_code", "")
 
                 solution_entries.append(
                     {
@@ -1275,7 +1304,7 @@ def allocate_timetable(
         # log OFF usage per resident
         for resident in residents:
             mcr = resident["mcr"]
-            off_blocks = [b for b in blocks if solver.Value(off[mcr][b]) > 0.5]
+            off_blocks = [b for b in blocks if solver.Value(off_or_leave[mcr][b]) > 0.5]
             if off_blocks:
                 if mcr in leave_map:
                     logger.info(
