@@ -2,10 +2,113 @@ import copy
 import csv
 import io
 import json
+from collections import Counter
 from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import HTTPException
 from starlette.datastructures import FormData, UploadFile
+
+
+CSV_HEADER_SPECS: Dict[str, Dict[str, Any]] = {
+    "residents": {
+        "label": "Residents CSV",
+        "required": ["mcr", "name", "resident_year", "career_blocks_completed"],
+        "aliases": {"career_blocks_completed": ["careerBlocksCompleted"]},
+    },
+    "resident_history": {
+        "label": "Resident History CSV",
+        "required": [
+            "mcr",
+            "year",
+            "month_block",
+            "career_block",
+            "posting_code",
+            "is_current_year",
+            "is_leave",
+            "leave_type",
+        ],
+        "aliases": {"is_current_year": ["isCurrentYear"], "is_leave": ["isLeave"]},
+    },
+    "resident_preferences": {
+        "label": "Resident Preferences CSV",
+        "required": ["mcr", "preference_rank", "posting_code"],
+        "aliases": {},
+    },
+    "resident_sr_preferences": {
+        "label": "SR Preferences CSV",
+        "required": ["mcr", "preference_rank", "base_posting"],
+        "aliases": {},
+    },
+    "postings": {
+        "label": "Postings CSV",
+        "required": [
+            "posting_code",
+            "posting_name",
+            "posting_type",
+            "max_residents",
+            "required_block_duration",
+        ],
+        "aliases": {},
+    },
+    "resident_leaves": {
+        "label": "Resident Leaves CSV",
+        "required": ["mcr", "month_block", "leave_type", "posting_code"],
+        "aliases": {"month_block": ["block"]},
+    },
+}
+
+
+def _validate_csv_headers(
+    headers: Optional[List[str]],
+    required_headers: List[str],
+    file_label: str,
+    header_aliases: Optional[Dict[str, List[str]]] = None,
+) -> None:
+    """
+    Ensure each CSV contains the expected headers without blanks or duplicates.
+    """
+
+    if not headers:
+        raise HTTPException(
+            status_code=400,
+            detail=f"[{file_label}] No column headers found. Please check the CSV formatting.",
+        )
+
+    stripped_headers: List[str] = []
+    blank_headers = []
+    for header in headers:
+        stripped = str(header or "").strip()
+        if not stripped:
+            blank_headers.append(header)
+        else:
+            stripped_headers.append(stripped)
+
+    if blank_headers:
+        raise HTTPException(
+            status_code=400,
+            detail=f"[{file_label}] Found blank column header(s). Please name every column.",
+        )
+
+    duplicates = [h for h, count in Counter(stripped_headers).items() if count > 1]
+    if duplicates:
+        dup_list = ", ".join(duplicates)
+        raise HTTPException(
+            status_code=400,
+            detail=f"[{file_label}] Duplicate column header(s): {dup_list}.",
+        )
+
+    header_aliases = header_aliases or {}
+    missing = []
+    for required in required_headers:
+        candidates = [required] + header_aliases.get(required, [])
+        if not any(candidate in stripped_headers for candidate in candidates):
+            missing.append(required)
+    if missing:
+        missing_list = ", ".join(missing)
+        raise HTTPException(
+            status_code=400,
+            detail=f"[{file_label}] Missing required column(s): {missing_list}.",
+        )
 
 
 def parse_boolean_flag(value: Any) -> bool:
@@ -73,11 +176,29 @@ def parse_pinned_list(raw: Any) -> List[str]:
     return [str(item).strip() for item in parsed if str(item).strip()]
 
 
-async def _read_csv_upload(upload: UploadFile) -> List[Dict[str, Any]]:
+async def _read_csv_upload(
+    upload: UploadFile,
+    expected_headers: List[str],
+    file_label: str,
+    header_aliases: Optional[Dict[str, List[str]]] = None,
+) -> List[Dict[str, Any]]:
     content = await upload.read()
-    text = content.decode("utf-8")
+    try:
+        text = content.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"[{file_label}] Unable to decode CSV as UTF-8: {exc}",
+        ) from exc
+
     reader = csv.DictReader(io.StringIO(text))
-    return [dict(row) for row in reader]
+    _validate_csv_headers(reader.fieldnames, expected_headers, file_label, header_aliases)
+    try:
+        return [dict(row) for row in reader]
+    except csv.Error as exc:
+        raise HTTPException(
+            status_code=400, detail=f"[{file_label}] Invalid CSV format: {exc}"
+        ) from exc
 
 
 ########################################################################
@@ -106,16 +227,22 @@ def _format_residents(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 def _format_resident_history(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     formatted: List[Dict[str, Any]] = []
     for row in records:
-        month_block = parse_int(row.get("month_block") or row.get("block"))
+        mcr = str(row.get("mcr") or "").strip()
+        month_block = parse_int(row.get("month_block"))
         if month_block is None:
             continue
+        if month_block < 1 or month_block > 12:
+            raise HTTPException(
+                status_code=400,
+                detail=f"[Resident History CSV] Invalid month_block '{month_block}' for resident {mcr}: must be between 1 and 12.",
+            )
         year = parse_int(row.get("year"))
         if year is None:
             continue
         career_block = parse_int(row.get("career_block"))
         formatted.append(
             {
-                "mcr": str(row.get("mcr") or "").strip(),
+                "mcr": mcr,
                 "year": year,
                 "month_block": month_block,
                 "career_block": career_block,
@@ -216,12 +343,50 @@ async def preprocess_initial_upload(form: FormData) -> Dict[str, Any]:
     postings_upload = require_upload("postings")
     leaves_upload = require_upload("resident_leaves", optional=True)
 
-    residents_csv = await _read_csv_upload(residents_upload)
-    history_csv = await _read_csv_upload(history_upload)
-    prefs_csv = await _read_csv_upload(prefs_upload)
-    sr_prefs_csv = await _read_csv_upload(sr_prefs_upload) if sr_prefs_upload else []
-    postings_csv = await _read_csv_upload(postings_upload)
-    leaves_csv = await _read_csv_upload(leaves_upload) if leaves_upload else []
+    residents_csv = await _read_csv_upload(
+        residents_upload,
+        expected_headers=CSV_HEADER_SPECS["residents"]["required"],
+        file_label=CSV_HEADER_SPECS["residents"]["label"],
+        header_aliases=CSV_HEADER_SPECS["residents"]["aliases"],
+    )
+    history_csv = await _read_csv_upload(
+        history_upload,
+        expected_headers=CSV_HEADER_SPECS["resident_history"]["required"],
+        file_label=CSV_HEADER_SPECS["resident_history"]["label"],
+        header_aliases=CSV_HEADER_SPECS["resident_history"]["aliases"],
+    )
+    prefs_csv = await _read_csv_upload(
+        prefs_upload,
+        expected_headers=CSV_HEADER_SPECS["resident_preferences"]["required"],
+        file_label=CSV_HEADER_SPECS["resident_preferences"]["label"],
+        header_aliases=CSV_HEADER_SPECS["resident_preferences"]["aliases"],
+    )
+    sr_prefs_csv = (
+        await _read_csv_upload(
+            sr_prefs_upload,
+            expected_headers=CSV_HEADER_SPECS["resident_sr_preferences"]["required"],
+            file_label=CSV_HEADER_SPECS["resident_sr_preferences"]["label"],
+            header_aliases=CSV_HEADER_SPECS["resident_sr_preferences"]["aliases"],
+        )
+        if sr_prefs_upload
+        else []
+    )
+    postings_csv = await _read_csv_upload(
+        postings_upload,
+        expected_headers=CSV_HEADER_SPECS["postings"]["required"],
+        file_label=CSV_HEADER_SPECS["postings"]["label"],
+        header_aliases=CSV_HEADER_SPECS["postings"]["aliases"],
+    )
+    leaves_csv = (
+        await _read_csv_upload(
+            leaves_upload,
+            expected_headers=CSV_HEADER_SPECS["resident_leaves"]["required"],
+            file_label=CSV_HEADER_SPECS["resident_leaves"]["label"],
+            header_aliases=CSV_HEADER_SPECS["resident_leaves"]["aliases"],
+        )
+        if leaves_upload
+        else []
+    )
 
     weightages = parse_weightages(form.get("weightages"), {})
 
