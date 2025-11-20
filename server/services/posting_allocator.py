@@ -752,7 +752,7 @@ def allocate_timetable(
     for p in posting_codes:
         # omit GM and ED from balancing constraint
         base_posting_code = p.split(" (")[0]
-        if base_posting_code in ["GM", "ED"]:
+        if base_posting_code in ["GM", "ED", "GRM"]:
             continue
 
         # number of residents assigned per month should be balanced across the months it is active in
@@ -803,7 +803,8 @@ def allocate_timetable(
         selection_count = sum(selection_flags[mcr][p] for p in ELECTIVE_POSTINGS)
 
         if 2 in stages_present:
-            has_prefs = bool(pref_map.get(mcr, {}))
+            resident_prefs = pref_map.get(mcr, {})
+            has_prefs = any(code for code in resident_prefs.values())
 
             # goal would be to ensure 5 electives done by s3,
             # so 1 elective done in s1 and s2 is the bare minimum to be achieved.
@@ -884,7 +885,9 @@ def allocate_timetable(
     for resident in residents:
         mcr = resident["mcr"]
         completed_blocks = career_progress[mcr]["completed_blocks"]
-        sr_prefs = sr_pref_map.get(mcr, {})
+        sr_prefs = {
+            rank: base for rank, base in (sr_pref_map.get(mcr, {}) or {}).items() if base
+        }
         if not sr_prefs:
             continue
 
