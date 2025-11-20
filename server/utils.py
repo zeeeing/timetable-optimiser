@@ -186,6 +186,9 @@ def parse_resident_history(resident_history: List[Dict]) -> Dict[str, Dict[str, 
     """
     history_map = {}
     for hist in resident_history:
+        if hist.get("is_leave"):
+            continue
+
         mcr = hist["mcr"]
         posting_code = hist.get("posting_code")
 

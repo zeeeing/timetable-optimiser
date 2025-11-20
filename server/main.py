@@ -83,7 +83,7 @@ async def solve(request: Request):
             residents=solver_payload["residents"],
             resident_history=solver_payload["resident_history"],
             resident_preferences=solver_payload["resident_preferences"],
-            resident_sr_preferences=solver_payload.get("resident_sr_preferences"),
+            resident_sr_preferences=solver_payload["resident_sr_preferences"],
             postings=solver_payload["postings"],
             weightages=solver_payload["weightages"],
             resident_leaves=solver_payload.get("resident_leaves", []),
