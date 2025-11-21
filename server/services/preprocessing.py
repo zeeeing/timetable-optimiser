@@ -58,6 +58,14 @@ CSV_HEADER_SPECS: Dict[str, Dict[str, Any]] = {
 }
 
 
+def _sanitise_header(value: Any) -> str:
+    try:
+        text = str(value or "")
+    except Exception:
+        text = ""
+    return text.strip().lstrip("\ufeff")
+
+
 def _validate_csv_headers(
     headers: Optional[List[str]],
     required_headers: List[str],
@@ -77,11 +85,11 @@ def _validate_csv_headers(
     stripped_headers: List[str] = []
     blank_headers = []
     for header in headers:
-        stripped = str(header or "").strip()
-        if not stripped:
+        sanitised = _sanitise_header(header)
+        if not sanitised:
             blank_headers.append(header)
         else:
-            stripped_headers.append(stripped)
+            stripped_headers.append(sanitised)
 
     if blank_headers:
         raise HTTPException(
@@ -198,10 +206,12 @@ async def _read_csv_upload(
             detail=f"[{file_label}] Unable to decode CSV as UTF-8: {exc}",
         ) from exc
 
-    reader = csv.DictReader(io.StringIO(text))
+    reader = csv.DictReader(io.StringIO(text.lstrip("\ufeff")))
     _validate_csv_headers(
         reader.fieldnames, expected_headers, file_label, header_aliases
     )
+    if reader.fieldnames:
+        reader.fieldnames = [_sanitise_header(h) for h in reader.fieldnames]
     try:
         return [dict(row) for row in reader]
     except csv.Error as exc:
@@ -271,11 +281,14 @@ def _format_resident_history(records: List[Dict[str, Any]]) -> List[Dict[str, An
 def _format_preferences(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     formatted = []
     for row in records:
+        posting_code = str(row.get("posting_code") or "").strip()
+        if not posting_code:
+            continue
         formatted.append(
             {
                 "mcr": str(row.get("mcr") or "").strip(),
                 "preference_rank": parse_int(row.get("preference_rank")) or 0,
-                "posting_code": str(row.get("posting_code") or "").strip(),
+                "posting_code": posting_code,
             }
         )
     return formatted
@@ -284,11 +297,14 @@ def _format_preferences(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 def _format_sr_preferences(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     formatted = []
     for row in records:
+        base_posting = str(row.get("base_posting") or "").strip()
+        if not base_posting:
+            continue
         formatted.append(
             {
                 "mcr": str(row.get("mcr") or "").strip(),
                 "preference_rank": parse_int(row.get("preference_rank")) or 0,
-                "base_posting": str(row.get("base_posting") or "").strip(),
+                "base_posting": base_posting,
             }
         )
     return formatted
@@ -297,14 +313,21 @@ def _format_sr_preferences(records: List[Dict[str, Any]]) -> List[Dict[str, Any]
 def _format_postings(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     formatted = []
     for row in records:
+        max_residents = parse_int(row.get("max_residents"))
+        if max_residents is None:
+            max_residents = 0
+
+        required_block_duration = parse_int(row.get("required_block_duration"))
+        if required_block_duration is None:
+            required_block_duration = 0
+
         formatted.append(
             {
                 "posting_code": str(row.get("posting_code") or "").strip(),
                 "posting_name": str(row.get("posting_name") or "").strip(),
                 "posting_type": str(row.get("posting_type") or "").strip(),
-                "max_residents": parse_int(row.get("max_residents")) or 0,
-                "required_block_duration": parse_int(row.get("required_block_duration"))
-                or 1,
+                "max_residents": max_residents,
+                "required_block_duration": required_block_duration,
             }
         )
     return formatted
@@ -325,6 +348,110 @@ def _format_resident_leaves(records: List[Dict[str, Any]]) -> List[Dict[str, Any
             }
         )
     return formatted
+
+
+def _validate_no_duplicate_mcrs(residents: List[Dict[str, Any]]) -> None:
+    label = CSV_HEADER_SPECS["residents"]["label"]
+    seen = set()
+    duplicates = set()
+    missing_rows: List[int] = []
+
+    for idx, resident in enumerate(residents, start=1):
+        mcr = str(resident.get("mcr") or "").strip()
+        if not mcr:
+            missing_rows.append(idx)
+            continue
+        if mcr in seen:
+            duplicates.add(mcr)
+        else:
+            seen.add(mcr)
+
+    if missing_rows:
+        rows = ", ".join(str(num) for num in missing_rows)
+        raise HTTPException(
+            status_code=400,
+            detail=f"[{label}] Missing MCR for row(s): {rows}. Each resident must have a unique MCR.",
+        )
+
+    if duplicates:
+        dup_list = ", ".join(sorted(duplicates))
+        raise HTTPException(
+            status_code=400,
+            detail=f"[{label}] Duplicate MCR(s) found: {dup_list}. Each resident must have a unique MCR.",
+        )
+
+
+def _validate_no_duplicate_posting_codes(postings: List[Dict[str, Any]]) -> None:
+    label = CSV_HEADER_SPECS["postings"]["label"]
+    seen = set()
+    duplicates = set()
+    missing_rows: List[int] = []
+
+    for idx, posting in enumerate(postings, start=1):
+        posting_code = str(posting.get("posting_code") or "").strip()
+        if not posting_code:
+            missing_rows.append(idx)
+            continue
+        if posting_code in seen:
+            duplicates.add(posting_code)
+        else:
+            seen.add(posting_code)
+
+    if missing_rows:
+        rows = ", ".join(str(num) for num in missing_rows)
+        raise HTTPException(
+            status_code=400,
+            detail=f"[{label}] Missing posting_code for row(s): {rows}. Each posting must have a unique code.",
+        )
+
+    if duplicates:
+        dup_list = ", ".join(sorted(duplicates))
+        raise HTTPException(
+            status_code=400,
+            detail=f"[{label}] Duplicate posting_code(s) found: {dup_list}. Each posting must have a unique code.",
+        )
+
+
+def _validate_posting_capacity_and_duration(postings: List[Dict[str, Any]]) -> None:
+    label = CSV_HEADER_SPECS["postings"]["label"]
+    invalid_capacity: List[str] = []
+    invalid_duration: List[str] = []
+
+    for idx, posting in enumerate(postings, start=1):
+        posting_code = str(posting.get("posting_code") or "").strip()
+        row_label = posting_code or f"row {idx}"
+
+        max_residents_raw = posting.get("max_residents")
+        try:
+            max_residents = int(max_residents_raw)
+        except (TypeError, ValueError):
+            max_residents = None
+
+        if max_residents is None or max_residents <= 0:
+            invalid_capacity.append(f"{row_label} (value: {max_residents_raw})")
+
+        duration_raw = posting.get("required_block_duration")
+        try:
+            duration = int(duration_raw)
+        except (TypeError, ValueError):
+            duration = None
+
+        if duration is None or duration < 1 or duration > 12:
+            invalid_duration.append(f"{row_label} (value: {duration_raw})")
+
+    if invalid_capacity:
+        joined = ", ".join(invalid_capacity)
+        raise HTTPException(
+            status_code=400,
+            detail=f"[{label}] Invalid max_residents for posting(s): {joined}. Provide a positive integer capacity.",
+        )
+
+    if invalid_duration:
+        joined = ", ".join(invalid_duration)
+        raise HTTPException(
+            status_code=400,
+            detail=f"[{label}] Invalid required_block_duration for posting(s): {joined}. Value must be between 1 and 12 months.",
+        )
 
 
 async def preprocess_initial_upload(form: FormData) -> Dict[str, Any]:
@@ -397,17 +524,28 @@ async def preprocess_initial_upload(form: FormData) -> Dict[str, Any]:
         else []
     )
 
+    residents = _format_residents(residents_csv)
+    resident_history = _format_resident_history(history_csv)
+    resident_preferences = _format_preferences(prefs_csv)
+    resident_sr_preferences = _format_sr_preferences(sr_prefs_csv)
+    postings = _format_postings(postings_csv)
+    resident_leaves = _format_resident_leaves(leaves_csv)
+
+    _validate_no_duplicate_mcrs(residents)
+    _validate_no_duplicate_posting_codes(postings)
+    _validate_posting_capacity_and_duration(postings)
+
     weightages = parse_weightages(form.get("weightages"), {})
     max_time_in_minutes = parse_max_time_in_minutes(form.get("max_time_in_minutes"))
 
     return {
-        "residents": _format_residents(residents_csv),
-        "resident_history": _format_resident_history(history_csv),
-        "resident_preferences": _format_preferences(prefs_csv),
-        "resident_sr_preferences": _format_sr_preferences(sr_prefs_csv),
-        "postings": _format_postings(postings_csv),
+        "residents": residents,
+        "resident_history": resident_history,
+        "resident_preferences": resident_preferences,
+        "resident_sr_preferences": resident_sr_preferences,
+        "postings": postings,
         "weightages": weightages,
-        "resident_leaves": _format_resident_leaves(leaves_csv),
+        "resident_leaves": resident_leaves,
         "max_time_in_minutes": max_time_in_minutes,
     }
 
