@@ -319,7 +319,7 @@ def _format_postings(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
         required_block_duration = parse_int(row.get("required_block_duration"))
         if required_block_duration is None:
-            required_block_duration = 0
+            required_block_duration = 1
 
         formatted.append(
             {
@@ -427,7 +427,7 @@ def _validate_posting_capacity_and_duration(postings: List[Dict[str, Any]]) -> N
         except (TypeError, ValueError):
             max_residents = None
 
-        if max_residents is None or max_residents <= 0:
+        if max_residents is None or max_residents < 0:
             invalid_capacity.append(f"{row_label} (value: {max_residents_raw})")
 
         duration_raw = posting.get("required_block_duration")
