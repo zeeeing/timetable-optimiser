@@ -1,18 +1,28 @@
-# Residency Rostering User Guide
+# Residency Rotation Scheduler
 
-End-to-end steps for running the rostering tool locally and interpreting solver outputs. The solver rules are documented separately in [constraints.md](constraints.md).
+## Introduction
 
-## Prerequisites
+Residency Rotation Scheduler (R2S) is a constraint-based optimisation tool that uses Google OR-Tools to construct fair, feasible residency rotation timetables. It ingests structured CSV inputs describing residents, postings, historical rotations, preferences, and leave, and then searches for a timetable that satisfies hard rules (e.g. posting capacities, required block durations, stage rules) while optimising soft goals such as resident preferences and balanced posting utilisation. The application is designed for iterative use: users can tune weightages, pin specific assignments, re-run the solver, and export the final timetable for downstream systems.
 
-- Python 3.10+ with `pip`; Node 20+ with `npm`.
-- From the repo root, install backend deps: `pip install -r server/requirements.txt`.
-- Install frontend deps: `cd client && npm install`.
+## Key Features
 
-## Running the app locally
+- Constraint-based timetable optimisation powered by Google OR-Tools (CP-SAT).
+- CSV-driven configuration for residents, postings, historical rotations, preferences, and leave.
+- Rich set of hard and soft constraints (capacities, stage rules, elective/core requirements, preference handling, and guardrails such as MICU/RCCM packs and GRM/ED runs).
+- Interactive UI for uploading datasets, adjusting weightages, pinning assignments, and inspecting resulting timetables.
+- Validation and infeasibility feedback aligned with the documented constraints in `constraints.md`.
+- Export of solver-validated timetables as CSV for downstream HR, payroll, or rostering systems.
 
-- Start the API: from the repo root run `uvicorn server.main:app --reload --port 8000`.
-- Start the client: from `client/` run `npm run dev -- --host --port 5173` (defaults also work).
-- The client expects the API at `http://localhost:8000`.
+## Architecture
+
+- Backend (`server/`): FastAPI application exposing `/api/solve`, `/api/save`, and `/api/download-csv` endpoints. It handles CSV parsing, input normalisation, OR-Tools model construction/solving in `server/services/posting_allocator.py`, and postprocessing of solutions into resident-level timetables and optimisation scores.
+- Frontend (`client/`): React + TypeScript application built with Vite and Tailwind CSS. It provides CSV upload and validation, configuration of weightages and pinned assignments, visualisation of per-block timetables, and actions to persist edits or download the final CSV.
+- Data flow: CSVs and configuration are uploaded via the frontend and sent as multipart form data to the backend. The backend runs the optimiser, returns a structured timetable plus optimisation scores, and supports subsequent edits and exports over the same API.
+
+## Getting started
+
+- Deployed webapp: `https://im-r2s.replit.app` – primary way to use R2S in the browser.
+- Local development: run the backend and frontend from this repository (see the Local development section below).
 
 ## Preparing input data
 
@@ -50,3 +60,32 @@ Additional inputs:
 - Common upload errors are surfaced with row numbers and missing columns; fix the CSV and retry.
 - If the solver returns infeasible, reduce pins, relax posting capacities, or revisit leave reservations.
 - For unexpected schedules, check how the hard/soft rules are applied in [constraints.md](constraints.md) and adjust weightages accordingly.
+
+## Local development
+
+### Prerequisites
+
+- Python 3.10+ with `pip`; Node 20+ with `npm`.
+- From the repo root, install backend deps: `pip install -r server/requirements.txt`.
+- Install frontend deps: `cd client && npm install`.
+
+### Quick start
+
+```bash
+# start the API from the repo root
+uvicorn server.main:app --reload --port 8000
+
+# in a separate terminal, start the client
+cd client
+npm run dev -- --host --port 5173
+```
+
+The client expects the API at `http://localhost:8000`.
+
+## Contributing
+
+This project is currently maintained for internal use. If you have suggestions or find issues, feel free to open an issue or pull request with a clear description, sample inputs (CSV snippets), and the observed behaviour.
+
+## License
+
+No explicit license has been specified for this repository. If you are interested in using or extending this code outside your organisation, please contact the maintainer before redistribution.
