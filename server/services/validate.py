@@ -228,7 +228,7 @@ def validate_assignment(payload: Dict[str, Any]) -> Dict[str, Any]:
             if runs != 1:
                 add_warning(
                     "HC4",
-                    "Exactly one CCR posting must be assigned during by end of residency year 2",
+                    "Exactly one CCR posting must be assigned during by end of Residency Year 2",
                 )
 
         # HC11: Y1 residents limited to 3 GM blocks

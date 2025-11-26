@@ -206,7 +206,7 @@ const HomePage: React.FC = () => {
   return (
     <div className="container mx-auto bg-white rounded-xl border p-8 flex flex-col gap-6">
       <h1 className="text-2xl font-semibold text-center mb-6 text-gray-800">
-        IM Residency Rostering System (R2S)
+        IM Residency Rotation Scheduler (R2S)
       </h1>
 
       {/* Upload Section */}

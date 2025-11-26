@@ -1,1 +1,1 @@
-# Residency rostering server package
+# R2S server package

@@ -24,7 +24,7 @@ class Store:
 
 # instantiate the store and FastAPI app
 store = Store()
-app = FastAPI(title="Residency Rostering API")
+app = FastAPI(title="R2S API")
 
 # configure CORS middleware
 origins = [
