@@ -10,7 +10,7 @@ Residency Rotation Scheduler (R2S) is a constraint-based optimisation tool that 
 - CSV-driven configuration for residents, postings, historical rotations, preferences, and leave.
 - Rich set of hard and soft constraints (capacities, stage rules, elective/core requirements, preference handling, and guardrails such as MICU/RCCM packs and GRM/ED runs).
 - Interactive UI for uploading datasets, adjusting weightages, pinning assignments, and inspecting resulting timetables.
-- Validation and infeasibility feedback aligned with the documented constraints in `constraints.md`.
+- Validation and infeasibility feedback aligned with the documented constraints in [`constraints.md`](/constraints.md).
 - Export of solver-validated timetables as CSV for downstream HR, payroll, or rostering systems.
 
 ## Architecture
@@ -21,7 +21,7 @@ Residency Rotation Scheduler (R2S) is a constraint-based optimisation tool that 
 
 ## Getting started
 
-- Deployed webapp: `https://im-r2s.replit.app` – primary way to use R2S in the browser.
+- Deployed webapp: [`https://im-r2s.replit.app`](https://im-r2s.replit.app) – primary way to use R2S in the browser.
 - Local development: run the backend and frontend from this repository (see the Local development section below).
 
 ## Preparing input data
