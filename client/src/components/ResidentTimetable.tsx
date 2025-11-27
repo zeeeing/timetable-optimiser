@@ -874,7 +874,7 @@ const ResidentTimetable: React.FC<Props> = ({
                           {postingMap[code]?.posting_code || code}
                           {isAssignedSr && (
                             <Badge className="ml-2 text-xs bg-green-200 text-green-900">
-                              Assigned SR
+                              Assigned
                             </Badge>
                           )}
                         </TableCell>
