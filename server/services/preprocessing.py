@@ -53,7 +53,7 @@ CSV_HEADER_SPECS: Dict[str, Dict[str, Any]] = {
     "resident_leaves": {
         "label": "Resident Leaves CSV",
         "required": ["mcr", "month_block", "leave_type", "posting_code"],
-        "aliases": {"month_block": ["block"]},
+        "aliases": {},
     },
 }
 
@@ -336,7 +336,7 @@ def _format_postings(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 def _format_resident_leaves(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     formatted: List[Dict[str, Any]] = []
     for row in records:
-        month_block = parse_int(row.get("month_block") or row.get("block"))
+        month_block = parse_int(row.get("month_block"))
         if month_block is None:
             continue
         formatted.append(
@@ -602,17 +602,27 @@ def build_pinned_run_input(
     ]
 
     pinned_assignments: Dict[str, List[Dict[str, Any]]] = {}
+    derived_leaves: List[Dict[str, Any]] = []
     for row in history:
         if not parse_boolean_flag(row.get("is_current_year")):
             continue
-        if parse_boolean_flag(row.get("is_leave")):
-            continue
         mcr = str(row.get("mcr") or "").strip()
-        if not mcr or mcr not in pinned_set:
-            continue
-        month_block = parse_int(row.get("month_block") or row.get("block"))
+        month_block = parse_int(row.get("month_block"))
         posting_code = str(row.get("posting_code") or "").strip()
-        if month_block is None or not posting_code:
+        if month_block is None:
+            continue
+        is_leave = parse_boolean_flag(row.get("is_leave"))
+        if is_leave:
+            derived_leaves.append(
+                {
+                    "mcr": mcr,
+                    "month_block": month_block,
+                    "posting_code": posting_code,
+                    "leave_type": str(row.get("leave_type") or "").strip(),
+                }
+            )
+            continue
+        if not mcr or mcr not in pinned_set or not posting_code:
             continue
         pinned_assignments.setdefault(mcr, []).append(
             {"month_block": month_block, "posting_code": posting_code}
@@ -635,6 +645,26 @@ def build_pinned_run_input(
             return copy.deepcopy(latest_inputs.get(key) or [])
         return []
 
+    base_leaves = merged("resident_leaves")
+    combined_leaves = (base_leaves or []) + derived_leaves
+
+    # dedupe leaves by resident/block while normalising fields
+    deduped_leaves: Dict[Tuple[str, int], Dict[str, Any]] = {}
+    for row in combined_leaves:
+        mcr = str(row.get("mcr") or "").strip()
+        block = parse_int(row.get("month_block"))
+        if not mcr or block is None:
+            continue
+        key = (mcr, block)
+        if key in deduped_leaves:
+            continue
+        deduped_leaves[key] = {
+            "mcr": mcr,
+            "month_block": block,
+            "posting_code": str(row.get("posting_code") or "").strip(),
+            "leave_type": str(row.get("leave_type") or "").strip(),
+        }
+
     return {
         "residents": merged("residents"),
         "resident_history": resident_history,
@@ -642,7 +672,7 @@ def build_pinned_run_input(
         "resident_sr_preferences": merged("resident_sr_preferences"),
         "postings": merged("postings"),
         "weightages": weightages,
-        "resident_leaves": merged("resident_leaves"),
+        "resident_leaves": list(deduped_leaves.values()),
         "pinned_assignments": pinned_assignments,
         "max_time_in_minutes": max_time_in_minutes,
     }
@@ -655,7 +685,7 @@ def normalise_current_year_entries(entries: Any) -> List[Dict[str, Any]]:
     for entry in entries:
         if not isinstance(entry, dict):
             continue
-        month_block = parse_int(entry.get("month_block") or entry.get("block"))
+        month_block = parse_int(entry.get("month_block"))
         posting_code = str(entry.get("posting_code") or "").strip()
         if month_block is None or not posting_code:
             continue

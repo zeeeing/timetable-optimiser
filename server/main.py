@@ -102,7 +102,9 @@ async def solve(request: Request):
         solver_solution = allocator_result.get("solver_solution")
 
         # build postprocess payload
-        postprocess_payload = _build_postprocess_payload(solver_input, solver_solution)
+        postprocess_payload = _build_postprocess_payload(
+            allocator_result, solver_solution
+        )
 
         # call the postprocess service
         final_result = compute_postprocess(postprocess_payload)
