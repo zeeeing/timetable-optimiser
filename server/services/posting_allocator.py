@@ -409,12 +409,16 @@ def allocate_timetable(
                 model.AddAutomaton(vars, INIT, final_states, transitions)
 
     # Hard Constraint 4 (CCR): CCR postings
+    ccr_stage2_bonus_terms = []
+    ccr_stage2_bonus_weight = 5
+
     for resident in residents:
         mcr = resident["mcr"]
         resident_progress = posting_progress.get(mcr, {})
         stages_by_block = career_progress[mcr].get("stages_by_block", {})
         stage1_blocks = [b for b in blocks if stages_by_block.get(b) == 1]
-        stage2_plus_blocks = [b for b in blocks if stages_by_block.get(b, 0) >= 2]
+        stage2_blocks = [b for b in blocks if stages_by_block.get(b) == 2]
+        stage3_blocks = [b for b in blocks if stages_by_block.get(b) == 3]
 
         done_ccr = any(
             resident_progress.get(ccr_posting, {}).get("is_completed", False)
@@ -424,16 +428,40 @@ def allocate_timetable(
         # extra protective layer of code to ensure user updates both posting codes and ccr posting codes
         offered = [p for p in CCR_POSTINGS if p in posting_codes]
 
+        if not offered:
+            continue
+
         if stage1_blocks:
             for b in stage1_blocks:
                 for p in offered:
                     model.Add(x[mcr][p][b] == 0)
 
-        if done_ccr or not stage2_plus_blocks:
+        ccr_runs = sum(posting_asgm_count[mcr][p] for p in offered)
+
+        if done_ccr:
             for p in offered:
                 model.Add(posting_asgm_count[mcr][p] == 0)
+        # if stage 3 blocks are present (resident could possibly have stage 2 blocks too)
+        elif stage3_blocks:
+            model.Add(ccr_runs == 1)
+        elif stage2_blocks:
+            model.Add(ccr_runs <= 1)
         else:
-            model.Add(sum(posting_asgm_count[mcr][p] for p in offered) == 1)
+            model.Add(ccr_runs == 0)
+
+        # bonus: complete CCR during Stage 2 (and nowhere else)
+        if (not done_ccr) and stage2_blocks:
+            ccr_stage2_blocks = sum(
+                x[mcr][p][b] for p in offered for b in stage2_blocks
+            )
+            ccr_outside_stage2 = sum(
+                x[mcr][p][b] for p in offered for b in blocks if b not in stage2_blocks
+            )
+            flag = model.NewBoolVar(f"{mcr}_ccr_stage2_bonus")
+            model.Add(ccr_stage2_blocks >= 1).OnlyEnforceIf(flag)
+            model.Add(ccr_stage2_blocks == 0).OnlyEnforceIf(flag.Not())
+            model.Add(ccr_outside_stage2 == 0).OnlyEnforceIf(flag)
+            ccr_stage2_bonus_terms.append(ccr_stage2_bonus_weight * flag)
 
     # Hard Constraint 5: Ensure core postings are not over-assigned to each resident
     for resident in residents:
@@ -773,7 +801,7 @@ def allocate_timetable(
             model.Add(micu_stage1 == 0).OnlyEnforceIf(flag.Not())
             model.Add(rccm_stage1 == 0).OnlyEnforceIf(flag.Not())
         if 2 in stages_present:
-            # do second pack (MICU=2, RCCM=1) if first pack done
+            # optionally do second pack (MICU=2, RCCM=1) if first pack done
             # else do first pack if first pack not done
             first_pack_done = (hist_micu == 1) and (hist_rccm == 2)
             if not first_pack_done:
@@ -1309,6 +1337,7 @@ def allocate_timetable(
     # Objective
     model.Maximize(
         sum(gm_ktph_bonus_terms)  # static, 1
+        + sum(ccr_stage2_bonus_terms)  # static, 5
         + sum(s2_elective_bonus_terms)  # static, 1
         + sum(preference_bonus_terms)
         + sum(sr_preference_bonus_terms)
