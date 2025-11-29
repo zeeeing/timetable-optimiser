@@ -598,6 +598,12 @@ def allocate_timetable(
         mcr = resident["mcr"]
         stages_by_block = career_progress[mcr].get("stages_by_block", {})
         stage1_blocks = [b for b in blocks if stages_by_block.get(b) == 1]
+        core_blocks_completed_map = get_core_blocks_completed(
+            posting_progress.get(mcr, {}), posting_info
+        )
+        # so historical GM completions count toward the cap
+        # if there are s1 blocks remaining this year
+        hist_gm_stage1 = core_blocks_completed_map.get("GM", 0)
 
         if stage1_blocks:
             gm_blocks_count = sum(
@@ -607,8 +613,9 @@ def allocate_timetable(
                 for b in stage1_blocks
             )
 
-            # ensure GM postings are capped at 3 blocks
-            model.Add(gm_blocks_count <= 3)
+            # ensure GM postings are capped at 3 blocks including history
+            gm_cap_remaining = max(0, 3 - hist_gm_stage1)
+            model.Add(gm_blocks_count <= gm_cap_remaining)
 
             # bonus for assigning `GM (KTPH)`
             ktph_bonus = sum(
@@ -881,6 +888,7 @@ def allocate_timetable(
                 model.Add(hist_count + selection_count <= 4).OnlyEnforceIf(unmet)
 
     # Soft Constraint 2: Shortfall on core requirements
+    # this will encourage solver to eventually meet core requirements where possible
     s3_residents = [
         r
         for r in residents
@@ -918,10 +926,6 @@ def allocate_timetable(
             model.Add(hist_done + assigned <= required - 1).OnlyEnforceIf(unmet_flag)
 
     # Soft Constraint 3: SR preference
-    # assignments outside career blocks 19–30 receive an extreme penalty
-    # sr_out_of_window_penalty_terms = []
-    # sr_out_of_window_penalty_weight = 999  # extreme penalty
-
     sr_bonus_context: Dict[str, Dict] = {}
     for resident in residents:
         mcr = resident["mcr"]
